@@ -1,8 +1,9 @@
-// src/app/components/ui/Alert.tsx - Updated with sharp design
+// src/app/components/ui/Alert.tsx
 import React, { useEffect } from 'react';
 import { X, CheckCircle, AlertCircle, AlertTriangle, Info } from 'lucide-react';
 import { cn } from '@/app/lib/utils';
-import { AlertProps } from '@/app/types/staff';
+import { AlertProps } from '@/app/types';
+
 
 const Alert: React.FC<AlertProps> = ({
   type,
@@ -40,51 +41,51 @@ const Alert: React.FC<AlertProps> = ({
   const getStyles = () => {
     switch (type) {
       case 'success':
-        return 'bg-success-50 border-success-500 text-success-800';
+        return 'bg-green-50 border-green-200 text-green-800';
       case 'error':
-        return 'bg-error-50 border-error-500 text-error-800';
+        return 'bg-red-50 border-red-200 text-red-800';
       case 'warning':
-        return 'bg-warning-50 border-warning-500 text-warning-800';
+        return 'bg-yellow-50 border-yellow-200 text-yellow-800';
       case 'info':
-        return 'bg-info-50 border-info-500 text-info-800';
+        return 'bg-blue-50 border-blue-200 text-blue-800';
       default:
-        return 'bg-background-muted border-border-medium text-text-primary';
+        return 'bg-gray-50 border-gray-200 text-gray-800';
     }
   };
 
   const getIconColor = () => {
     switch (type) {
       case 'success':
-        return 'text-success-600';
+        return 'text-green-600';
       case 'error':
-        return 'text-error-600';
+        return 'text-red-600';
       case 'warning':
-        return 'text-warning-600';
+        return 'text-yellow-600';
       case 'info':
-        return 'text-info-600';
+        return 'text-blue-600';
       default:
-        return 'text-text-muted';
+        return 'text-gray-600';
     }
   };
 
   const getCloseButtonColor = () => {
     switch (type) {
       case 'success':
-        return 'text-success-600 hover:bg-success-100 focus:ring-success-600';
+        return 'text-green-600 hover:bg-green-100 focus:ring-green-600';
       case 'error':
-        return 'text-error-600 hover:bg-error-100 focus:ring-error-600';
+        return 'text-red-600 hover:bg-red-100 focus:ring-red-600';
       case 'warning':
-        return 'text-warning-600 hover:bg-warning-100 focus:ring-warning-600';
+        return 'text-yellow-600 hover:bg-yellow-100 focus:ring-yellow-600';
       case 'info':
-        return 'text-info-600 hover:bg-info-100 focus:ring-info-600';
+        return 'text-blue-600 hover:bg-blue-100 focus:ring-blue-600';
       default:
-        return 'text-text-muted hover:bg-background-muted focus:ring-primary-500';
+        return 'text-gray-600 hover:bg-gray-100 focus:ring-gray-600';
     }
   };
 
   return (
     <div className={cn(
-      'relative rounded border-2 p-4 shadow-soft animate-slide-down',
+      'relative rounded-md border p-4 shadow-sm',
       getStyles()
     )}>
       <div className="flex items-start">
@@ -94,11 +95,11 @@ const Alert: React.FC<AlertProps> = ({
         
         <div className="ml-3 flex-1">
           {title && (
-            <h3 className="text-sm font-semibold mb-1 tracking-wide">
+            <h3 className="text-sm font-medium mb-1">
               {title}
             </h3>
           )}
-          <p className="text-sm font-medium">
+          <p className="text-sm">
             {message}
           </p>
         </div>
@@ -108,7 +109,7 @@ const Alert: React.FC<AlertProps> = ({
             type="button"
             onClick={onClose}
             className={cn(
-              'ml-4 flex-shrink-0 rounded p-1.5 inline-flex transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2',
+              'ml-4 flex-shrink-0 rounded-md p-1.5 inline-flex transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2',
               getCloseButtonColor()
             )}
           >

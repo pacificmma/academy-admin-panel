@@ -1,7 +1,8 @@
 // middleware.ts - Fixed version
 import { getSession } from '@/app/lib/auth/session';
+import { UserRole } from '@/app/types';
 import { NextRequest, NextResponse } from 'next/server';
-import { UserRole } from '@/app/types/staff';
+
 
 // Protected routes configuration
 const PROTECTED_ROUTES: Record<string, UserRole[]> = {

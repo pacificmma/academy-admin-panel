@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation';
 import Button from '@/app/components/ui/Button';
 import Input from '@/app/components/ui/Input';
 import Alert from '@/app/components/ui/Alert';
-import { LoginCredentials } from '@/app/types/staff';
+import { LoginCredentials } from '@/app/types';
+
 
 export default function LoginForm() {
   const router = useRouter();
@@ -42,7 +43,7 @@ export default function LoginForm() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(formData),
-        credentials: 'include', // Bu önemli - cookie'ler için
+        credentials: 'include',
       });
 
       console.log('📥 Response status:', response.status);
@@ -80,13 +81,15 @@ export default function LoginForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-0">
       {error && (
-        <Alert
-          type="error"
-          message={error}
-          onClose={() => setError(null)}
-        />
+        <div className="mb-6">
+          <Alert
+            type="error"
+            message={error}
+            onClose={() => setError(null)}
+          />
+        </div>
       )}
 
       <Input
@@ -95,7 +98,7 @@ export default function LoginForm() {
         type="email"
         value={formData.email}
         onChange={(value) => handleChange('email', value)}
-        placeholder="Enter your email address"
+        placeholder="john.doe@company.com"
         required
         disabled={isLoading}
       />
@@ -106,7 +109,7 @@ export default function LoginForm() {
         type="password"
         value={formData.password}
         onChange={(value) => handleChange('password', value)}
-        placeholder="Enter your password"
+        placeholder="•••••••••"
         required
         disabled={isLoading}
       />
@@ -114,12 +117,12 @@ export default function LoginForm() {
       <Button
         type="submit"
         variant="primary"
-        size="lg"
+        size="md"
         loading={isLoading}
         disabled={!formData.email || !formData.password}
         className="w-full"
       >
-        {isLoading ? 'Signing In...' : 'SIGN IN'}
+        {isLoading ? 'SIGNING IN...' : 'SIGN IN'}
       </Button>
     </form>
   );

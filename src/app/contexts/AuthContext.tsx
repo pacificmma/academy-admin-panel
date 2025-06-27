@@ -3,7 +3,8 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { User, onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from '@/app/lib/firebase/config';
-import { SessionData } from '@/app/types/staff';
+import { SessionData } from '../types';
+
 
 interface AuthContextType {
   user: User | null;

@@ -17,35 +17,37 @@ export default async function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background-default flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        {/* Logo and Header */}
-        <div className="text-center">
-          <div className="mx-auto h-16 w-16 bg-primary-900 rounded-md flex items-center justify-center shadow-sharp">
-            <svg className="h-10 w-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
+    <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8" style={{ backgroundColor: '#EDEAE0' }}>
+      <div className="max-w-sm w-full">
+        {/* Main Login Card */}
+        <div className="bg-white rounded-lg shadow-lg p-8">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <h1 className="text-2xl font-bold mb-2" style={{ color: '#1A1A1A' }}>
+              PACIFIC MMA
+            </h1>
+            <p className="text-sm font-medium" style={{ color: '#555555' }}>
+              Admin Login
+            </p>
           </div>
-          <h2 className="mt-6 text-center text-3xl font-bold text-text-primary tracking-wide">
-            Pacific MMA Academy
-          </h2>
-          <p className="mt-2 text-center text-sm text-text-secondary font-medium">
-            Admin Panel
-          </p>
-        </div>
 
-        {/* Login Form */}
-        <div className="bg-background-paper rounded-md shadow-sharp p-8 border border-border-light">
-          <h3 className="text-xl font-semibold text-text-primary mb-6 text-center tracking-wide">
-            Sign in to your account
-          </h3>
-          
+          {/* Login Form */}
           <LoginForm />
+
+          {/* Footer Link */}
+          <div className="mt-6 text-center">
+            <p className="text-xs" style={{ color: '#555555' }}>
+              Having trouble signing in?{' '}
+              <span className="hover:underline cursor-pointer" style={{ color: '#004D61' }}>
+                Contact your administrator.
+              </span>
+            </p>
+          </div>
         </div>
 
-        {/* Footer */}
-        <div className="text-center">
-          <p className="text-xs text-text-muted">
+        {/* Copyright */}
+        <div className="text-center mt-6">
+          <p className="text-xs" style={{ color: '#555555' }}>
             © 2024 Pacific MMA Academy. All rights reserved.
           </p>
         </div>

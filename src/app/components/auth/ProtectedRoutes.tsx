@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/app/contexts/AuthContext';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase/config';
-import { UserRole } from '@/app/types/staff';
+import { UserRole } from '@/app/types';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;

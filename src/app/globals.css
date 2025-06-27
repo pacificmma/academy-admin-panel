@@ -1,85 +1,47 @@
 @import "tailwindcss";
 
 :root {
-  /* Pacific MMA Brand Colors - Updated */
-  --color-primary: #004D61;
-  --color-primary-50: #f0f8fa;
-  --color-primary-100: #daeef4;
-  --color-primary-200: #b9dde9;
-  --color-primary-300: #8ac8d9;
-  --color-primary-400: #5aafca;
-  --color-primary-500: #3587a7;
-  --color-primary-600: #2e6f8c;
-  --color-primary-700: #275a73;
-  --color-primary-800: #1f485a;
-  --color-primary-900: #004D61;
+  /* Pacific MMA Brand Colors - Matched to design */
+  --color-primary: #0F5C6B; /* Teal color from the design */
+  --color-primary-50: #f0fdfa;
+  --color-primary-100: #ccfbf1;
+  --color-primary-200: #99f6e4;
+  --color-primary-300: #5eead4;
+  --color-primary-400: #2dd4bf;
+  --color-primary-500: #14b8a6;
+  --color-primary-600: #0d9488;
+  --color-primary-700: #0f766e;
+  --color-primary-800: #115e59;
+  --color-primary-900: #134e4a;
 
-  /* Secondary colors - Muted earth tones */
-  --color-secondary: #b8ab94;
-  --color-secondary-50: #faf9f7;
-  --color-secondary-100: #f5f3ef;
-  --color-secondary-200: #ebe7de;
-  --color-secondary-300: #ddd6ca;
-  --color-secondary-400: #ccc2b0;
-  --color-secondary-500: #b8ab94;
-  --color-secondary-600: #a39278;
-  --color-secondary-700: #8b7862;
-  --color-secondary-800: #736251;
-  --color-secondary-900: #5d4f42;
-
-  /* Background colors - Updated to match design */
-  --color-background-default: #EDEAE0; /* Main background from image */
+  /* Background colors - Clean and minimal */
+  --color-background-default: #F7F7F7;
   --color-background-paper: #FFFFFF;
-  --color-background-light: #F5F3EE;
-  --color-background-dark: #E0DDD3;
-  --color-background-muted: #F8F6F1;
+  --color-background-light: #FAFAFA;
+  --color-background-dark: #F0F0F0;
+  --color-background-muted: #F8F8F8;
   
-  /* Text colors - High contrast */
-  --color-text-primary: #1A1A1A;
-  --color-text-secondary: #374151;
+  /* Text colors - Clean and readable */
+  --color-text-primary: #1F2937;
+  --color-text-secondary: #4B5563;
   --color-text-muted: #6B7280;
   --color-text-light: #9CA3AF;
 
   /* Status colors */
-  --color-success: #16a34a;
-  --color-success-50: #f0fdf4;
-  --color-success-100: #dcfce7;
-  --color-success-500: #16a34a;
-  --color-success-600: #15803d;
-  --color-success-700: #166534;
-
-  --color-warning: #d97706;
-  --color-warning-50: #fffbeb;
-  --color-warning-100: #fef3c7;
-  --color-warning-500: #d97706;
-  --color-warning-600: #b45309;
-  --color-warning-700: #92400e;
-
-  --color-error: #dc2626;
-  --color-error-50: #fdf2f2;
-  --color-error-100: #fde8e8;
-  --color-error-500: #dc2626;
-  --color-error-600: #b91c1c;
-  --color-error-700: #991b1b;
-
-  --color-info: #2563eb;
-  --color-info-50: #eff6ff;
-  --color-info-100: #dbeafe;
-  --color-info-500: #2563eb;
-  --color-info-600: #1d4ed8;
-  --color-info-700: #1e40af;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+  --color-info: #3b82f6;
 
   /* Border colors */
   --color-border-light: #E5E7EB;
   --color-border-medium: #D1D5DB;
   --color-border-dark: #9CA3AF;
 
-  /* Shadow system - Sharper, more defined */
-  --shadow-soft: 0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 1px 2px 0 rgba(0, 0, 0, 0.04);
-  --shadow-medium: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
-  --shadow-large: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
-  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 10px 10px -5px rgba(0, 0, 0, 0.03);
-  --shadow-sharp: 0 2px 8px 0 rgba(0, 77, 97, 0.12);
+  /* Shadow system */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 
   /* Next.js compatibility */
   --background: var(--color-background-default);
@@ -103,8 +65,8 @@ body {
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
-  line-height: 1.6;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -117,15 +79,15 @@ a {
 }
 
 a:hover {
-  color: var(--color-primary-700);
+  color: #0f766e;
 }
 
-/* Button focus styles - Sharp, defined focus */
+/* Focus styles */
 button:focus,
 input:focus,
 textarea:focus,
 select:focus {
-  outline: 2px solid var(--color-primary-500);
+  outline: 2px solid #14b8a6;
   outline-offset: 2px;
 }
 
@@ -136,62 +98,41 @@ select:focus {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--color-background-light);
+  background: #f1f5f9;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-primary-300);
-  border-radius: 2px; /* Minimal rounding */
+  background: #cbd5e1;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-primary-500);
+  background: #94a3b8;
 }
 
 /* Form input placeholders */
 ::placeholder {
-  color: var(--color-text-light);
+  color: #9ca3af;
   opacity: 1;
 }
 
 /* Selection styles */
 ::selection {
-  background-color: var(--color-primary-200);
-  color: var(--color-primary-900);
+  background-color: #ccfbf1;
+  color: #134e4a;
 }
 
-/* Custom utility classes */
-.shadow-soft {
-  box-shadow: var(--shadow-soft);
-}
-
-.shadow-medium {
-  box-shadow: var(--shadow-medium);
-}
-
-.shadow-large {
-  box-shadow: var(--shadow-large);
-}
-
-.shadow-xl {
-  box-shadow: var(--shadow-xl);
-}
-
-.shadow-sharp {
-  box-shadow: var(--shadow-sharp);
-}
-
-/* Animation classes - Faster, more snappy */
+/* Animation classes */
 .animate-fade-in {
-  animation: fadeIn 0.2s ease-out;
+  animation: fadeIn 0.3s ease-out;
 }
 
 .animate-slide-up {
-  animation: slideUp 0.2s ease-out;
+  animation: slideUp 0.3s ease-out;
 }
 
 .animate-slide-down {
-  animation: slideDown 0.2s ease-out;
+  animation: slideDown 0.3s ease-out;
 }
 
 @keyframes fadeIn {
@@ -206,7 +147,7 @@ select:focus {
 @keyframes slideUp {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
@@ -217,7 +158,7 @@ select:focus {
 @keyframes slideDown {
   from {
     opacity: 0;
-    transform: translateY(-8px);
+    transform: translateY(-10px);
   }
   to {
     opacity: 1;
@@ -227,64 +168,15 @@ select:focus {
 
 /* Loading spinner */
 .spinner {
-  border: 2px solid var(--color-primary-200);
-  border-top: 2px solid var(--color-primary-600);
-  border-radius: 4px; /* Minimal rounding */
+  border: 2px solid #e5e7eb;
+  border-top: 2px solid #14b8a6;
+  border-radius: 50%;
   animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
-}
-
-/* Sharp button styles */
-.btn-sharp {
-  border-radius: 4px;
-  transition: all 0.15s ease;
-  font-weight: 600;
-  letter-spacing: 0.025em;
-}
-
-.btn-sharp:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-medium);
-}
-
-.btn-sharp:active {
-  transform: translateY(0);
-  box-shadow: var(--shadow-soft);
-}
-
-/* Input styles - Sharp and defined */
-.input-sharp {
-  border-radius: 4px;
-  border: 2px solid var(--color-border-medium);
-  transition: all 0.15s ease;
-  background-color: var(--color-background-paper);
-}
-
-.input-sharp:focus {
-  border-color: var(--color-primary-500);
-  box-shadow: 0 0 0 3px rgba(0, 77, 97, 0.1);
-}
-
-.input-sharp:hover:not(:focus) {
-  border-color: var(--color-border-dark);
-}
-
-/* Card styles - Sharp and minimal */
-.card-sharp {
-  background: var(--color-background-paper);
-  border-radius: 6px;
-  border: 1px solid var(--color-border-light);
-  box-shadow: var(--shadow-soft);
-  transition: all 0.15s ease;
-}
-
-.card-sharp:hover {
-  box-shadow: var(--shadow-medium);
-  transform: translateY(-1px);
 }
 
 /* Print styles */
@@ -305,9 +197,27 @@ select:focus {
   }
 }
 
+/* Form styles to match the design */
+.form-input {
+  @apply w-full px-3 py-2 border border-gray-300 rounded-md text-sm placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition-colors duration-200;
+}
+
+.form-label {
+  @apply block text-sm font-medium text-gray-700 mb-1;
+}
+
+.btn-primary {
+  @apply bg-teal-700 hover:bg-teal-800 text-white font-bold py-3 px-6 rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2;
+}
+
+.card {
+  @apply bg-white rounded-lg shadow-lg border border-gray-200;
+}
+
 /* Responsive design helpers */
 @media (max-width: 640px) {
-  .shadow-sharp {
-    box-shadow: var(--shadow-soft);
+  .container {
+    padding-left: 1rem;
+    padding-right: 1rem;
   }
 }
