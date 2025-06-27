@@ -9,8 +9,15 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
     "@headlessui/react": "^2.2.4",
     "@hookform/resolvers": "^5.1.1",
+    "@mui/icons-material": "^6.4.12",
+    "@mui/material": "^6.4.12",
+    "@mui/system": "^6.4.12",
+    "@mui/x-data-grid": "^7.29.7",
+    "@mui/x-date-pickers": "^7.29.4",
     "clsx": "^2.1.1",
     "firebase": "^11.9.1",
     "firebase-admin": "^13.4.0",

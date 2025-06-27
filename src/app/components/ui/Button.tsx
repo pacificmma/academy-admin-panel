@@ -1,89 +1,154 @@
 // src/app/components/ui/Button.tsx
 import React from 'react';
-import { Loader2 } from 'lucide-react';
-import { cn } from '@/app/lib/utils';
-import { ButtonProps } from '@/app/types';
+import {
+  Button as MuiButton,
+  ButtonProps as MuiButtonProps,
+  CircularProgress,
+  Box,
+} from '@mui/material';
 
+export interface ButtonProps extends Omit<MuiButtonProps, 'variant' | 'size'> {
+  children: React.ReactNode;
+  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' | 'success' | 'warning';
+  size?: 'sm' | 'md' | 'lg';
+  loading?: boolean;
+  onClick?: () => void;
+  type?: 'button' | 'submit' | 'reset';
+}
 
 const Button: React.FC<ButtonProps> = ({
   children,
   variant = 'primary',
   size = 'md',
-  disabled = false,
   loading = false,
+  disabled = false,
   onClick,
   type = 'button',
-  className,
+  sx,
   ...props
 }) => {
-  const getButtonClasses = () => {
-    const baseClasses = 'font-medium rounded-lg text-sm focus:ring-4 focus:outline-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center';
-    
-    const variantClasses = {
-      primary: 'text-white bg-blue-700 hover:bg-blue-800 focus:ring-blue-300 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800',
-      secondary: 'text-gray-900 bg-white border border-gray-200 hover:bg-gray-100 hover:text-blue-700 focus:ring-gray-100 dark:focus:ring-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700',
-      success: 'text-white bg-green-700 hover:bg-green-800 focus:ring-green-300 dark:bg-green-600 dark:hover:bg-green-700 dark:focus:ring-green-800',
-      danger: 'text-white bg-red-700 hover:bg-red-800 focus:ring-red-300 dark:bg-red-600 dark:hover:bg-red-700 dark:focus:ring-red-900',
-      warning: 'text-white bg-yellow-400 hover:bg-yellow-500 focus:ring-yellow-300 dark:focus:ring-yellow-900',
-      outline: 'text-blue-700 hover:text-white border border-blue-700 hover:bg-blue-800 focus:ring-blue-300 dark:border-blue-500 dark:text-blue-500 dark:hover:text-white dark:hover:bg-blue-500 dark:focus:ring-blue-800',
-      ghost: 'text-blue-700 hover:bg-blue-50 focus:ring-blue-300 dark:text-blue-500 dark:hover:bg-blue-900/20 dark:focus:ring-blue-800',
-    };
-
-    const sizeClasses = {
-      sm: 'px-3 py-2 text-xs',
-      md: 'px-5 py-2.5 text-sm',
-      lg: 'px-5 py-3 text-base',
-    };
-
-    return cn(
-      baseClasses,
-      variantClasses[variant],
-      sizeClasses[size],
-      className
-    );
-  };
-
-  // Override primary variant to use Pacific MMA colors
-  const getPrimaryStyle = () => {
-    if (variant === 'primary') {
-      return {
-        backgroundColor: disabled || loading ? '#9ca3af' : '#004D61',
-        borderColor: disabled || loading ? '#9ca3af' : '#004D61',
-      };
-    }
-    return {};
-  };
-
-  const handleMouseEnter = (e: React.MouseEvent<HTMLButtonElement>) => {
-    if (variant === 'primary' && !disabled && !loading) {
-      e.currentTarget.style.backgroundColor = '#003a4a';
+  
+  // Variant mapping
+  const getVariantProps = () => {
+    switch (variant) {
+      case 'primary':
+        return { variant: 'contained' as const, color: 'primary' as const };
+      case 'secondary':
+        return { variant: 'contained' as const, color: 'secondary' as const };
+      case 'outline':
+        return { variant: 'outlined' as const, color: 'primary' as const };
+      case 'ghost':
+        return { variant: 'text' as const, color: 'primary' as const };
+      case 'danger':
+        return { variant: 'contained' as const, color: 'error' as const };
+      case 'success':
+        return { variant: 'contained' as const, color: 'success' as const };
+      case 'warning':
+        return { variant: 'contained' as const, color: 'warning' as const };
+      default:
+        return { variant: 'contained' as const, color: 'primary' as const };
     }
   };
 
-  const handleMouseLeave = (e: React.MouseEvent<HTMLButtonElement>) => {
-    if (variant === 'primary' && !disabled && !loading) {
-      e.currentTarget.style.backgroundColor = '#004D61';
+  // Size mapping
+  const getMuiSize = () => {
+    switch (size) {
+      case 'sm':
+        return 'small' as const;
+      case 'lg':
+        return 'large' as const;
+      default:
+        return 'medium' as const;
     }
   };
+
+  // Custom size styles
+  const getSizeStyles = () => {
+    switch (size) {
+      case 'sm':
+        return {
+          fontSize: '0.875rem',
+          padding: '6px 16px',
+          minHeight: '32px',
+        };
+      case 'lg':
+        return {
+          fontSize: '1.125rem',
+          padding: '12px 24px',
+          minHeight: '48px',
+        };
+      default:
+        return {
+          fontSize: '1rem',
+          padding: '10px 20px',
+          minHeight: '40px',
+        };
+    }
+  };
+
+  const variantProps = getVariantProps();
+  const muiSize = getMuiSize();
+  const sizeStyles = getSizeStyles();
 
   const isDisabled = disabled || loading;
 
   return (
-    <button
+    <MuiButton
+      {...variantProps}
+      size={muiSize}
       type={type}
-      className={getButtonClasses()}
       disabled={isDisabled}
       onClick={onClick}
-      style={getPrimaryStyle()}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
+      sx={{
+        ...sizeStyles,
+        fontWeight: 600,
+        borderRadius: 2,
+        textTransform: 'none',
+        boxShadow: 'none',
+        position: 'relative',
+        '&:hover': {
+          boxShadow: variant === 'ghost' ? 'none' : '0 4px 8px rgba(0, 77, 97, 0.15)',
+          transform: variant === 'ghost' ? 'none' : 'translateY(-1px)',
+        },
+        '&.Mui-disabled': {
+          opacity: 0.6,
+          cursor: 'not-allowed',
+        },
+        transition: 'all 0.2s ease-in-out',
+        ...sx,
+      }}
       {...props}
     >
       {loading && (
-        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+        <Box
+          sx={{
+            position: 'absolute',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            left: 0,
+            right: 0,
+            top: 0,
+            bottom: 0,
+          }}
+        >
+          <CircularProgress
+            size={size === 'sm' ? 16 : size === 'lg' ? 24 : 20}
+            color="inherit"
+          />
+        </Box>
       )}
-      {children}
-    </button>
+      <Box
+        sx={{
+          opacity: loading ? 0 : 1,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+        }}
+      >
+        {children}
+      </Box>
+    </MuiButton>
   );
 };
 

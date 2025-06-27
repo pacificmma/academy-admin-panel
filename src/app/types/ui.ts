@@ -1,4 +1,4 @@
-// src/app/types/ui.ts - UI component types
+// src/app/types/ui.ts - Updated UI component types
 
 import { ReactNode, ComponentType } from 'react';
 
@@ -14,18 +14,29 @@ export interface ButtonProps {
   className?: string;
 }
 
-// Input component types
-export interface InputProps {
-  label: string;
+// Enhanced Input component types
+export interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'size'> {
+  label?: string;
   name: string;
-  type?: string;
+  type?: 'text' | 'email' | 'password' | 'number' | 'tel' | 'url' | 'search';
   value: string;
   onChange: (value: string) => void;
   error?: string;
+  helperText?: string;
   required?: boolean;
   placeholder?: string;
   disabled?: boolean;
   className?: string;
+  inputClassName?: string;
+  labelClassName?: string;
+  leftIcon?: React.ReactNode;
+  rightIcon?: React.ReactNode;
+  size?: 'sm' | 'md' | 'lg';
+  variant?: 'default' | 'outlined' | 'filled';
+  autoComplete?: string;
+  maxLength?: number;
+  showCharacterCount?: boolean;
+  fullWidth?: boolean;
 }
 
 // Select component types
