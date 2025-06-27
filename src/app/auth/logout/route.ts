@@ -1,10 +1,9 @@
-// src/app/api/auth/logout/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { clearSessionCookie } from '@/app/lib/auth/session';
 
 export async function POST(request: NextRequest) {
   try {
-    // Create response
+    // Create response with cleared session cookie
     const response = NextResponse.json({
       success: true,
       message: 'Logged out successfully',
@@ -14,11 +13,11 @@ export async function POST(request: NextRequest) {
     response.headers.set('Set-Cookie', clearSessionCookie());
 
     return response;
-    
+
   } catch (error) {
     console.error('Logout error:', error);
     return NextResponse.json(
-      { error: 'Logout failed' },
+      { error: 'Failed to logout' },
       { status: 500 }
     );
   }

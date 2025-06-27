@@ -1,11 +1,9 @@
-// src/app/api/auth/login/route.ts - Authentication API
+// src/app/api/auth/login/route.ts - Improved Authentication API
 import { NextRequest, NextResponse } from 'next/server';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
 import { adminDb } from '@/app/lib/firebase/admin';
 import { createSession, setSessionCookie } from '@/app/lib/auth/session';
 import { auth } from '@/app/lib/firebase/config';
-
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,25 +12,94 @@ export async function POST(request: NextRequest) {
     // Validate input
     if (!email || !password) {
       return NextResponse.json(
-        { error: 'Email and password are required' },
+        { 
+          success: false,
+          error: 'Email and password are required' 
+        },
         { status: 400 }
       );
     }
 
-    // Authenticate with Firebase
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    const user = userCredential.user;
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'Please enter a valid email address' 
+        },
+        { status: 400 }
+      );
+    }
+
+    let user;
+    try {
+      // Authenticate with Firebase
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      user = userCredential.user;
+    } catch (authError: any) {
+      console.error('Firebase auth error:', authError);
+      
+      let errorMessage = 'Login failed';
+      
+      switch (authError.code) {
+        case 'auth/user-not-found':
+          errorMessage = 'No account found with this email address';
+          break;
+        case 'auth/wrong-password':
+          errorMessage = 'Incorrect password';
+          break;
+        case 'auth/invalid-email':
+          errorMessage = 'Invalid email address';
+          break;
+        case 'auth/too-many-requests':
+          errorMessage = 'Too many failed attempts. Please try again later';
+          break;
+        case 'auth/user-disabled':
+          errorMessage = 'This account has been disabled';
+          break;
+        case 'auth/invalid-credential':
+          errorMessage = 'Invalid email or password';
+          break;
+        default:
+          errorMessage = 'Authentication failed. Please check your credentials';
+      }
+
+      return NextResponse.json(
+        { 
+          success: false,
+          error: errorMessage 
+        },
+        { status: 401 }
+      );
+    }
 
     // Check if user exists in staff collection using Admin SDK
-    const staffDocRef = adminDb.collection('staff').doc(user.uid);
-    const staffDoc = await staffDocRef.get();
+    let staffDoc;
+    try {
+      const staffDocRef = adminDb.collection('staff').doc(user.uid);
+      staffDoc = await staffDocRef.get();
+    } catch (dbError) {
+      console.error('Database error:', dbError);
+      await auth.signOut();
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'Database connection error. Please try again' 
+        },
+        { status: 500 }
+      );
+    }
 
     if (!staffDoc.exists) {
       // Sign out the user since they're not authorized
       await auth.signOut();
       return NextResponse.json(
-        { error: 'User not found in staff directory' },
-        { status: 404 }
+        { 
+          success: false,
+          error: 'Access denied. You are not authorized to use this system' 
+        },
+        { status: 403 }
       );
     }
 
@@ -42,8 +109,23 @@ export async function POST(request: NextRequest) {
     if (!staffData?.isActive) {
       await auth.signOut();
       return NextResponse.json(
-        { error: 'Account has been deactivated. Please contact your administrator.' },
+        { 
+          success: false,
+          error: 'Your account has been deactivated. Please contact your administrator' 
+        },
         { status: 403 }
+      );
+    }
+
+    // Validate required fields
+    if (!staffData.role || !staffData.fullName) {
+      await auth.signOut();
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'Account setup incomplete. Please contact your administrator' 
+        },
+        { status: 422 }
       );
     }
 
@@ -56,11 +138,25 @@ export async function POST(request: NextRequest) {
       isActive: staffData.isActive,
     };
 
-    const sessionToken = await createSession(sessionData);
+    let sessionToken;
+    try {
+      sessionToken = await createSession(sessionData);
+    } catch (sessionError) {
+      console.error('Session creation error:', sessionError);
+      await auth.signOut();
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'Failed to create session. Please try again' 
+        },
+        { status: 500 }
+      );
+    }
 
     // Create response with session cookie
     const response = NextResponse.json({
       success: true,
+      message: 'Login successful',
       user: {
         uid: user.uid,
         email: user.email,
@@ -75,26 +171,14 @@ export async function POST(request: NextRequest) {
     return response;
 
   } catch (error: any) {
-    console.error('Login error:', error);
+    console.error('Unexpected login error:', error);
     
-    // Handle specific Firebase errors
-    let errorMessage = 'Login failed';
-    
-    if (error.code === 'auth/user-not-found') {
-      errorMessage = 'No account found with this email address';
-    } else if (error.code === 'auth/wrong-password') {
-      errorMessage = 'Incorrect password';
-    } else if (error.code === 'auth/invalid-email') {
-      errorMessage = 'Invalid email address';
-    } else if (error.code === 'auth/too-many-requests') {
-      errorMessage = 'Too many failed attempts. Please try again later';
-    } else if (error.code === 'auth/user-disabled') {
-      errorMessage = 'This account has been disabled';
-    }
-
     return NextResponse.json(
-      { error: errorMessage },
-      { status: 401 }
+      { 
+        success: false,
+        error: 'An unexpected error occurred. Please try again' 
+      },
+      { status: 500 }
     );
   }
 }
