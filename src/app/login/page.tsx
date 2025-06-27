@@ -1,183 +1,55 @@
-// src/app/classes/page.tsx - Updated with sharp design
+// src/app/login/page.tsx
 import { getServerSession } from '@/app/lib/auth/session';
 import { redirect } from 'next/navigation';
-import LogoutButton from '../components/ui/LogoutButton';
+import LoginForm from '@/app/components/forms/LoginForm';
 
-export default async function ClassesPage() {
-    // Check authentication
-    const session = await getServerSession();
-
-    if (!session?.isActive) {
-        redirect('/login');
+export default async function LoginPage() {
+  // Check if user is already logged in
+  const session = await getServerSession();
+  
+  if (session?.isActive) {
+    // Redirect based on user role
+    if (session.role === 'admin') {
+      redirect('/dashboard');
+    } else {
+      redirect('/classes');
     }
+  }
 
-    return (
-        <div className="min-h-screen bg-background-default">
-            {/* Header */}
-            <header className="bg-background-paper shadow-sharp border-b-2 border-border-light">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div className="flex justify-between items-center py-6">
-                        <div className="flex items-center">
-                            <h1 className="text-3xl font-bold text-primary-900 tracking-wide">
-                                Pacific MMA Classes
-                            </h1>
-                        </div>
-
-                        <div className="flex items-center space-x-4">
-                            <div className="text-sm text-text-secondary">
-                                Welcome, <span className="font-semibold text-text-primary">{session.fullName}</span>
-                                <span className="ml-2 px-2 py-1 text-xs bg-primary-100 text-primary-900 rounded border border-primary-200 font-semibold tracking-wide">
-                                    {session.role.toUpperCase()}
-                                </span>
-                            </div>
-
-                            {session.role === 'admin' && (
-                                <a
-                                    href="/dashboard"
-                                    className="inline-flex items-center px-4 py-2 border-2 border-primary-900 text-sm font-semibold rounded text-primary-900 bg-background-paper hover:bg-primary-900 hover:text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-all duration-150 shadow-soft hover:shadow-medium hover:-translate-y-0.5 active:translate-y-0"
-                                >
-                                    Dashboard
-                                </a>
-                            )}
-
-                            <LogoutButton className="inline-flex items-center px-4 py-2 border-2 border-primary-900 text-sm font-semibold rounded text-white bg-primary-900 hover:bg-primary-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-all duration-150 shadow-sharp hover:shadow-medium hover:-translate-y-0.5 active:translate-y-0">
-                                Logout
-                            </LogoutButton>
-                        </div>
-                    </div>
-                </div>
-            </header>
-
-            {/* Navigation */}
-            <nav className="bg-background-paper border-b-2 border-border-light">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div className="flex space-x-8">
-                        <a
-                            href="/classes"
-                            className="border-primary-500 text-primary-900 whitespace-nowrap py-4 px-1 border-b-2 font-semibold text-sm tracking-wide"
-                        >
-                            All Classes
-                        </a>
-
-                        {(session.role === 'trainer' || session.role === 'staff') && (
-                            <a
-                                href="/my-schedule"
-                                className="border-transparent text-text-secondary hover:text-text-primary hover:border-border-dark whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-150"
-                            >
-                                My Schedule
-                            </a>
-                        )}
-
-                        {session.role === 'admin' && (
-                            <>
-                                <a
-                                    href="/staff"
-                                    className="border-transparent text-text-secondary hover:text-text-primary hover:border-border-dark whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-150"
-                                >
-                                    Staff
-                                </a>
-
-                                <a
-                                    href="/members"
-                                    className="border-transparent text-text-secondary hover:text-text-primary hover:border-border-dark whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-150"
-                                >
-                                    Members
-                                </a>
-
-                                <a
-                                    href="/memberships"
-                                    className="border-transparent text-text-secondary hover:text-text-primary hover:border-border-dark whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-150"
-                                >
-                                    Memberships
-                                </a>
-                            </>
-                        )}
-                    </div>
-                </div>
-            </nav>
-
-            {/* Main Content */}
-            <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-                <div className="px-4 py-6 sm:px-0">
-                    {/* Welcome Section */}
-                    <div className="bg-background-paper rounded-md shadow-sharp p-6 mb-8 border border-border-light">
-                        <h2 className="text-2xl font-bold text-text-primary mb-2 tracking-wide">
-                            Class Management
-                        </h2>
-                        <p className="text-text-secondary font-medium">
-                            {session.role === 'admin'
-                                ? 'Manage all classes, schedules, and instructors.'
-                                : session.role === 'trainer'
-                                    ? 'View and manage your assigned classes.'
-                                    : 'View class schedules and information.'
-                            }
-                        </p>
-                    </div>
-
-                    {/* Today's Classes */}
-                    <div className="bg-background-paper rounded-md shadow-sharp p-6 mb-8 border border-border-light">
-                        <h3 className="text-lg font-semibold text-text-primary mb-4 tracking-wide">
-                            Today's Classes
-                        </h3>
-
-                        <div className="text-center py-12">
-                            <svg className="mx-auto h-12 w-12 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                            <h3 className="mt-2 text-sm font-semibold text-text-primary">No classes scheduled</h3>
-                            <p className="mt-1 text-sm text-text-secondary">
-                                Classes will appear here when they are scheduled.
-                            </p>
-
-                            {session.role === 'admin' && (
-                                <div className="mt-6">
-                                    <button
-                                        type="button"
-                                        className="inline-flex items-center px-4 py-2 border-2 border-primary-900 shadow-sharp text-sm font-semibold rounded text-white bg-primary-900 hover:bg-primary-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-all duration-150 hover:shadow-medium hover:-translate-y-0.5 active:translate-y-0"
-                                    >
-                                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                                        </svg>
-                                        Add New Class
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Weekly Schedule */}
-                    <div className="bg-background-paper rounded-md shadow-sharp p-6 border border-border-light">
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-semibold text-text-primary tracking-wide">
-                                Weekly Schedule
-                            </h3>
-
-                            {session.role === 'admin' && (
-                                <button
-                                    type="button"
-                                    className="inline-flex items-center px-3 py-2 border-2 border-border-medium shadow-soft text-sm font-medium rounded text-text-primary bg-background-paper hover:bg-background-muted hover:border-border-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-all duration-150 hover:shadow-medium hover:-translate-y-0.5 active:translate-y-0"
-                                >
-                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    </svg>
-                                    Manage Schedule
-                                </button>
-                            )}
-                        </div>
-
-                        <div className="text-center py-12">
-                            <svg className="mx-auto h-12 w-12 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                            </svg>
-                            <h3 className="mt-2 text-sm font-semibold text-text-primary">No schedule configured</h3>
-                            <p className="mt-1 text-sm text-text-secondary">
-                                Weekly class schedule will be displayed here once configured.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </main>
+  return (
+    <div className="min-h-screen bg-background-default flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8">
+        {/* Logo and Header */}
+        <div className="text-center">
+          <div className="mx-auto h-16 w-16 bg-primary-900 rounded-md flex items-center justify-center shadow-sharp">
+            <svg className="h-10 w-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </div>
+          <h2 className="mt-6 text-center text-3xl font-bold text-text-primary tracking-wide">
+            Pacific MMA Academy
+          </h2>
+          <p className="mt-2 text-center text-sm text-text-secondary font-medium">
+            Admin Panel
+          </p>
         </div>
-    );
+
+        {/* Login Form */}
+        <div className="bg-background-paper rounded-md shadow-sharp p-8 border border-border-light">
+          <h3 className="text-xl font-semibold text-text-primary mb-6 text-center tracking-wide">
+            Sign in to your account
+          </h3>
+          
+          <LoginForm />
+        </div>
+
+        {/* Footer */}
+        <div className="text-center">
+          <p className="text-xs text-text-muted">
+            © 2024 Pacific MMA Academy. All rights reserved.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 }

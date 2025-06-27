@@ -121,15 +121,6 @@ export default function LoginForm() {
       >
         {isLoading ? 'Signing In...' : 'SIGN IN'}
       </Button>
-
-      {/* Debug info */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="mt-4 p-2 bg-gray-100 rounded text-xs">
-          <p><strong>Debug Info:</strong></p>
-          <p>API URL: /api/auth/login</p>
-          <p>Environment: {process.env.NODE_ENV}</p>
-        </div>
-      )}
     </form>
   );
 }
