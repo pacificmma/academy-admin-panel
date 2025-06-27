@@ -1,6 +1,7 @@
 // src/app/dashboard/page.tsx
 import { getServerSession } from '@/app/lib/auth/session';
 import { redirect } from 'next/navigation';
+import LogoutButton from '../components/ui/LogoutButton';
 
 export default async function DashboardPage() {
   // Check authentication
@@ -32,14 +33,9 @@ export default async function DashboardPage() {
                 Welcome, <span className="font-medium text-text-primary">{session.fullName}</span>
               </div>
               
-              <form action="/api/auth/logout" method="POST">
-                <button
-                  type="submit"
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-                >
-                  Logout
-                </button>
-              </form>
+              <LogoutButton className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
+                Logout
+              </LogoutButton>
             </div>
           </div>
         </div>
