@@ -55,15 +55,15 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
 
 // UI Component types
 export interface ButtonProps {
-  children: React.ReactNode;
-  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
-  size?: 'sm' | 'md' | 'lg';
-  disabled?: boolean;
-  loading?: boolean;
-  onClick?: () => void;
-  type?: 'button' | 'submit' | 'reset';
-  className?: string;
-}
+    children: React.ReactNode;
+    variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' | 'success' | 'warning';
+    size?: 'sm' | 'md' | 'lg';
+    disabled?: boolean;
+    loading?: boolean;
+    onClick?: () => void;
+    type?: 'button' | 'submit' | 'reset';
+    className?: string;
+  }
 
 export interface InputProps {
   label: string;

@@ -1,4 +1,4 @@
-// src/lib/utils.ts - Utility functions
+// src/app/lib/utils.ts - Utility functions
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -132,13 +132,13 @@ export function formatPercentage(value: number, decimals = 0): string {
 }
 
 // Object utilities
-export function omit<T, K extends keyof T>(obj: T, keys: K[]): Omit<T, K> {
+export function omit<T extends object, K extends keyof T>(obj: T, keys: K[]): Omit<T, K> {
   const result = { ...obj };
   keys.forEach(key => delete result[key]);
   return result;
 }
 
-export function pick<T, K extends keyof T>(obj: T, keys: K[]): Pick<T, K> {
+export function pick<T extends object, K extends keyof T>(obj: T, keys: K[]): Pick<T, K> {
   const result = {} as Pick<T, K>;
   keys.forEach(key => {
     if (key in obj) {
