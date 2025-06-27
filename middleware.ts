@@ -13,7 +13,7 @@ const PROTECTED_ROUTES: Record<string, UserRole[]> = {
   '/my-schedule': ['trainer', 'staff'],
 };
 
-const PUBLIC_ROUTES = ['/login', '/api/auth/login']; // Burası değişti
+const PUBLIC_ROUTES = ['/login', '/api/auth/login'];
 const PROTECTED_API_ROUTES = ['/api/staff', '/api/classes', '/api/members'];
 
 export async function middleware(request: NextRequest) {

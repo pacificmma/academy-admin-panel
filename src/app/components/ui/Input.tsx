@@ -1,4 +1,4 @@
-// src/app/components/ui/Input.tsx
+// src/app/components/ui/Input.tsx - Updated with sharp design
 import React from 'react';
 import { cn } from '@/app/lib/utils';
 import { InputProps } from '@/app/types/staff';
@@ -25,10 +25,10 @@ const Input: React.FC<InputProps> = ({
       {label && (
         <label 
           htmlFor={name}
-          className="block text-sm font-medium text-gray-700"
+          className="block text-sm font-semibold text-text-primary tracking-wide"
         >
           {label}
-          {required && <span className="text-red-500 ml-1">*</span>}
+          {required && <span className="text-error-500 ml-1">*</span>}
         </label>
       )}
       
@@ -42,18 +42,22 @@ const Input: React.FC<InputProps> = ({
         disabled={disabled}
         required={required}
         className={cn(
-          'w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200',
-          'text-gray-900 placeholder-gray-500',
-          'disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed',
-          error && 'border-red-500 focus:ring-red-500',
-          !error && 'hover:border-gray-400'
+          'w-full px-4 py-3 rounded border-2 transition-all duration-150',
+          'text-text-primary placeholder-text-light font-medium',
+          'bg-background-paper',
+          'focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
+          'disabled:bg-background-muted disabled:text-text-muted disabled:cursor-not-allowed disabled:border-border-light',
+          error 
+            ? 'border-error-500 focus:ring-error-500/20 focus:border-error-600' 
+            : 'border-border-medium hover:border-border-dark',
+          !error && !disabled && 'hover:border-border-dark'
         )}
         {...props}
       />
       
       {error && (
-        <p className="text-sm text-red-600 flex items-center">
-          <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+        <div className="flex items-center text-sm text-error-600 font-medium">
+          <svg className="w-4 h-4 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
             <path
               fillRule="evenodd"
               d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
@@ -61,7 +65,7 @@ const Input: React.FC<InputProps> = ({
             />
           </svg>
           {error}
-        </p>
+        </div>
       )}
     </div>
   );
