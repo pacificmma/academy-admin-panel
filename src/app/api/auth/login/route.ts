@@ -1,16 +1,36 @@
-// src/app/api/auth/login/route.ts - Improved Authentication API
+// src/app/api/auth/login/route.ts - TypeScript Fixed
 import { NextRequest, NextResponse } from 'next/server';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { adminDb } from '@/app/lib/firebase/admin';
-import { createSession, setSessionCookie } from '@/app/lib/auth/session';
-import { auth } from '@/app/lib/firebase/config';
 
 export async function POST(request: NextRequest) {
+  console.log('🚀 API Route /api/auth/login called');
+  
   try {
-    const { email, password } = await request.json();
+    // Environment variables check
+    console.log('🔍 Environment Variables Check:');
+    console.log('NEXTAUTH_SECRET:', process.env.NEXTAUTH_SECRET ? '✅ SET' : '❌ MISSING');
+    console.log('FIREBASE_PROJECT_ID:', process.env.FIREBASE_PROJECT_ID ? '✅ SET' : '❌ MISSING');
+    console.log('FIREBASE_CLIENT_EMAIL:', process.env.FIREBASE_CLIENT_EMAIL ? '✅ SET' : '❌ MISSING');
+    console.log('FIREBASE_PRIVATE_KEY:', process.env.FIREBASE_PRIVATE_KEY ? '✅ SET (length: ' + (process.env.FIREBASE_PRIVATE_KEY?.length || 0) + ')' : '❌ MISSING');
+    console.log('NEXT_PUBLIC_FIREBASE_API_KEY:', process.env.NEXT_PUBLIC_FIREBASE_API_KEY ? '✅ SET' : '❌ MISSING');
+
+    // Parse request body
+    let body;
+    try {
+      body = await request.json();
+      console.log('📥 Request body parsed:', { email: body.email, password: '***' });
+    } catch (parseError: unknown) {
+      console.error('❌ Failed to parse request body:', parseError);
+      return NextResponse.json(
+        { success: false, error: 'Invalid request body' },
+        { status: 400 }
+      );
+    }
+
+    const { email, password } = body;
 
     // Validate input
     if (!email || !password) {
+      console.log('❌ Missing email or password');
       return NextResponse.json(
         { 
           success: false,
@@ -23,6 +43,7 @@ export async function POST(request: NextRequest) {
     // Basic email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
+      console.log('❌ Invalid email format:', email);
       return NextResponse.json(
         { 
           success: false,
@@ -32,37 +53,84 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    console.log('✅ Basic validation passed');
+
+    // Try to import Firebase modules
+    let signInWithEmailAndPassword, auth, adminDb, createSession, setSessionCookie;
+    
+    try {
+      console.log('📦 Importing Firebase Auth...');
+      const firebaseAuth = await import('firebase/auth');
+      signInWithEmailAndPassword = firebaseAuth.signInWithEmailAndPassword;
+      console.log('✅ Firebase Auth imported');
+
+      console.log('📦 Importing Firebase config...');
+      const firebaseConfig = await import('@/app/lib/firebase/config');
+      auth = firebaseConfig.auth;
+      console.log('✅ Firebase config imported');
+
+      console.log('📦 Importing Firebase Admin...');
+      const firebaseAdmin = await import('@/app/lib/firebase/admin');
+      adminDb = firebaseAdmin.adminDb;
+      console.log('✅ Firebase Admin imported');
+
+      console.log('📦 Importing session utils...');
+      const sessionUtils = await import('@/app/lib/auth/session');
+      createSession = sessionUtils.createSession;
+      setSessionCookie = sessionUtils.setSessionCookie;
+      console.log('✅ Session utils imported');
+
+    } catch (importError: unknown) {
+      const errorMessage = importError instanceof Error ? importError.message : 'Unknown import error';
+      console.error('❌ Failed to import modules:', importError);
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'Server configuration error: ' + errorMessage 
+        },
+        { status: 500 }
+      );
+    }
+
+    // Try Firebase authentication
     let user;
     try {
-      // Authenticate with Firebase
+      console.log('🔐 Attempting Firebase authentication...');
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       user = userCredential.user;
-    } catch (authError: any) {
-      console.error('Firebase auth error:', authError);
+      console.log('✅ Firebase authentication successful:', user.uid);
+    } catch (authError: unknown) {
+      console.error('❌ Firebase auth error:', authError);
       
       let errorMessage = 'Login failed';
       
-      switch (authError.code) {
-        case 'auth/user-not-found':
-          errorMessage = 'No account found with this email address';
-          break;
-        case 'auth/wrong-password':
-          errorMessage = 'Incorrect password';
-          break;
-        case 'auth/invalid-email':
-          errorMessage = 'Invalid email address';
-          break;
-        case 'auth/too-many-requests':
-          errorMessage = 'Too many failed attempts. Please try again later';
-          break;
-        case 'auth/user-disabled':
-          errorMessage = 'This account has been disabled';
-          break;
-        case 'auth/invalid-credential':
-          errorMessage = 'Invalid email or password';
-          break;
-        default:
-          errorMessage = 'Authentication failed. Please check your credentials';
+      if (authError && typeof authError === 'object' && 'code' in authError) {
+        const firebaseError = authError as { code: string; message: string };
+        
+        switch (firebaseError.code) {
+          case 'auth/user-not-found':
+            errorMessage = 'No account found with this email address';
+            break;
+          case 'auth/wrong-password':
+            errorMessage = 'Incorrect password';
+            break;
+          case 'auth/invalid-email':
+            errorMessage = 'Invalid email address';
+            break;
+          case 'auth/too-many-requests':
+            errorMessage = 'Too many failed attempts. Please try again later';
+            break;
+          case 'auth/user-disabled':
+            errorMessage = 'This account has been disabled';
+            break;
+          case 'auth/invalid-credential':
+            errorMessage = 'Invalid email or password';
+            break;
+          default:
+            errorMessage = 'Authentication failed: ' + firebaseError.message;
+        }
+      } else if (authError instanceof Error) {
+        errorMessage = 'Authentication failed: ' + authError.message;
       }
 
       return NextResponse.json(
@@ -74,25 +142,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if user exists in staff collection using Admin SDK
+    // Check staff collection
     let staffDoc;
     try {
+      console.log('📄 Checking staff collection for user:', user.uid);
       const staffDocRef = adminDb.collection('staff').doc(user.uid);
       staffDoc = await staffDocRef.get();
-    } catch (dbError) {
-      console.error('Database error:', dbError);
+      console.log('📄 Staff doc exists:', staffDoc.exists);
+    } catch (dbError: unknown) {
+      const errorMessage = dbError instanceof Error ? dbError.message : 'Unknown database error';
+      console.error('❌ Database error:', dbError);
       await auth.signOut();
       return NextResponse.json(
         { 
           success: false,
-          error: 'Database connection error. Please try again' 
+          error: 'Database connection error: ' + errorMessage 
         },
         { status: 500 }
       );
     }
 
     if (!staffDoc.exists) {
-      // Sign out the user since they're not authorized
+      console.log('❌ User not found in staff collection');
       await auth.signOut();
       return NextResponse.json(
         { 
@@ -104,9 +175,11 @@ export async function POST(request: NextRequest) {
     }
 
     const staffData = staffDoc.data();
+    console.log('📄 Staff data:', { ...staffData, password: undefined });
 
     // Check if user is active
     if (!staffData?.isActive) {
+      console.log('❌ User account is inactive');
       await auth.signOut();
       return NextResponse.json(
         { 
@@ -119,6 +192,7 @@ export async function POST(request: NextRequest) {
 
     // Validate required fields
     if (!staffData.role || !staffData.fullName) {
+      console.log('❌ Incomplete staff data');
       await auth.signOut();
       return NextResponse.json(
         { 
@@ -140,14 +214,17 @@ export async function POST(request: NextRequest) {
 
     let sessionToken;
     try {
+      console.log('🎫 Creating session...');
       sessionToken = await createSession(sessionData);
-    } catch (sessionError) {
-      console.error('Session creation error:', sessionError);
+      console.log('✅ Session created successfully');
+    } catch (sessionError: unknown) {
+      const errorMessage = sessionError instanceof Error ? sessionError.message : 'Unknown session error';
+      console.error('❌ Session creation error:', sessionError);
       await auth.signOut();
       return NextResponse.json(
         { 
           success: false,
-          error: 'Failed to create session. Please try again' 
+          error: 'Failed to create session: ' + errorMessage 
         },
         { status: 500 }
       );
@@ -167,16 +244,21 @@ export async function POST(request: NextRequest) {
 
     // Set HTTP-only cookie
     response.headers.set('Set-Cookie', setSessionCookie(sessionToken));
+    console.log('✅ Login process completed successfully');
 
     return response;
 
-  } catch (error: any) {
-    console.error('Unexpected login error:', error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : 'No stack trace';
+    
+    console.error('❌ Unexpected login error:', error);
+    console.error('❌ Error stack:', errorStack);
     
     return NextResponse.json(
       { 
         success: false,
-        error: 'An unexpected error occurred. Please try again' 
+        error: 'An unexpected error occurred: ' + errorMessage 
       },
       { status: 500 }
     );

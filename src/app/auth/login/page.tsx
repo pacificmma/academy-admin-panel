@@ -7,7 +7,11 @@ export default async function LoginPage() {
   // Check if user is already logged in
   const session = await getServerSession();
   if (session?.isActive) {
-    redirect('/dashboard');
+    if (session.role === 'admin') {
+      redirect('/dashboard');
+    } else {
+      redirect('/classes');
+    }
   }
 
   return (

@@ -13,7 +13,7 @@ const PROTECTED_ROUTES: Record<string, UserRole[]> = {
   '/my-schedule': ['trainer', 'staff'],
 };
 
-const PUBLIC_ROUTES = ['/login', '/api/auth/login'];
+const PUBLIC_ROUTES = ['/login', '/api/auth/login']; // Burası değişti
 const PROTECTED_API_ROUTES = ['/api/staff', '/api/classes', '/api/members'];
 
 export async function middleware(request: NextRequest) {
@@ -31,7 +31,7 @@ export async function middleware(request: NextRequest) {
 
   // Handle public routes
   if (PUBLIC_ROUTES.some(route => pathname.startsWith(route))) {
-    if (pathname === '/login') {
+    if (pathname === '/login') { // Burası da değişti
       const session = await getSession(request);
       if (session?.isActive) {
         return NextResponse.redirect(new URL('/classes', request.url));
@@ -44,13 +44,13 @@ export async function middleware(request: NextRequest) {
   const session = await getSession(request);
 
   if (!session) {
-    const loginUrl = new URL('/login', request.url);
+    const loginUrl = new URL('/login', request.url); // Burası da değişti
     loginUrl.searchParams.set('from', pathname);
     return NextResponse.redirect(loginUrl);
   }
 
   if (!session.isActive) {
-    const response = NextResponse.redirect(new URL('/login', request.url));
+    const response = NextResponse.redirect(new URL('/login', request.url)); // Burası da değişti
     response.cookies.delete('pacific-mma-session');
     return response;
   }

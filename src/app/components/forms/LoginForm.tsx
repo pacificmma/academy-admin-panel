@@ -31,32 +31,48 @@ export default function LoginForm() {
     setIsLoading(true);
     setError(null);
 
+    console.log('🔐 Login attempt started for:', formData.email);
+
     try {
+      console.log('📤 Sending request to /api/auth/login');
+      
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(formData),
+        credentials: 'include', // Bu önemli - cookie'ler için
       });
 
+      console.log('📥 Response status:', response.status);
+      console.log('📥 Response headers:', Object.fromEntries(response.headers.entries()));
+
       const result = await response.json();
+      console.log('📥 Response data:', result);
 
       if (!response.ok) {
         throw new Error(result.error || 'Login failed');
       }
 
       if (result.success) {
+        console.log('✅ Login successful for user:', result.user);
+        
         // Redirect based on user role
         const userRole = result.user?.role;
+        console.log('🔄 Redirecting based on role:', userRole);
+        
         if (userRole === 'admin') {
+          console.log('🔄 Redirecting to /dashboard');
           router.push('/dashboard');
         } else {
+          console.log('🔄 Redirecting to /classes');
           router.push('/classes');
         }
         router.refresh();
       }
     } catch (err: any) {
+      console.error('❌ Login error:', err);
       setError(err.message || 'An error occurred during login');
     } finally {
       setIsLoading(false);
@@ -105,6 +121,15 @@ export default function LoginForm() {
       >
         {isLoading ? 'Signing In...' : 'SIGN IN'}
       </Button>
+
+      {/* Debug info */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="mt-4 p-2 bg-gray-100 rounded text-xs">
+          <p><strong>Debug Info:</strong></p>
+          <p>API URL: /api/auth/login</p>
+          <p>Environment: {process.env.NODE_ENV}</p>
+        </div>
+      )}
     </form>
   );
 }
