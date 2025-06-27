@@ -4,9 +4,6 @@
 import {
   Box,
   Container,
-  AppBar,
-  Toolbar,
-  Typography,
   Paper,
   Card,
   CardContent,
@@ -15,24 +12,32 @@ import {
   Tab,
   Tabs,
   Grid,
-  Avatar,
+  Typography,
   Divider,
   IconButton,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText,
 } from '@mui/material';
 import {
   Add as AddIcon,
   CalendarToday as CalendarIcon,
   Schedule as ScheduleIcon,
   Settings as SettingsIcon,
-  Dashboard as DashboardIcon,
   FitnessCenter as FitnessCenterIcon,
   People as PeopleIcon,
   School as SchoolIcon,
   LocalOffer as LocalOfferIcon,
+  FilterList as FilterIcon,
+  ViewWeek as ViewWeekIcon,
+  ViewDay as ViewDayIcon,
+  MoreVert as MoreIcon,
 } from '@mui/icons-material';
 import { useState } from 'react';
-import LogoutButton from '../components/ui/LogoutButton';
 import { SessionData } from '../types';
+import Layout from '../components/layout/Layout';
+
 
 interface ClassesPageClientProps {
   session: SessionData;
@@ -40,213 +45,279 @@ interface ClassesPageClientProps {
 
 export default function ClassesPageClient({ session }: ClassesPageClientProps) {
   const [activeTab, setActiveTab] = useState(0);
+  const [viewMode, setViewMode] = useState<'day' | 'week'>('day');
+  const [filterAnchorEl, setFilterAnchorEl] = useState<null | HTMLElement>(null);
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setActiveTab(newValue);
   };
 
+  const handleFilterClick = (event: React.MouseEvent<HTMLElement>) => {
+    setFilterAnchorEl(event.currentTarget);
+  };
+
+  const handleFilterClose = () => {
+    setFilterAnchorEl(null);
+  };
+
+  // Tab configuration based on user role
+  const getTabs = () => {
+    const baseTabs = [
+      { label: 'All Classes', icon: CalendarIcon },
+    ];
+
+    if (session.role === 'trainer' || session.role === 'staff') {
+      baseTabs.push({ label: 'My Classes', icon: ScheduleIcon });
+    }
+
+    if (session.role === 'admin') {
+      baseTabs.push(
+        { label: 'Staff Schedule', icon: PeopleIcon },
+        { label: 'Class Analytics', icon: SchoolIcon },
+        { label: 'Settings', icon: SettingsIcon }
+      );
+    }
+
+    return baseTabs;
+  };
+
+  const tabs = getTabs();
+
+  const quickActions = session.role === 'admin' ? [
+    {
+      title: 'Schedule Class',
+      icon: AddIcon,
+      action: () => console.log('Schedule class'),
+      color: 'primary' as const,
+    },
+    {
+      title: 'Manage Staff',
+      icon: PeopleIcon,
+      action: () => window.location.href = '/staff',
+      color: 'secondary' as const,
+    },
+    {
+      title: 'View Members',
+      icon: SchoolIcon,
+      action: () => window.location.href = '/members',
+      color: 'success' as const,
+    },
+    {
+      title: 'Class Settings',
+      icon: SettingsIcon,
+      action: () => console.log('Class settings'),
+      color: 'warning' as const,
+    },
+  ] : [
+    {
+      title: 'View Schedule',
+      icon: ScheduleIcon,
+      action: () => window.location.href = '/my-schedule',
+      color: 'primary' as const,
+    },
+  ];
+
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
-      {/* Header */}
-      <AppBar position="static" elevation={0}>
-        <Toolbar sx={{ py: 1 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 1 }}>
-            <FitnessCenterIcon sx={{ mr: 2, fontSize: 28, color: 'primary.main' }} />
-            <Typography
-              variant="h5"
-              component="h1"
-              sx={{
-                fontWeight: 700,
-                color: 'text.primary',
-                letterSpacing: '0.5px',
-              }}
-            >
-              Pacific MMA Classes
-            </Typography>
-          </Box>
-
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            {/* User Info */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Avatar
-                sx={{
-                  width: 32,
-                  height: 32,
-                  bgcolor: 'primary.main',
-                  fontSize: '0.875rem',
-                }}
-              >
-                {session.fullName.charAt(0).toUpperCase()}
-              </Avatar>
-              <Box>
-                <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.primary' }}>
-                  {session.fullName}
-                </Typography>
-                <Chip
-                  label={session.role.toUpperCase()}
-                  size="small"
-                  color="primary"
-                  variant="outlined"
-                  sx={{ height: 16, fontSize: '0.6rem', fontWeight: 600 }}
-                />
-              </Box>
-            </Box>
-
-            {/* Admin Dashboard Button */}
-            {session.role === 'admin' && (
-              <Button
-                variant="outlined"
-                startIcon={<DashboardIcon />}
-                href="/dashboard"
-                sx={{ ml: 2 }}
-              >
-                Dashboard
-              </Button>
-            )}
-
-            {/* Logout Button */}
-            <LogoutButton variant="outline" />
-          </Box>
-        </Toolbar>
-      </AppBar>
-
-      {/* Navigation Tabs */}
-      <Paper elevation={0} sx={{ borderBottom: 1, borderColor: 'divider' }}>
-        <Container maxWidth="xl">
-          <Tabs
-            value={activeTab}
-            onChange={handleTabChange}
-            aria-label="navigation tabs"
-            sx={{
-              '& .MuiTab-root': {
-                textTransform: 'none',
-                fontWeight: 600,
-                minHeight: 64,
-              },
-            }}
-          >
-            <Tab
-              icon={<CalendarIcon />}
-              iconPosition="start"
-              label="All Classes"
-            />
-            
-            {(session.role === 'trainer' || session.role === 'staff') && (
-              <Tab
-                icon={<ScheduleIcon />}
-                iconPosition="start"
-                label="My Schedule"
-              />
-            )}
-
-            {session.role === 'admin' && (
-              <>
-                <Tab
-                  icon={<PeopleIcon />}
-                  iconPosition="start"
-                  label="Staff"
-                />
-                <Tab
-                  icon={<SchoolIcon />}
-                  iconPosition="start"
-                  label="Members"
-                />
-                <Tab
-                  icon={<LocalOfferIcon />}
-                  iconPosition="start"
-                  label="Memberships"
-                />
-              </>
-            )}
-          </Tabs>
-        </Container>
-      </Paper>
-
-      {/* Main Content */}
+    <Layout session={session} title="Class Management">
       <Container maxWidth="xl" sx={{ py: 4 }}>
-        {/* Welcome Section */}
-        <Card sx={{ mb: 4 }}>
-          <CardContent sx={{ p: 4 }}>
-            <Typography variant="h4" component="h2" gutterBottom sx={{ fontWeight: 700 }}>
+        {/* Header Section */}
+        <Paper
+          elevation={0}
+          sx={{
+            mb: 4,
+            background: 'linear-gradient(135deg, #0F5C6B 0%, #2e6f8c 100%)',
+            borderRadius: 3,
+            overflow: 'hidden',
+          }}
+        >
+          <CardContent sx={{ p: 4, color: 'white' }}>
+            <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 700 }}>
               Class Management
             </Typography>
-            <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
+            <Typography variant="h6" sx={{ opacity: 0.9, mb: 2 }}>
               {session.role === 'admin'
-                ? 'Manage all classes, schedules, and instructors.'
+                ? 'Manage all classes, schedules, and instructors across your academy.'
                 : session.role === 'trainer'
-                  ? 'View and manage your assigned classes.'
-                  : 'View class schedules and information.'
+                  ? 'View and manage your assigned classes and training sessions.'
+                  : 'Access class schedules and training information.'
               }
             </Typography>
+            
             <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mt: 3 }}>
               <Chip
                 icon={<CalendarIcon />}
-                label="Today's Classes"
-                color="primary"
-                variant="outlined"
+                label={`Today's Classes`}
+                sx={{
+                  backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                  color: 'white',
+                  fontWeight: 600,
+                }}
               />
               <Chip
                 icon={<ScheduleIcon />}
                 label="Weekly Schedule"
-                color="secondary"
-                variant="outlined"
+                sx={{
+                  backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                  color: 'white',
+                  fontWeight: 600,
+                }}
               />
               {session.role === 'admin' && (
                 <Chip
                   icon={<SettingsIcon />}
-                  label="Manage System"
-                  color="info"
-                  variant="outlined"
+                  label="Admin Controls"
+                  sx={{
+                    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                    color: 'white',
+                    fontWeight: 600,
+                  }}
                 />
               )}
             </Box>
           </CardContent>
-        </Card>
+        </Paper>
 
-        {/* Content Grid */}
+        {/* Navigation Tabs */}
+        <Paper elevation={0} sx={{ mb: 4, borderRadius: 2 }}>
+          <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 2 }}>
+            <Tabs
+              value={activeTab}
+              onChange={handleTabChange}
+              aria-label="class management tabs"
+              sx={{
+                '& .MuiTab-root': {
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  minHeight: 64,
+                  fontSize: '0.95rem',
+                },
+              }}
+            >
+              {tabs.map((tab, index) => (
+                <Tab
+                  key={index}
+                  icon={<tab.icon />}
+                  iconPosition="start"
+                  label={tab.label}
+                  sx={{ gap: 1 }}
+                />
+              ))}
+            </Tabs>
+          </Box>
+        </Paper>
+
+        {/* Controls Bar */}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              {tabs[activeTab]?.label}
+            </Typography>
+            
+            <Chip
+              label="0 classes"
+              size="small"
+              variant="outlined"
+              color="primary"
+            />
+          </Box>
+
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            {/* View Mode Toggle */}
+            <Box sx={{ display: 'flex', bgcolor: 'background.paper', borderRadius: 1, p: 0.5, border: 1, borderColor: 'divider' }}>
+              <IconButton
+                size="small"
+                onClick={() => setViewMode('day')}
+                sx={{
+                  bgcolor: viewMode === 'day' ? 'primary.main' : 'transparent',
+                  color: viewMode === 'day' ? 'primary.contrastText' : 'text.secondary',
+                  '&:hover': {
+                    bgcolor: viewMode === 'day' ? 'primary.dark' : 'action.hover',
+                  },
+                }}
+              >
+                <ViewDayIcon />
+              </IconButton>
+              <IconButton
+                size="small"
+                onClick={() => setViewMode('week')}
+                sx={{
+                  bgcolor: viewMode === 'week' ? 'primary.main' : 'transparent',
+                  color: viewMode === 'week' ? 'primary.contrastText' : 'text.secondary',
+                  '&:hover': {
+                    bgcolor: viewMode === 'week' ? 'primary.dark' : 'action.hover',
+                  },
+                }}
+              >
+                <ViewWeekIcon />
+              </IconButton>
+            </Box>
+
+            {/* Filter Button */}
+            <Button
+              variant="outlined"
+              startIcon={<FilterIcon />}
+              onClick={handleFilterClick}
+              size="small"
+            >
+              Filter
+            </Button>
+
+            {/* Add Class Button - Admin only */}
+            {session.role === 'admin' && (
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                size="small"
+              >
+                Schedule Class
+              </Button>
+            )}
+          </Box>
+        </Box>
+
+        {/* Main Content Grid */}
         <Grid container spacing={4}>
-          {/* Today's Classes */}
+          {/* Classes Content */}
           <Grid item xs={12} lg={8}>
             <Card>
-              <CardContent>
-                <Box sx={{ display: 'flex', justifyContent: 'between', alignItems: 'center', mb: 3 }}>
-                  <Typography variant="h6" component="h3" sx={{ fontWeight: 600 }}>
-                    Today's Classes
-                  </Typography>
-                  {session.role === 'admin' && (
-                    <Button
-                      variant="contained"
-                      startIcon={<AddIcon />}
-                      size="small"
-                    >
-                      Add Class
-                    </Button>
-                  )}
+              <CardContent sx={{ p: 0 }}>
+                {/* Today's Classes Header */}
+                <Box sx={{ p: 3, borderBottom: 1, borderColor: 'divider' }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                      {viewMode === 'day' ? "Today's Classes" : "This Week's Schedule"}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {new Date().toLocaleDateString('en-US', { 
+                        weekday: 'long', 
+                        year: 'numeric', 
+                        month: 'long', 
+                        day: 'numeric' 
+                      })}
+                    </Typography>
+                  </Box>
                 </Box>
 
                 {/* Empty State */}
-                <Box
-                  sx={{
-                    textAlign: 'center',
-                    py: 8,
-                    color: 'text.secondary',
-                  }}
-                >
-                  <CalendarIcon sx={{ fontSize: 64, mb: 2, color: 'grey.400' }} />
+                <Box sx={{ p: 6, textAlign: 'center' }}>
+                  <FitnessCenterIcon sx={{ fontSize: 64, mb: 2, color: 'grey.400' }} />
                   <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
                     No classes scheduled
                   </Typography>
-                  <Typography variant="body2" sx={{ mb: 3 }}>
-                    Classes will appear here when they are scheduled.
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 3, maxWidth: 400, mx: 'auto' }}>
+                    {session.role === 'admin'
+                      ? 'Get started by scheduling your first class. You can set up recurring classes and assign instructors.'
+                      : 'Classes will appear here when they are scheduled. Check back later or contact your administrator.'
+                    }
                   </Typography>
                   
                   {session.role === 'admin' && (
                     <Button
                       variant="contained"
                       startIcon={<AddIcon />}
-                      color="primary"
+                      size="large"
                     >
-                      Schedule New Class
+                      Schedule Your First Class
                     </Button>
                   )}
                 </Box>
@@ -254,16 +325,49 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
             </Card>
           </Grid>
 
-          {/* Quick Stats */}
+          {/* Sidebar */}
           <Grid item xs={12} lg={4}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" component="h3" gutterBottom sx={{ fontWeight: 600 }}>
+            {/* Quick Actions */}
+            <Card sx={{ mb: 3 }}>
+              <CardContent sx={{ p: 3 }}>
+                <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
+                  Quick Actions
+                </Typography>
+                
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  {quickActions.map((action, index) => (
+                    <Button
+                      key={index}
+                      variant="outlined"
+                      startIcon={<action.icon />}
+                      onClick={action.action}
+                      fullWidth
+                      sx={{ 
+                        justifyContent: 'flex-start',
+                        color: `${action.color}.main`,
+                        borderColor: `${action.color}.main`,
+                        '&:hover': {
+                          borderColor: `${action.color}.dark`,
+                          backgroundColor: `${action.color}.50`,
+                        },
+                      }}
+                    >
+                      {action.title}
+                    </Button>
+                  ))}
+                </Box>
+              </CardContent>
+            </Card>
+
+            {/* Quick Stats */}
+            <Card sx={{ mb: 3 }}>
+              <CardContent sx={{ p: 3 }}>
+                <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
                   Quick Stats
                 </Typography>
                 
-                <Box sx={{ mt: 3 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'between', alignItems: 'center', mb: 2 }}>
+                <Box sx={{ mt: 2 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                     <Typography variant="body2" color="text.secondary">
                       Classes Today
                     </Typography>
@@ -274,7 +378,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
                   
                   <Divider sx={{ my: 2 }} />
                   
-                  <Box sx={{ display: 'flex', justifyContent: 'between', alignItems: 'center', mb: 2 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                     <Typography variant="body2" color="text.secondary">
                       This Week
                     </Typography>
@@ -285,9 +389,9 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
                   
                   <Divider sx={{ my: 2 }} />
                   
-                  <Box sx={{ display: 'flex', justifyContent: 'between', alignItems: 'center', mb: 2 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Typography variant="body2" color="text.secondary">
-                      Active Members
+                      {session.role === 'admin' ? 'Total Members' : 'My Classes'}
                     </Typography>
                     <Typography variant="h6" sx={{ fontWeight: 700 }}>
                       --
@@ -297,181 +401,76 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
               </CardContent>
             </Card>
 
-            {/* Quick Actions */}
-            {session.role === 'admin' && (
-              <Card sx={{ mt: 3 }}>
-                <CardContent>
-                  <Typography variant="h6" component="h3" gutterBottom sx={{ fontWeight: 600 }}>
-                    Quick Actions
-                  </Typography>
-                  
-                  <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
-                    <Button
-                      variant="outlined"
-                      startIcon={<PeopleIcon />}
-                      href="/staff"
-                      fullWidth
-                      sx={{ justifyContent: 'flex-start' }}
-                    >
-                      Manage Staff
-                    </Button>
-                    
-                    <Button
-                      variant="outlined"
-                      startIcon={<SchoolIcon />}
-                      href="/members"
-                      fullWidth
-                      sx={{ justifyContent: 'flex-start' }}
-                    >
-                      View Members
-                    </Button>
-                    
-                    <Button
-                      variant="outlined"
-                      startIcon={<LocalOfferIcon />}
-                      href="/memberships"
-                      fullWidth
-                      sx={{ justifyContent: 'flex-start' }}
-                    >
-                      Memberships
-                    </Button>
-                    
-                    <Button
-                      variant="outlined"
-                      startIcon={<SettingsIcon />}
-                      href="/discounts"
-                      fullWidth
-                      sx={{ justifyContent: 'flex-start' }}
-                    >
-                      Discounts
-                    </Button>
-                  </Box>
-                </CardContent>
-              </Card>
-            )}
+            {/* Class Types */}
+            <Card>
+              <CardContent sx={{ p: 3 }}>
+                <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
+                  Class Types
+                </Typography>
+                
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  {[
+                    { name: 'Brazilian Jiu-Jitsu', count: 0, color: 'primary' },
+                    { name: 'Muay Thai', count: 0, color: 'secondary' },
+                    { name: 'MMA', count: 0, color: 'success' },
+                    { name: 'Boxing', count: 0, color: 'warning' },
+                  ].map((classType, index) => (
+                    <Box key={index} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 1 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box
+                          sx={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            bgcolor: `${classType.color}.main`,
+                          }}
+                        />
+                        <Typography variant="body2">
+                          {classType.name}
+                        </Typography>
+                      </Box>
+                      <Chip
+                        label={classType.count}
+                        size="small"
+                        variant="outlined"
+                        color={classType.color as any}
+                      />
+                    </Box>
+                  ))}
+                </Box>
+              </CardContent>
+            </Card>
           </Grid>
         </Grid>
 
-        {/* Weekly Schedule */}
-        <Card sx={{ mt: 4 }}>
-          <CardContent>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-              <Typography variant="h6" component="h3" sx={{ fontWeight: 600 }}>
-                Weekly Schedule
-              </Typography>
-
-              {session.role === 'admin' && (
-                <Button
-                  variant="outlined"
-                  startIcon={<SettingsIcon />}
-                  size="small"
-                >
-                  Manage Schedule
-                </Button>
-              )}
-            </Box>
-
-            {/* Empty Schedule State */}
-            <Box
-              sx={{
-                textAlign: 'center',
-                py: 8,
-                color: 'text.secondary',
-              }}
-            >
-              <ScheduleIcon sx={{ fontSize: 64, mb: 2, color: 'grey.400' }} />
-              <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                No schedule configured
-              </Typography>
-              <Typography variant="body2">
-                Weekly class schedule will be displayed here once configured.
-              </Typography>
-            </Box>
-          </CardContent>
-        </Card>
-
-        {/* Additional Features Section for Admin */}
-        {session.role === 'admin' && (
-          <Grid container spacing={3} sx={{ mt: 4 }}>
-            <Grid item xs={12} md={6}>
-              <Card>
-                <CardContent sx={{ p: 3 }}>
-                  <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                    Class Analytics
-                  </Typography>
-                  <Box
-                    sx={{
-                      textAlign: 'center',
-                      py: 4,
-                      color: 'text.secondary',
-                    }}
-                  >
-                    <Typography variant="body2">
-                      Class performance metrics will be displayed here
-                    </Typography>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-
-            <Grid item xs={12} md={6}>
-              <Card>
-                <CardContent sx={{ p: 3 }}>
-                  <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                    Instructor Schedule
-                  </Typography>
-                  <Box
-                    sx={{
-                      textAlign: 'center',
-                      py: 4,
-                      color: 'text.secondary',
-                    }}
-                  >
-                    <Typography variant="body2">
-                      Instructor availability and assignments
-                    </Typography>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-          </Grid>
-        )}
-
-        {/* Trainer/Staff Specific Content */}
-        {(session.role === 'trainer' || session.role === 'staff') && (
-          <Card sx={{ mt: 4 }}>
-            <CardContent sx={{ p: 4 }}>
-              <Typography variant="h6" component="h3" gutterBottom sx={{ fontWeight: 600 }}>
-                My Classes & Schedule
-              </Typography>
-              
-              <Box
-                sx={{
-                  textAlign: 'center',
-                  py: 6,
-                  color: 'text.secondary',
-                }}
-              >
-                <PeopleIcon sx={{ fontSize: 64, mb: 2, color: 'grey.400' }} />
-                <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                  No assigned classes
-                </Typography>
-                <Typography variant="body2" sx={{ mb: 3 }}>
-                  Your class assignments will appear here once scheduled.
-                </Typography>
-                
-                <Button
-                  variant="outlined"
-                  startIcon={<ScheduleIcon />}
-                  href="/my-schedule"
-                >
-                  View My Schedule
-                </Button>
-              </Box>
-            </CardContent>
-          </Card>
-        )}
+        {/* Filter Menu */}
+        <Menu
+          anchorEl={filterAnchorEl}
+          open={Boolean(filterAnchorEl)}
+          onClose={handleFilterClose}
+          transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+          anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+        >
+          <MenuItem onClick={handleFilterClose}>
+            <ListItemIcon>
+              <CalendarIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>All Classes</ListItemText>
+          </MenuItem>
+          <MenuItem onClick={handleFilterClose}>
+            <ListItemIcon>
+              <FitnessCenterIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>By Class Type</ListItemText>
+          </MenuItem>
+          <MenuItem onClick={handleFilterClose}>
+            <ListItemIcon>
+              <PeopleIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>By Instructor</ListItemText>
+          </MenuItem>
+        </Menu>
       </Container>
-    </Box>
+    </Layout>
   );
 }

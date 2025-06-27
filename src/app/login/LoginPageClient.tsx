@@ -67,41 +67,17 @@ export default function LoginPageClient() {
                                 </Box>
 
                                 <Typography
-                                    variant="h4"
-                                    component="h1"
+                                    variant="h5"
+                                    component="h2"
                                     sx={{
-                                        fontWeight: 700,
+                                        fontWeight: 600,
                                         color: 'text.primary',
                                         mb: 1,
-                                        letterSpacing: '0.02em',
+                                        letterSpacing: '0.01em',
                                     }}
                                 >
-                                    PACIFIC MMA
+                                    Pacific MMA Academy Admin Panel
                                 </Typography>
-                                <Typography
-                                    variant="h6"
-                                    sx={{
-                                        color: 'text.secondary',
-                                        fontWeight: 600,
-                                        mb: 1,
-                                    }}
-                                >
-                                    Admin Panel
-                                </Typography>
-
-                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, mt: 2 }}>
-                                    <SecurityIcon sx={{ fontSize: 16, color: 'primary.main' }} />
-                                    <Typography
-                                        variant="body2"
-                                        sx={{
-                                            color: 'primary.main',
-                                            fontWeight: 600,
-                                            fontSize: '0.875rem',
-                                        }}
-                                    >
-                                        Secure Access Portal
-                                    </Typography>
-                                </Box>
                             </Box>
 
                             <Divider sx={{ mb: 4 }} />
