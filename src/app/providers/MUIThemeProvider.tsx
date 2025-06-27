@@ -1,4 +1,4 @@
-// src/app/components/providers/MUIThemeProvider.tsx
+// src/app/providers/MUIThemeProvider.tsx
 'use client';
 
 import React from 'react';
@@ -11,7 +11,7 @@ const theme = createTheme({
   palette: {
     mode: 'light',
     primary: {
-      main: '#004D61', // Pacific MMA brand color
+      main: '#0F5C6B', // Pacific MMA brand color - updated
       light: '#2e6f8c',
       dark: '#003a4a',
       contrastText: '#ffffff',
@@ -43,16 +43,16 @@ const theme = createTheme({
       dark: '#15803d',
     },
     background: {
-      default: '#EDEAE0', // Pacific MMA background
+      default: '#F7F7F7', // Clean background - updated
       paper: '#FFFFFF',
     },
     text: {
-      primary: '#1A1A1A',
-      secondary: '#374151',
+      primary: '#1F2937',
+      secondary: '#4B5563',
     },
     grey: {
       50: '#F7F7F7',
-      100: '#EDEAE0',
+      100: '#F0F0F0',
       200: '#E5E7EB',
       300: '#D1D5DB',
       400: '#9CA3AF',
@@ -77,47 +77,47 @@ const theme = createTheme({
       fontSize: '2.25rem',
       fontWeight: 700,
       lineHeight: 1.2,
-      color: '#1A1A1A',
+      color: '#1F2937',
     },
     h2: {
       fontSize: '1.875rem',
       fontWeight: 600,
       lineHeight: 1.3,
-      color: '#1A1A1A',
+      color: '#1F2937',
     },
     h3: {
       fontSize: '1.5rem',
       fontWeight: 600,
       lineHeight: 1.4,
-      color: '#1A1A1A',
+      color: '#1F2937',
     },
     h4: {
       fontSize: '1.25rem',
       fontWeight: 600,
       lineHeight: 1.4,
-      color: '#1A1A1A',
+      color: '#1F2937',
     },
     h5: {
       fontSize: '1.125rem',
       fontWeight: 600,
       lineHeight: 1.4,
-      color: '#1A1A1A',
+      color: '#1F2937',
     },
     h6: {
       fontSize: '1rem',
       fontWeight: 600,
       lineHeight: 1.4,
-      color: '#1A1A1A',
+      color: '#1F2937',
     },
     body1: {
       fontSize: '1rem',
       lineHeight: 1.5,
-      color: '#374151',
+      color: '#4B5563',
     },
     body2: {
       fontSize: '0.875rem',
       lineHeight: 1.4,
-      color: '#4B5563',
+      color: '#6B7280',
     },
     button: {
       textTransform: 'none',
@@ -136,15 +136,16 @@ const theme = createTheme({
           borderRadius: 8,
           boxShadow: 'none',
           padding: '10px 20px',
+          minHeight: '40px',
           '&:hover': {
-            boxShadow: '0 4px 8px rgba(0, 77, 97, 0.15)',
+            boxShadow: '0 4px 8px rgba(15, 92, 107, 0.15)',
             transform: 'translateY(-1px)',
           },
           transition: 'all 0.2s ease-in-out',
         },
         contained: {
           '&:hover': {
-            boxShadow: '0 4px 8px rgba(0, 77, 97, 0.25)',
+            boxShadow: '0 4px 8px rgba(15, 92, 107, 0.25)',
           },
         },
         outlined: {
@@ -152,6 +153,16 @@ const theme = createTheme({
           '&:hover': {
             borderWidth: '2px',
           },
+        },
+        sizeSmall: {
+          padding: '6px 16px',
+          minHeight: '32px',
+          fontSize: '0.875rem',
+        },
+        sizeLarge: {
+          padding: '12px 24px',
+          minHeight: '48px',
+          fontSize: '1.125rem',
         },
       },
     },
@@ -168,7 +179,7 @@ const theme = createTheme({
               borderColor: '#9CA3AF',
             },
             '&.Mui-focused fieldset': {
-              borderColor: '#004D61',
+              borderColor: '#0F5C6B',
               borderWidth: '2px',
             },
             '&.Mui-error fieldset': {
@@ -177,9 +188,9 @@ const theme = createTheme({
           },
           '& .MuiInputLabel-root': {
             fontWeight: 600,
-            color: '#1A1A1A',
+            color: '#1F2937',
             '&.Mui-focused': {
-              color: '#004D61',
+              color: '#0F5C6B',
             },
             '&.Mui-error': {
               color: '#dc2626',
@@ -220,7 +231,7 @@ const theme = createTheme({
       styleOverrides: {
         root: {
           backgroundColor: '#FFFFFF',
-          color: '#1A1A1A',
+          color: '#1F2937',
           boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 1px 2px 0 rgba(0, 0, 0, 0.04)',
           borderBottom: '1px solid #E5E7EB',
         },
@@ -251,6 +262,23 @@ const theme = createTheme({
           backgroundColor: '#f0fdf4',
           color: '#14532d',
           border: '1px solid #bbf7d0',
+        },
+      },
+    },
+    // Loading backdrop
+    MuiBackdrop: {
+      styleOverrides: {
+        root: {
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        },
+      },
+    },
+    // Dialog styles
+    MuiDialog: {
+      styleOverrides: {
+        paper: {
+          borderRadius: 12,
+          boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
         },
       },
     },
