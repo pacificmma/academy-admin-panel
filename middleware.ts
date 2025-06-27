@@ -3,7 +3,6 @@ import { getSession } from '@/app/lib/auth/session';
 import { UserRole } from '@/app/types';
 import { NextRequest, NextResponse } from 'next/server';
 
-
 // Protected routes configuration
 const PROTECTED_ROUTES: Record<string, UserRole[]> = {
   '/dashboard': ['admin'],
@@ -18,9 +17,6 @@ const PROTECTED_ROUTES: Record<string, UserRole[]> = {
 // Public routes that don't need authentication
 const PUBLIC_ROUTES = ['/login'];
 
-// API routes that are protected
-const PROTECTED_API_ROUTES = ['/api/staff', '/api/classes', '/api/members'];
-
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -29,7 +25,7 @@ export async function middleware(request: NextRequest) {
   // Skip for static files and Next.js internals
   if (
     pathname.startsWith('/_next/') ||
-    pathname.startsWith('/api/_next/') ||
+    pathname.startsWith('/api/') ||
     pathname.includes('.') ||
     pathname.startsWith('/favicon')
   ) {
@@ -37,7 +33,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Handle public routes - IMPORTANT: Check this first to avoid redirect loops
+  // Handle public routes
   if (PUBLIC_ROUTES.some(route => pathname.startsWith(route))) {
     console.log('🌐 Public route accessed:', pathname);
     

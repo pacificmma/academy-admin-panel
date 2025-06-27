@@ -1,7 +1,7 @@
 // src/app/components/layout/Layout.tsx
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   useTheme,
@@ -31,6 +31,16 @@ const Layout: React.FC<LayoutProps> = ({
   const handleDrawerToggle = () => {
     setMobileOpen(prev => !prev);
   };
+
+  // If no session, show error
+  if (!session) {
+    return (
+      <Box sx={{ p: 4, textAlign: 'center' }}>
+        <h1>No session data available</h1>
+        <p>Please refresh the page or log in again.</p>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>

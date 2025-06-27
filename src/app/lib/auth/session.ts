@@ -1,9 +1,8 @@
-// src/lib/auth/session.ts - Session management with JWT
-import { SessionData } from '@/app/types/staff';
+// src/app/lib/auth/session.ts - Session management with JWT
+import { SessionData } from '@/app/types';
 import jwt from 'jsonwebtoken';
 import { cookies } from 'next/headers';
 import { NextRequest } from 'next/server';
-
 
 const JWT_SECRET = process.env.NEXTAUTH_SECRET!;
 const SESSION_COOKIE_NAME = 'pacific-mma-session';

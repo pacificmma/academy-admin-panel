@@ -31,6 +31,7 @@ import {
 } from '@mui/icons-material';
 import LogoutButton from '../components/ui/LogoutButton';
 import { SessionData } from '../types';
+import Layout from '../components/layout/Layout';
 
 interface DashboardPageClientProps {
     session: SessionData;
@@ -108,278 +109,229 @@ export default function DashboardPageClient({ session }: DashboardPageClientProp
     ];
 
     return (
-        <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
-            {/* Header */}
-            <AppBar position="static" elevation={0}>
-                <Toolbar sx={{ py: 1 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 1 }}>
-                        <FitnessCenterIcon sx={{ fontSize: 32, color: '#0F5C6B' }} />
-                        <Typography
-                            variant="h5"
-                            component="h1"
-                            sx={{
-                                fontWeight: 700,
-                                color: 'text.primary',
-                                letterSpacing: '0.5px',
-                            }}
-                        >
-                            Pacific MMA Academy Panel
-                        </Typography>
-                    </Box>
+        <Layout session={session} title="Dashboard">
+            <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
+                {/* Main Content */}
+                <Container maxWidth="xl" sx={{ py: 4 }}>
+                    {/* Welcome Section */}
+                    <Card sx={{ mb: 4, background: 'linear-gradient(135deg, #0F5C6B 0%, #2e6f8c 100%)' }}>
+                        <CardContent sx={{ p: 4, color: 'white' }}>
+                            <Typography variant="h4" component="h2" gutterBottom sx={{ fontWeight: 700, color: 'white' }}>
+                                Dashboard
+                            </Typography>
+                            <Typography variant="h6" sx={{ opacity: 0.9, mb: 2, color: 'white' }}>
+                                Welcome to the Pacific MMA Academy admin panel
+                            </Typography>
+                            <Typography variant="h6" sx={{ opacity: 0.8, color: 'white' }}>
+                                Manage your gym operations from here. Monitor member activity, staff schedules, and business metrics.
+                            </Typography>
+                        </CardContent>
+                    </Card>
 
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        {/* User Info */}
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Avatar
-                                sx={{
-                                    width: 32,
-                                    height: 32,
-                                    bgcolor: 'primary.main',
-                                    fontSize: '0.875rem',
-                                }}
-                            >
-                                {session.fullName.charAt(0).toUpperCase()}
-                            </Avatar>
-                            <Box>
-                                <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.primary' }}>
-                                    {session.fullName}
-                                </Typography>
-                                <Chip
-                                    label={session.role.toUpperCase()}
-                                    size="small"
-                                    color="primary"
-                                    variant="filled"
-                                    sx={{ height: 16, fontSize: '0.6rem', fontWeight: 600 }}
-                                />
-                            </Box>
-                        </Box>
+                    {/* Quick Stats */}
+                    <Grid container spacing={3} sx={{ mb: 4 }}>
+                        {statsCards.map((stat, index) => (
+                            <Grid item xs={12} sm={6} lg={3} key={index}>
+                                <Card
+                                    sx={{
+                                        height: '100%',
+                                        transition: 'all 0.3s ease',
+                                        '&:hover': {
+                                            transform: 'translateY(-4px)',
+                                            boxShadow: 4,
+                                        },
+                                    }}
+                                >
+                                    <CardContent sx={{ p: 3 }}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                                            <Box
+                                                sx={{
+                                                    width: 48,
+                                                    height: 48,
+                                                    borderRadius: 2,
+                                                    bgcolor: stat.bgColor,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    mr: 2,
+                                                }}
+                                            >
+                                                <stat.icon sx={{ fontSize: 24, color: `${stat.color}.main` }} />
+                                            </Box>
+                                            <Box sx={{ flexGrow: 1 }}>
+                                                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                                    {stat.title}
+                                                </Typography>
+                                                <Typography variant="h5" sx={{ fontWeight: 700, color: 'text.primary' }}>
+                                                    {stat.value}
+                                                </Typography>
+                                            </Box>
+                                        </Box>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', color: 'success.main' }}>
+                                            <TrendingUpIcon sx={{ fontSize: 16, mr: 0.5 }} />
+                                            <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                                                Loading...
+                                            </Typography>
+                                        </Box>
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+                        ))}
+                    </Grid>
 
-                        {/* Logout Button */}
-                        <LogoutButton variant="outline" />
-                    </Box>
-                </Toolbar>
-            </AppBar>
+                    {/* Quick Actions */}
+                    <Card>
+                        <CardContent sx={{ p: 4 }}>
+                            <Typography variant="h5" component="h3" gutterBottom sx={{ fontWeight: 700, mb: 3 }}>
+                                Quick Actions
+                            </Typography>
 
-            {/* Main Content */}
-            <Container maxWidth="xl" sx={{ py: 4 }}>
-                {/* Welcome Section */}
-                <Card sx={{ mb: 4, background: 'linear-gradient(135deg, #0F5C6B 0%, #2e6f8c 100%)' }}>
-                    <CardContent sx={{ p: 4, color: 'white' }}>
-                        <Typography variant="h4" component="h2" gutterBottom sx={{ fontWeight: 700, color: 'white' }}>
-                            Dashboard
-                        </Typography>
-                        <Typography variant="h6" sx={{ opacity: 0.9, mb: 2, color: 'white' }}>
-                            Welcome to the Pacific MMA Academy admin panel
-                        </Typography>
-                        <Typography variant="h6" sx={{ opacity: 0.8, color: 'white' }}>
-                            Manage your gym operations from here. Monitor member activity, staff schedules, and business metrics.
-                        </Typography>
-                    </CardContent>
-                </Card>
-
-                {/* Quick Stats */}
-                <Grid container spacing={3} sx={{ mb: 4 }}>
-                    {statsCards.map((stat, index) => (
-                        <Grid item xs={12} sm={6} lg={3} key={index}>
-                            <Card
-                                sx={{
-                                    height: '100%',
-                                    transition: 'all 0.3s ease',
-                                    '&:hover': {
-                                        transform: 'translateY(-4px)',
-                                        boxShadow: 4,
-                                    },
-                                }}
-                            >
-                                <CardContent sx={{ p: 3 }}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                        <Box
+                            <Grid container spacing={3}>
+                                {quickActions.map((action, index) => (
+                                    <Grid item xs={12} sm={6} lg={4} key={index}>
+                                        <Card
+                                            variant="outlined"
                                             sx={{
-                                                width: 48,
-                                                height: 48,
-                                                borderRadius: 2,
-                                                bgcolor: stat.bgColor,
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                mr: 2,
+                                                height: '100%',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.3s ease',
+                                                '&:hover': {
+                                                    transform: 'translateY(-2px)',
+                                                    boxShadow: 3,
+                                                    borderColor: 'primary.main',
+                                                },
                                             }}
+                                            onClick={() => window.location.href = action.href}
                                         >
-                                            <stat.icon sx={{ fontSize: 24, color: `${stat.color}.main` }} />
-                                        </Box>
-                                        <Box sx={{ flexGrow: 1 }}>
-                                            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                {stat.title}
-                                            </Typography>
-                                            <Typography variant="h5" sx={{ fontWeight: 700, color: 'text.primary' }}>
-                                                {stat.value}
-                                            </Typography>
-                                        </Box>
-                                    </Box>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', color: 'success.main' }}>
-                                        <TrendingUpIcon sx={{ fontSize: 16, mr: 0.5 }} />
-                                        <Typography variant="caption" sx={{ fontWeight: 600 }}>
-                                            Loading...
+                                            <CardContent sx={{ p: 3 }}>
+                                                <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
+                                                    <Box
+                                                        sx={{
+                                                            width: 40,
+                                                            height: 40,
+                                                            borderRadius: 1.5,
+                                                            bgcolor: 'primary.50',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            mr: 2,
+                                                        }}
+                                                    >
+                                                        <action.icon sx={{ fontSize: 20, color: 'primary.main' }} />
+                                                    </Box>
+                                                    <Box sx={{ flexGrow: 1 }}>
+                                                        <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>
+                                                            {action.title}
+                                                        </Typography>
+                                                        <Typography variant="body2" color="text.secondary">
+                                                            {action.description}
+                                                        </Typography>
+                                                    </Box>
+                                                </Box>
+
+                                                <Button
+                                                    variant="outlined"
+                                                    size="small"
+                                                    sx={{ mt: 2 }}
+                                                    fullWidth
+                                                >
+                                                    Access
+                                                </Button>
+                                            </CardContent>
+                                        </Card>
+                                    </Grid>
+                                ))}
+                            </Grid>
+                        </CardContent>
+                    </Card>
+
+                    {/* Recent Activity Section */}
+                    <Grid container spacing={3} sx={{ mt: 4 }}>
+                        <Grid item xs={12} lg={8}>
+                            <Card>
+                                <CardContent sx={{ p: 4 }}>
+                                    <Typography variant="h6" component="h3" gutterBottom sx={{ fontWeight: 600 }}>
+                                        Recent Activity
+                                    </Typography>
+
+                                    <Box
+                                        sx={{
+                                            textAlign: 'center',
+                                            py: 6,
+                                            color: 'text.secondary',
+                                        }}
+                                    >
+                                        <CalendarIcon sx={{ fontSize: 64, mb: 2, color: 'grey.400' }} />
+                                        <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
+                                            No recent activity
+                                        </Typography>
+                                        <Typography variant="body2">
+                                            Recent system activity will appear here.
                                         </Typography>
                                     </Box>
                                 </CardContent>
                             </Card>
                         </Grid>
-                    ))}
-                </Grid>
 
-                {/* Quick Actions */}
-                <Card>
-                    <CardContent sx={{ p: 4 }}>
-                        <Typography variant="h5" component="h3" gutterBottom sx={{ fontWeight: 700, mb: 3 }}>
-                            Quick Actions
-                        </Typography>
+                        <Grid item xs={12} lg={4}>
+                            <Card>
+                                <CardContent sx={{ p: 4 }}>
+                                    <Typography variant="h6" component="h3" gutterBottom sx={{ fontWeight: 600 }}>
+                                        System Status
+                                    </Typography>
 
-                        <Grid container spacing={3}>
-                            {quickActions.map((action, index) => (
-                                <Grid item xs={12} sm={6} lg={4} key={index}>
-                                    <Card
-                                        variant="outlined"
-                                        sx={{
-                                            height: '100%',
-                                            cursor: 'pointer',
-                                            transition: 'all 0.3s ease',
-                                            '&:hover': {
-                                                transform: 'translateY(-2px)',
-                                                boxShadow: 3,
-                                                borderColor: 'primary.main',
-                                            },
-                                        }}
-                                        onClick={() => window.location.href = action.href}
-                                    >
-                                        <CardContent sx={{ p: 3 }}>
-                                            <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
-                                                <Box
-                                                    sx={{
-                                                        width: 40,
-                                                        height: 40,
-                                                        borderRadius: 1.5,
-                                                        bgcolor: 'primary.50',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                        mr: 2,
-                                                    }}
-                                                >
-                                                    <action.icon sx={{ fontSize: 20, color: 'primary.main' }} />
-                                                </Box>
-                                                <Box sx={{ flexGrow: 1 }}>
-                                                    <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>
-                                                        {action.title}
-                                                    </Typography>
-                                                    <Typography variant="body2" color="text.secondary">
-                                                        {action.description}
-                                                    </Typography>
-                                                </Box>
-                                            </Box>
+                                    <Box sx={{ mt: 3 }}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                                            <Box
+                                                sx={{
+                                                    width: 8,
+                                                    height: 8,
+                                                    borderRadius: '50%',
+                                                    bgcolor: 'success.main',
+                                                    mr: 2,
+                                                }}
+                                            />
+                                            <Typography variant="body2">
+                                                All systems operational
+                                            </Typography>
+                                        </Box>
 
-                                            <Button
-                                                variant="outlined"
-                                                size="small"
-                                                sx={{ mt: 2 }}
-                                                fullWidth
-                                            >
-                                                Access
-                                            </Button>
-                                        </CardContent>
-                                    </Card>
-                                </Grid>
-                            ))}
+                                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                                            <Box
+                                                sx={{
+                                                    width: 8,
+                                                    height: 8,
+                                                    borderRadius: '50%',
+                                                    bgcolor: 'success.main',
+                                                    mr: 2,
+                                                }}
+                                            />
+                                            <Typography variant="body2">
+                                                Database connected
+                                            </Typography>
+                                        </Box>
+
+                                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                            <Box
+                                                sx={{
+                                                    width: 8,
+                                                    height: 8,
+                                                    borderRadius: '50%',
+                                                    bgcolor: 'success.main',
+                                                    mr: 2,
+                                                }}
+                                            />
+                                            <Typography variant="body2">
+                                                Authentication active
+                                            </Typography>
+                                        </Box>
+                                    </Box>
+                                </CardContent>
+                            </Card>
                         </Grid>
-                    </CardContent>
-                </Card>
-
-                {/* Recent Activity Section */}
-                <Grid container spacing={3} sx={{ mt: 4 }}>
-                    <Grid item xs={12} lg={8}>
-                        <Card>
-                            <CardContent sx={{ p: 4 }}>
-                                <Typography variant="h6" component="h3" gutterBottom sx={{ fontWeight: 600 }}>
-                                    Recent Activity
-                                </Typography>
-
-                                <Box
-                                    sx={{
-                                        textAlign: 'center',
-                                        py: 6,
-                                        color: 'text.secondary',
-                                    }}
-                                >
-                                    <CalendarIcon sx={{ fontSize: 64, mb: 2, color: 'grey.400' }} />
-                                    <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                                        No recent activity
-                                    </Typography>
-                                    <Typography variant="body2">
-                                        Recent system activity will appear here.
-                                    </Typography>
-                                </Box>
-                            </CardContent>
-                        </Card>
                     </Grid>
-
-                    <Grid item xs={12} lg={4}>
-                        <Card>
-                            <CardContent sx={{ p: 4 }}>
-                                <Typography variant="h6" component="h3" gutterBottom sx={{ fontWeight: 600 }}>
-                                    System Status
-                                </Typography>
-
-                                <Box sx={{ mt: 3 }}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                        <Box
-                                            sx={{
-                                                width: 8,
-                                                height: 8,
-                                                borderRadius: '50%',
-                                                bgcolor: 'success.main',
-                                                mr: 2,
-                                            }}
-                                        />
-                                        <Typography variant="body2">
-                                            All systems operational
-                                        </Typography>
-                                    </Box>
-
-                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                        <Box
-                                            sx={{
-                                                width: 8,
-                                                height: 8,
-                                                borderRadius: '50%',
-                                                bgcolor: 'success.main',
-                                                mr: 2,
-                                            }}
-                                        />
-                                        <Typography variant="body2">
-                                            Database connected
-                                        </Typography>
-                                    </Box>
-
-                                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                        <Box
-                                            sx={{
-                                                width: 8,
-                                                height: 8,
-                                                borderRadius: '50%',
-                                                bgcolor: 'success.main',
-                                                mr: 2,
-                                            }}
-                                        />
-                                        <Typography variant="body2">
-                                            Authentication active
-                                        </Typography>
-                                    </Box>
-                                </Box>
-                            </CardContent>
-                        </Card>
-                    </Grid>
-                </Grid>
-            </Container>
-        </Box>
+                </Container>
+            </Box>
+        </Layout>
     );
 }
