@@ -33,6 +33,7 @@ export interface MembershipPlan extends BaseEntity {
 
 // Form data for creating/editing membership plans
 export interface MembershipPlanFormData {
+  currency?: string;
   name: string;
   description?: string;
   duration: MembershipDuration;
