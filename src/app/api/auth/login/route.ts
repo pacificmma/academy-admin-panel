@@ -343,12 +343,11 @@ export async function POST(request: NextRequest) {
     // Add security headers
     response.headers.set('X-Content-Type-Options', 'nosniff');
     response.headers.set('X-Frame-Options', 'DENY');
-    
+
     return response;
 
   } catch (error: any) {
-    console.error('❌ Unexpected login error:', error);
-    console.error('❌ Error stack:', error.stack);
+
     
     return NextResponse.json(
       { success: false, error: 'An unexpected error occurred' },

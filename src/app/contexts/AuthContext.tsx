@@ -43,7 +43,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return null;
       }
     } catch (error) {
-      console.error('Error fetching session:', error);
       setSessionData(null);
       return null;
     }

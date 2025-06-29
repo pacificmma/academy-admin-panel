@@ -34,7 +34,6 @@ export async function GET(request: NextRequest) {
 
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('❌ Session check error:', error);
     
     return NextResponse.json(
       { success: false, error: 'Session check failed: ' + errorMessage },

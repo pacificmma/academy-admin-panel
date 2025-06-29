@@ -49,7 +49,6 @@ if (!getApps().length) {
       projectId: process.env.FIREBASE_PROJECT_ID,
     });
   } catch (error: any) {
-    console.error('❌ Firebase Admin initialization failed:', error);
     throw new Error(`Firebase Admin initialization failed: ${error.message}`);
   }
 }
@@ -64,7 +63,6 @@ export async function verifyIdToken(token: string) {
     const decodedToken = await adminAuth.verifyIdToken(token);
     return decodedToken;
   } catch (error) {
-    console.error('Error verifying ID token:', error);
     throw new Error('Invalid token');
   }
 }
@@ -75,7 +73,6 @@ export async function getAdminUser(uid: string) {
     const userRecord = await adminAuth.getUser(uid);
     return userRecord;
   } catch (error) {
-    console.error('Error getting user:', error);
     throw new Error('User not found');
   }
 }

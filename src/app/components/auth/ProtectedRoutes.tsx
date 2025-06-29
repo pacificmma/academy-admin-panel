@@ -93,7 +93,6 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
         setLoading(false);
 
       } catch (err: any) {
-        console.error('Error checking user access:', err);
         setError('An error occurred while verifying your access. Please try again.');
         setLoading(false);
       }

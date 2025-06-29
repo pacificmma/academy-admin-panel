@@ -14,9 +14,7 @@ export async function POST(request: NextRequest) {
     response.headers.set('Set-Cookie', clearSessionCookie());
     return response;
 
-  } catch (error: unknown) {
-    console.error('❌ Logout error:', error);
-    
+  } catch (error: unknown) {    
     // Even if there's an error, still clear cookie
     const response = NextResponse.json(
       { success: true, message: 'Logged out' },
@@ -36,7 +34,6 @@ export async function GET(request: NextRequest) {
     response.headers.set('Set-Cookie', clearSessionCookie());
     return response;
   } catch (error: unknown) {
-    console.error('❌ Logout GET error:', error);
     const response = NextResponse.redirect(new URL('/login', request.url));
     response.headers.set('Set-Cookie', clearSessionCookie());
     return response;

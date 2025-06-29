@@ -53,7 +53,6 @@ export async function verifySession(token: string, request?: NextRequest): Promi
       const currentUserAgent = request.headers.get('user-agent') || '';
       
       if (decoded.userAgent && decoded.userAgent !== hashString(currentUserAgent)) {
-        console.warn('Session user agent mismatch');
         return null;
       }
     }
@@ -66,7 +65,6 @@ export async function verifySession(token: string, request?: NextRequest): Promi
       isActive: decoded.isActive,
     };
   } catch (error) {
-    console.error('Session verification failed:', error);
     return null;
   }
 }
@@ -79,7 +77,6 @@ export async function getSession(request: NextRequest): Promise<SessionData | nu
 
     return await verifySession(token, request);
   } catch (error) {
-    console.error('Error getting session:', error);
     return null;
   }
 }
@@ -93,7 +90,6 @@ export async function getServerSession(): Promise<SessionData | null> {
 
     return await verifySession(token);
   } catch (error) {
-    console.error('Error getting server session:', error);
     return null;
   }
 }
@@ -143,7 +139,6 @@ export async function refreshSession(currentToken: string, request?: NextRequest
     // Create a new token with extended expiry
     return await createSession(sessionData, request);
   } catch (error) {
-    console.error('Error refreshing session:', error);
     return null;
   }
 }
