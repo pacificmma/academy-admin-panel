@@ -6,7 +6,10 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "security:audit": "npm audit",
+    "security:fix": "npm audit fix",
+    "security:check": "npm outdated"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

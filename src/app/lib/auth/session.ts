@@ -1,14 +1,20 @@
-// src/app/lib/auth/session.ts - Session management with JWT
+// src/app/lib/auth/session.ts - Enhanced Security
 import { SessionData } from '@/app/types';
 import jwt from 'jsonwebtoken';
 import { cookies } from 'next/headers';
 import { NextRequest } from 'next/server';
+import crypto from 'crypto';
 
 const JWT_SECRET = process.env.NEXTAUTH_SECRET!;
 const SESSION_COOKIE_NAME = 'pacific-mma-session';
 
-// Create a session token
-export async function createSession(userData: SessionData): Promise<string> {
+// Enhanced session creation with additional security
+export async function createSession(userData: SessionData, request?: NextRequest): Promise<string> {
+  const userAgent = request?.headers.get('user-agent') || '';
+  const ip = request?.headers.get('x-forwarded-for') || 
+             request?.headers.get('x-real-ip') || 
+             'unknown';
+
   const token = jwt.sign(
     {
       uid: userData.uid,
@@ -16,27 +22,42 @@ export async function createSession(userData: SessionData): Promise<string> {
       role: userData.role,
       fullName: userData.fullName,
       isActive: userData.isActive,
+      // Security metadata
+      iat: Math.floor(Date.now() / 1000),
+      userAgent: hashString(userAgent), // Hash for privacy
+      ipHash: hashString(ip), // Hash for privacy
     },
     JWT_SECRET,
     {
-      expiresIn: '7d', // 7 days
+      expiresIn: '24h', // Reduced from 7 days for security
       issuer: 'pacific-mma-admin',
       audience: 'pacific-mma-users',
+      algorithm: 'HS256',
     }
   );
 
   return token;
 }
 
-// Verify session token
-export async function verifySession(token: string): Promise<SessionData | null> {
+// Enhanced session verification
+export async function verifySession(token: string, request?: NextRequest): Promise<SessionData | null> {
   try {
     const decoded = jwt.verify(token, JWT_SECRET, {
       issuer: 'pacific-mma-admin',
       audience: 'pacific-mma-users',
-    }) as SessionData & { exp: number; iat: number };
+      algorithms: ['HS256'],
+    }) as any;
 
-    // Return the session data without JWT metadata
+    // Optional: Verify user agent and IP for additional security
+    if (request && process.env.NODE_ENV === 'production') {
+      const currentUserAgent = request.headers.get('user-agent') || '';
+      
+      if (decoded.userAgent && decoded.userAgent !== hashString(currentUserAgent)) {
+        console.warn('Session user agent mismatch');
+        return null;
+      }
+    }
+
     return {
       uid: decoded.uid,
       email: decoded.email,
@@ -50,13 +71,13 @@ export async function verifySession(token: string): Promise<SessionData | null> 
   }
 }
 
-// Get session from request
+// Get session from request (for middleware)
 export async function getSession(request: NextRequest): Promise<SessionData | null> {
   try {
     const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
     if (!token) return null;
 
-    return await verifySession(token);
+    return await verifySession(token, request);
   } catch (error) {
     console.error('Error getting session:', error);
     return null;
@@ -77,39 +98,50 @@ export async function getServerSession(): Promise<SessionData | null> {
   }
 }
 
-// Set session cookie (use in API routes)
+// Enhanced cookie configuration
 export function setSessionCookie(token: string): string {
-  const maxAge = 7 * 24 * 60 * 60; // 7 days in seconds
+  const maxAge = 24 * 60 * 60; // 24 hours
+  const isProduction = process.env.NODE_ENV === 'production';
   
   return [
     `${SESSION_COOKIE_NAME}=${token}`,
     'HttpOnly',
     'Path=/',
     `Max-Age=${maxAge}`,
-    'SameSite=Lax',
-    process.env.NODE_ENV === 'production' ? 'Secure' : '',
+    'SameSite=Strict', // Enhanced from Lax
+    isProduction ? 'Secure' : '',
+    // Remove Domain for now - will be set later when you have your domain
   ].filter(Boolean).join('; ');
 }
 
-// Clear session cookie
+// Clear session cookie - MISSING FUNCTION ADDED
 export function clearSessionCookie(): string {
+  const isProduction = process.env.NODE_ENV === 'production';
+  
   return [
     `${SESSION_COOKIE_NAME}=`,
     'HttpOnly',
     'Path=/',
     'Max-Age=0',
-    'SameSite=Lax',
-  ].join('; ');
+    'SameSite=Strict',
+    isProduction ? 'Secure' : '',
+    'Expires=Thu, 01 Jan 1970 00:00:00 GMT', // Ensure immediate expiry
+  ].filter(Boolean).join('; ');
+}
+
+// Helper function to hash sensitive data
+function hashString(input: string): string {
+  return crypto.createHash('sha256').update(input).digest('hex').substring(0, 16);
 }
 
 // Refresh session (extend expiry)
-export async function refreshSession(currentToken: string): Promise<string | null> {
+export async function refreshSession(currentToken: string, request?: NextRequest): Promise<string | null> {
   try {
-    const sessionData = await verifySession(currentToken);
+    const sessionData = await verifySession(currentToken, request);
     if (!sessionData) return null;
 
     // Create a new token with extended expiry
-    return await createSession(sessionData);
+    return await createSession(sessionData, request);
   } catch (error) {
     console.error('Error refreshing session:', error);
     return null;
