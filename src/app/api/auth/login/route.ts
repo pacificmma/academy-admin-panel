@@ -136,14 +136,10 @@ function recordFailedAttempt(ip: string, reason: string, details?: any) {
   current.lastAttempt = now;
   
   failedAttempts.set(ip, current);
-  
-  // Simple security logging (inline instead of separate logger file)
-  console.log(`🚨 Failed login attempt ${current.count}/${SECURITY_CONFIG.maxFailedAttempts} from ${ip}:`, reason, details);
 }
 
 function clearFailedAttempts(ip: string) {
   failedAttempts.delete(ip);
-  console.log('✅ Cleared failed attempts for:', ip);
 }
 
 function validateEnvironment() {
@@ -181,20 +177,15 @@ function getAuthErrorMessage(errorCode: string): string {
   }
 }
 
-export async function POST(request: NextRequest) {
-  console.log('🚀 Enhanced Login API called');
-  
+export async function POST(request: NextRequest) {  
   try {
     // Get client IP for security tracking
     const clientIP = getClientIP(request);
     const userAgent = request.headers.get('user-agent') || 'unknown';
-    
-    console.log('🔍 Login attempt from IP:', clientIP);
 
     // Check for account lockout
     const lockoutCheck = checkAccountLockout(clientIP);
     if (!lockoutCheck.allowed) {
-      console.log('🔒 Account locked out:', clientIP);
       return NextResponse.json(
         { 
           success: false, 
@@ -207,7 +198,6 @@ export async function POST(request: NextRequest) {
     // Validate environment variables
     const envCheck = validateEnvironment();
     if (!envCheck.valid) {
-      console.error('❌ Environment validation failed:', envCheck.missing);
       return NextResponse.json(
         { success: false, error: 'Server configuration error' },
         { status: 500 }
@@ -218,9 +208,7 @@ export async function POST(request: NextRequest) {
     let body;
     try {
       body = await request.json();
-      console.log('📥 Request body parsed for email:', body.email);
     } catch (parseError) {
-      console.error('❌ Failed to parse request body:', parseError);
       recordFailedAttempt(clientIP, 'invalid_request');
       return NextResponse.json(
         { success: false, error: 'Invalid request format' },
@@ -231,7 +219,6 @@ export async function POST(request: NextRequest) {
     // Validate and sanitize input using our inline validation
     const validation = validateAndSanitizeLoginInput(body);
     if (!validation.isValid) {
-      console.log('❌ Input validation failed:', validation.errors);
       recordFailedAttempt(clientIP, 'invalid_input');
       return NextResponse.json(
         { success: false, error: validation.errors[0] },
@@ -240,17 +227,12 @@ export async function POST(request: NextRequest) {
     }
 
     const { email, password } = validation.sanitizedData!;
-    console.log('✅ Input validation passed for:', email);
 
     // Firebase authentication
     let signInResult;
     try {
-      console.log('🔐 Attempting Firebase authentication...');
       signInResult = await signInWithEmailAndPassword(auth, email, password);
-      console.log('✅ Firebase authentication successful:', signInResult.user.uid);
-    } catch (authError: any) {
-      console.error('❌ Firebase auth error:', authError.code, authError.message);
-      
+    } catch (authError: any) {      
       const errorMessage = getAuthErrorMessage(authError.code);
       recordFailedAttempt(clientIP, 'auth_failed', { 
         email, 
@@ -268,12 +250,9 @@ export async function POST(request: NextRequest) {
     // Check staff collection
     let staffDoc;
     try {
-      console.log('📄 Checking staff collection for user:', user.uid);
       const staffDocRef = adminDb.collection('staff').doc(user.uid);
       staffDoc = await staffDocRef.get();
-      console.log('📄 Staff doc exists:', staffDoc.exists);
     } catch (dbError: any) {
-      console.error('❌ Database error:', dbError);
       await auth.signOut();
       recordFailedAttempt(clientIP, 'db_error');
       return NextResponse.json(
@@ -283,7 +262,6 @@ export async function POST(request: NextRequest) {
     }
 
     if (!staffDoc.exists) {
-      console.log('❌ User not found in staff collection');
       await auth.signOut();
       recordFailedAttempt(clientIP, 'unauthorized_user', { email });
       return NextResponse.json(
@@ -293,11 +271,8 @@ export async function POST(request: NextRequest) {
     }
 
     const staffData = staffDoc.data();
-    console.log('📄 Staff data loaded for role:', staffData?.role);
-
     // Check if user account is active
     if (!staffData?.isActive) {
-      console.log('❌ User account is inactive');
       await auth.signOut();
       recordFailedAttempt(clientIP, 'inactive_account', { email });
       return NextResponse.json(
@@ -308,7 +283,6 @@ export async function POST(request: NextRequest) {
 
     // Validate required staff data
     if (!staffData.role || !staffData.fullName) {
-      console.log('❌ Incomplete staff data');
       await auth.signOut();
       recordFailedAttempt(clientIP, 'incomplete_profile');
       return NextResponse.json(
@@ -328,10 +302,7 @@ export async function POST(request: NextRequest) {
         lastLoginUserAgent: userAgent,
         loginCount: (staffData.loginCount || 0) + 1,
       });
-      console.log('✅ Login tracking updated');
     } catch (updateError) {
-      console.warn('⚠️ Could not update login tracking:', updateError);
-      // Don't fail the login for this
     }
 
     // Create enhanced session
@@ -345,11 +316,8 @@ export async function POST(request: NextRequest) {
 
     let sessionToken;
     try {
-      console.log('🎫 Creating enhanced session...');
       sessionToken = await createSession(sessionData, request);
-      console.log('✅ Enhanced session created successfully');
     } catch (sessionError: any) {
-      console.error('❌ Session creation error:', sessionError);
       await auth.signOut();
       return NextResponse.json(
         { success: false, error: 'Failed to create session' },
@@ -376,7 +344,6 @@ export async function POST(request: NextRequest) {
     response.headers.set('X-Content-Type-Options', 'nosniff');
     response.headers.set('X-Frame-Options', 'DENY');
     
-    console.log('✅ Enhanced login process completed successfully');
     return response;
 
   } catch (error: any) {

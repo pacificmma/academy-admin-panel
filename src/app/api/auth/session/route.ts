@@ -4,13 +4,10 @@ import { getSession } from '@/app/lib/auth/session';
 
 export async function GET(request: NextRequest) {
   try {
-    console.log('🔍 Session check requested');
-    
     // Get session from request
     const session = await getSession(request);
     
     if (!session) {
-      console.log('❌ No valid session found');
       return NextResponse.json(
         { success: false, error: 'No valid session' },
         { status: 401 }
@@ -18,14 +15,11 @@ export async function GET(request: NextRequest) {
     }
 
     if (!session.isActive) {
-      console.log('❌ User account is inactive');
       return NextResponse.json(
         { success: false, error: 'Account is inactive' },
         { status: 403 }
       );
     }
-
-    console.log('✅ Valid session found for user:', session.uid);
     
     return NextResponse.json({
       success: true,

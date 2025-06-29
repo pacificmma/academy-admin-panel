@@ -3,9 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { clearSessionCookie } from '@/app/lib/auth/session';
 
 export async function POST(request: NextRequest) {
-  try {
-    console.log('🚪 Logout request received');
-    
+  try {    
     // Create response
     const response = NextResponse.json({
       success: true,
@@ -14,8 +12,6 @@ export async function POST(request: NextRequest) {
 
     // Clear the session cookie
     response.headers.set('Set-Cookie', clearSessionCookie());
-    
-    console.log('✅ Session cookie cleared');
     return response;
 
   } catch (error: unknown) {

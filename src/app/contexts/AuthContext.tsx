@@ -53,15 +53,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       // Session protection logic
       if (sessionProtected && protectedUserRef.current) {
-        if (!firebaseUser || firebaseUser.uid !== protectedUserRef.current.uid) {
-          console.log('Session protection active - unauthorized auth state change detected');
-          
+        if (!firebaseUser || firebaseUser.uid !== protectedUserRef.current.uid) {        
           try {
             if (protectedSessionRef.current) {
               await restoreProtectedUser();
             }
           } catch (error) {
-            console.error('Error restoring protected user:', error);
             setSessionProtected(false);
             protectedUserRef.current = null;
             protectedSessionRef.current = null;
@@ -98,9 +95,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         setUser(protectedUserRef.current);
         setSessionData(protectedSessionRef.current);
-        console.log('Protected user restored successfully');
       } catch (error) {
-        console.error('Failed to restore protected user:', error);
         throw error;
       }
     }
@@ -108,7 +103,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const protectSession = async () => {
     if (user && sessionData) {
-      console.log('Session protection activated for user:', user.uid);
       protectedUserRef.current = user;
       protectedSessionRef.current = sessionData;
       setSessionProtected(true);
@@ -116,7 +110,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const unprotectSession = () => {
-    console.log('Session protection deactivated');
     setSessionProtected(false);
     protectedUserRef.current = null;
     protectedSessionRef.current = null;

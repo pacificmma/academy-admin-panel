@@ -4,9 +4,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 
 // Initialize Firebase Admin only once
-if (!getApps().length) {
-  console.log('🔧 Initializing Firebase Admin...');
-  
+if (!getApps().length) {  
   // Validate environment variables
   const requiredEnvVars = {
     FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
@@ -39,9 +37,6 @@ if (!getApps().length) {
     privateKey = `${privateKey}\n-----END PRIVATE KEY-----`;
   }
 
-  console.log('🔑 Private key length:', privateKey.length);
-  console.log('🔑 Private key starts with:', privateKey.substring(0, 50) + '...');
-
   const serviceAccount: ServiceAccount = {
     projectId: process.env.FIREBASE_PROJECT_ID!,
     clientEmail: process.env.FIREBASE_CLIENT_EMAIL!,
@@ -53,7 +48,6 @@ if (!getApps().length) {
       credential: cert(serviceAccount),
       projectId: process.env.FIREBASE_PROJECT_ID,
     });
-    console.log('✅ Firebase Admin initialized successfully');
   } catch (error: any) {
     console.error('❌ Firebase Admin initialization failed:', error);
     throw new Error(`Firebase Admin initialization failed: ${error.message}`);

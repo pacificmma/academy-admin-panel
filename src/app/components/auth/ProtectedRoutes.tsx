@@ -46,8 +46,6 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
       }
 
       try {
-        console.log('Checking user access for:', user.uid);
-
         // Use session data if available
         if (sessionData) {
           setUserData({
@@ -65,8 +63,6 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 
         if (staffDoc.exists()) {
           const staffData = staffDoc.data();
-          console.log('Found staff user:', staffData);
-
           if (staffData.isActive === false) {
             setError('Your staff account has been deactivated. Please contact your administrator.');
             setLoading(false);
