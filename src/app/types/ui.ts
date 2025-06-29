@@ -1,6 +1,5 @@
-// src/app/types/ui.ts - Updated UI component types
-
-import { ReactNode, ComponentType } from 'react';
+// src/app/types/ui.ts - Temizlenmiş version
+import { ReactNode } from 'react';
 
 // Button component types
 export interface ButtonProps {
@@ -11,35 +10,35 @@ export interface ButtonProps {
   loading?: boolean;
   onClick?: () => void;
   type?: 'button' | 'submit' | 'reset';
-  className?: string;
+  sx?: any; // MUI sx prop
 }
 
-// Enhanced Input component types
-export interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'size'> {
-  label?: string;
+// Input component types
+export interface InputProps {
   name: string;
-  type?: 'text' | 'email' | 'password' | 'number' | 'tel' | 'url' | 'search';
   value: string;
   onChange: (value: string) => void;
-  error?: string;
-  helperText?: string;
-  required?: boolean;
-  placeholder?: string;
-  disabled?: boolean;
-  className?: string;
-  inputClassName?: string;
-  labelClassName?: string;
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
-  size?: 'sm' | 'md' | 'lg';
-  variant?: 'default' | 'outlined' | 'filled';
-  autoComplete?: string;
-  maxLength?: number;
+  size?: 'small' | 'medium' | 'large';
   showCharacterCount?: boolean;
-  fullWidth?: boolean;
+  maxLength?: number;
+  error?: string;
+  helperText?: string;
 }
 
-// Select component types
+// Alert component types
+export interface AlertProps {
+  type: 'success' | 'error' | 'warning' | 'info';
+  title?: string;
+  message: string;
+  onClose?: () => void;
+  autoClose?: boolean;
+  duration?: number;
+  open?: boolean;
+}
+
+// Select option type
 export interface SelectOption {
   value: string;
   label: string;
@@ -55,75 +54,4 @@ export interface SelectProps {
   error?: string;
   required?: boolean;
   disabled?: boolean;
-  className?: string;
-  placeholder?: string;
-}
-
-// Modal component types
-export interface ModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  title: string;
-  children: ReactNode;
-  actions?: ReactNode;
-  size?: 'sm' | 'md' | 'lg' | 'xl';
-  closeOnBackdrop?: boolean;
-  showCloseButton?: boolean;
-}
-
-// Alert component types
-export interface AlertProps {
-  type: 'success' | 'error' | 'warning' | 'info';
-  title?: string;
-  message: string;
-  onClose?: () => void;
-  autoClose?: boolean;
-  duration?: number;
-}
-
-// Table component types
-export interface Column<T> {
-  key: keyof T;
-  header: string;
-  render?: (value: any, item: T) => ReactNode;
-  sortable?: boolean;
-  className?: string;
-  width?: string;
-}
-
-export interface TableProps<T> {
-  data: T[];
-  columns: Column<T>[];
-  loading?: boolean;
-  onRowClick?: (item: T) => void;
-  emptyMessage?: string;
-  className?: string;
-  striped?: boolean;
-  hoverable?: boolean;
-}
-
-// Loading component types
-export interface LoadingProps {
-  size?: 'sm' | 'md' | 'lg';
-  color?: string;
-  text?: string;
-  fullScreen?: boolean;
-}
-
-// Badge component types
-export interface BadgeProps {
-  children: ReactNode;
-  variant?: 'primary' | 'secondary' | 'success' | 'warning' | 'error' | 'info';
-  size?: 'sm' | 'md' | 'lg';
-  className?: string;
-}
-
-// Card component types
-export interface CardProps {
-  children: ReactNode;
-  title?: string;
-  subtitle?: string;
-  actions?: ReactNode;
-  className?: string;
-  padding?: 'none' | 'sm' | 'md' | 'lg';
 }

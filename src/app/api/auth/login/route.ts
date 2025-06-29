@@ -1,19 +1,185 @@
-// src/app/api/auth/login/route.ts - Enhanced Security
+// src/app/api/auth/login/route.ts - Enhanced with proper validation
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/app/lib/firebase/admin';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/app/lib/firebase/config';
 import { createSession, setSessionCookie } from '@/app/lib/auth/session';
 
-// Track failed login attempts (in production, use Redis or external storage)
-const failedAttempts = new Map<string, { count: number; lastAttempt: number; blockedUntil?: number }>();
+// Inline validation utilities (to replace unused validation.ts)
+interface ValidationResult {
+  isValid: boolean;
+  errors: string[];
+  sanitizedData?: any;
+}
 
-// Security configuration
+// Input validation and sanitization
+function validateAndSanitizeLoginInput(body: any): ValidationResult {
+  const errors: string[] = [];
+  
+  // Check if body exists
+  if (!body || typeof body !== 'object') {
+    return { isValid: false, errors: ['Invalid request body'] };
+  }
+
+  const { email, password } = body;
+
+  // Email validation
+  if (!email) {
+    errors.push('Email is required');
+  } else {
+    if (typeof email !== 'string') {
+      errors.push('Email must be a string');
+    } else {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        errors.push('Please enter a valid email address');
+      }
+      if (email.length > 255) {
+        errors.push('Email is too long');
+      }
+    }
+  }
+
+  // Password validation
+  if (!password) {
+    errors.push('Password is required');
+  } else {
+    if (typeof password !== 'string') {
+      errors.push('Password must be a string');
+    } else {
+      if (password.length < 6) {
+        errors.push('Password must be at least 6 characters');
+      }
+      if (password.length > 128) {
+        errors.push('Password is too long');
+      }
+    }
+  }
+
+  // Return validation result
+  if (errors.length > 0) {
+    return { isValid: false, errors };
+  }
+
+  // Sanitize data
+  const sanitizedData = {
+    email: email.toLowerCase().trim(),
+    password: password // Don't trim password to preserve intentional spaces
+  };
+
+  return { isValid: true, errors: [], sanitizedData };
+}
+
+// Security utilities (inline instead of separate config file)
 const SECURITY_CONFIG = {
   maxFailedAttempts: 5,
   lockoutDuration: 15 * 60 * 1000, // 15 minutes
   attemptWindow: 15 * 60 * 1000, // 15 minutes
 };
+
+// Track failed login attempts (in production, use Redis)
+const failedAttempts = new Map<string, { count: number; lastAttempt: number; blockedUntil?: number }>();
+
+// Security helper functions
+function getClientIP(request: NextRequest): string {
+  const xForwardedFor = request.headers.get('x-forwarded-for');
+  const xRealIp = request.headers.get('x-real-ip');
+  const xClientIp = request.headers.get('x-client-ip');
+  
+  if (xForwardedFor) {
+    return xForwardedFor.split(',')[0].trim();
+  }
+  
+  return xRealIp || xClientIp || 'unknown';
+}
+
+function checkAccountLockout(ip: string): { allowed: boolean; remainingTime: number } {
+  const attempts = failedAttempts.get(ip);
+  if (!attempts) return { allowed: true, remainingTime: 0 };
+
+  const now = Date.now();
+  
+  // Check if still in lockout period
+  if (attempts.blockedUntil && attempts.blockedUntil > now) {
+    return { 
+      allowed: false, 
+      remainingTime: attempts.blockedUntil - now 
+    };
+  }
+
+  // Check if too many recent attempts
+  if (attempts.count >= SECURITY_CONFIG.maxFailedAttempts && 
+      now - attempts.lastAttempt < SECURITY_CONFIG.attemptWindow) {
+    
+    const blockedUntil = now + SECURITY_CONFIG.lockoutDuration;
+    attempts.blockedUntil = blockedUntil;
+    
+    return { 
+      allowed: false, 
+      remainingTime: SECURITY_CONFIG.lockoutDuration 
+    };
+  }
+
+  return { allowed: true, remainingTime: 0 };
+}
+
+function recordFailedAttempt(ip: string, reason: string, details?: any) {
+  const now = Date.now();
+  const current = failedAttempts.get(ip) || { count: 0, lastAttempt: 0 };
+  
+  // Reset count if last attempt was too long ago
+  if (now - current.lastAttempt > SECURITY_CONFIG.attemptWindow) {
+    current.count = 0;
+  }
+  
+  current.count++;
+  current.lastAttempt = now;
+  
+  failedAttempts.set(ip, current);
+  
+  // Simple security logging (inline instead of separate logger file)
+  console.log(`🚨 Failed login attempt ${current.count}/${SECURITY_CONFIG.maxFailedAttempts} from ${ip}:`, reason, details);
+}
+
+function clearFailedAttempts(ip: string) {
+  failedAttempts.delete(ip);
+  console.log('✅ Cleared failed attempts for:', ip);
+}
+
+function validateEnvironment() {
+  const required = [
+    'NEXTAUTH_SECRET',
+    'FIREBASE_PROJECT_ID',
+    'FIREBASE_CLIENT_EMAIL',
+    'FIREBASE_PRIVATE_KEY',
+    'NEXT_PUBLIC_FIREBASE_API_KEY'
+  ];
+  
+  const missing = required.filter(key => !process.env[key]);
+  
+  return {
+    valid: missing.length === 0,
+    missing
+  };
+}
+
+function getAuthErrorMessage(errorCode: string): string {
+  switch (errorCode) {
+    case 'auth/user-not-found':
+    case 'auth/wrong-password':
+    case 'auth/invalid-credential':
+    case 'auth/invalid-email':
+      return 'Invalid email or password';
+    case 'auth/too-many-requests':
+      return 'Too many failed attempts. Please try again later';
+    case 'auth/user-disabled':
+      return 'This account has been disabled';
+    case 'auth/network-request-failed':
+      return 'Network error. Please check your connection';
+    default:
+      return 'Authentication failed. Please try again';
+  }
+}
 
 export async function POST(request: NextRequest) {
   console.log('🚀 Enhanced Login API called');
@@ -62,11 +228,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { email, password } = body;
-
-    // Input validation
-    const validation = validateLoginInput(email, password);
-    if (!validation.valid) {
+    // Validate and sanitize input using our inline validation
+    const validation = validateAndSanitizeLoginInput(body);
+    if (!validation.isValid) {
       console.log('❌ Input validation failed:', validation.errors);
       recordFailedAttempt(clientIP, 'invalid_input');
       return NextResponse.json(
@@ -75,23 +239,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Sanitize email
-    const sanitizedEmail = email.toLowerCase().trim();
+    const { email, password } = validation.sanitizedData!;
+    console.log('✅ Input validation passed for:', email);
 
-    console.log('✅ Input validation passed for:', sanitizedEmail);
-
-    // Import Firebase modules dynamically
+    // Firebase authentication
     let signInResult;
     try {
       console.log('🔐 Attempting Firebase authentication...');
-      signInResult = await signInWithEmailAndPassword(auth, sanitizedEmail, password);
+      signInResult = await signInWithEmailAndPassword(auth, email, password);
       console.log('✅ Firebase authentication successful:', signInResult.user.uid);
     } catch (authError: any) {
       console.error('❌ Firebase auth error:', authError.code, authError.message);
       
       const errorMessage = getAuthErrorMessage(authError.code);
       recordFailedAttempt(clientIP, 'auth_failed', { 
-        email: sanitizedEmail, 
+        email, 
         errorCode: authError.code 
       });
       
@@ -123,7 +285,7 @@ export async function POST(request: NextRequest) {
     if (!staffDoc.exists) {
       console.log('❌ User not found in staff collection');
       await auth.signOut();
-      recordFailedAttempt(clientIP, 'unauthorized_user', { email: sanitizedEmail });
+      recordFailedAttempt(clientIP, 'unauthorized_user', { email });
       return NextResponse.json(
         { success: false, error: 'Access denied. You are not authorized to use this system' },
         { status: 403 }
@@ -137,7 +299,7 @@ export async function POST(request: NextRequest) {
     if (!staffData?.isActive) {
       console.log('❌ User account is inactive');
       await auth.signOut();
-      recordFailedAttempt(clientIP, 'inactive_account', { email: sanitizedEmail });
+      recordFailedAttempt(clientIP, 'inactive_account', { email });
       return NextResponse.json(
         { success: false, error: 'Your account has been deactivated. Please contact your administrator' },
         { status: 403 }
@@ -225,137 +387,6 @@ export async function POST(request: NextRequest) {
       { success: false, error: 'An unexpected error occurred' },
       { status: 500 }
     );
-  }
-}
-
-// Security helper functions
-function getClientIP(request: NextRequest): string {
-  const xForwardedFor = request.headers.get('x-forwarded-for');
-  const xRealIp = request.headers.get('x-real-ip');
-  const xClientIp = request.headers.get('x-client-ip');
-  
-  if (xForwardedFor) {
-    return xForwardedFor.split(',')[0].trim();
-  }
-  
-  return xRealIp || xClientIp || 'unknown';
-}
-
-function checkAccountLockout(ip: string): { allowed: boolean; remainingTime: number } {
-  const attempts = failedAttempts.get(ip);
-  if (!attempts) return { allowed: true, remainingTime: 0 };
-
-  const now = Date.now();
-  
-  // Check if still in lockout period
-  if (attempts.blockedUntil && attempts.blockedUntil > now) {
-    return { 
-      allowed: false, 
-      remainingTime: attempts.blockedUntil - now 
-    };
-  }
-
-  // Check if too many recent attempts
-  if (attempts.count >= SECURITY_CONFIG.maxFailedAttempts && 
-      now - attempts.lastAttempt < SECURITY_CONFIG.attemptWindow) {
-    
-    const blockedUntil = now + SECURITY_CONFIG.lockoutDuration;
-    attempts.blockedUntil = blockedUntil;
-    
-    return { 
-      allowed: false, 
-      remainingTime: SECURITY_CONFIG.lockoutDuration 
-    };
-  }
-
-  return { allowed: true, remainingTime: 0 };
-}
-
-function recordFailedAttempt(ip: string, reason: string, details?: any) {
-  const now = Date.now();
-  const current = failedAttempts.get(ip) || { count: 0, lastAttempt: 0 };
-  
-  // Reset count if last attempt was too long ago
-  if (now - current.lastAttempt > SECURITY_CONFIG.attemptWindow) {
-    current.count = 0;
-  }
-  
-  current.count++;
-  current.lastAttempt = now;
-  
-  failedAttempts.set(ip, current);
-  
-  console.log(`🚨 Failed login attempt ${current.count}/${SECURITY_CONFIG.maxFailedAttempts} from ${ip}:`, reason, details);
-}
-
-function clearFailedAttempts(ip: string) {
-  failedAttempts.delete(ip);
-  console.log('✅ Cleared failed attempts for:', ip);
-}
-
-function validateEnvironment() {
-  const required = [
-    'NEXTAUTH_SECRET',
-    'FIREBASE_PROJECT_ID',
-    'FIREBASE_CLIENT_EMAIL',
-    'FIREBASE_PRIVATE_KEY',
-    'NEXT_PUBLIC_FIREBASE_API_KEY'
-  ];
-  
-  const missing = required.filter(key => !process.env[key]);
-  
-  return {
-    valid: missing.length === 0,
-    missing
-  };
-}
-
-function validateLoginInput(email: string, password: string) {
-  const errors: string[] = [];
-  
-  if (!email) errors.push('Email is required');
-  if (!password) errors.push('Password is required');
-  
-  if (email) {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      errors.push('Please enter a valid email address');
-    }
-    if (email.length > 255) {
-      errors.push('Email is too long');
-    }
-  }
-  
-  if (password) {
-    if (password.length < 6) {
-      errors.push('Password must be at least 6 characters');
-    }
-    if (password.length > 128) {
-      errors.push('Password is too long');
-    }
-  }
-  
-  return {
-    valid: errors.length === 0,
-    errors
-  };
-}
-
-function getAuthErrorMessage(errorCode: string): string {
-  switch (errorCode) {
-    case 'auth/user-not-found':
-    case 'auth/wrong-password':
-    case 'auth/invalid-credential':
-    case 'auth/invalid-email':
-      return 'Invalid email or password';
-    case 'auth/too-many-requests':
-      return 'Too many failed attempts. Please try again later';
-    case 'auth/user-disabled':
-      return 'This account has been disabled';
-    case 'auth/network-request-failed':
-      return 'Network error. Please check your connection';
-    default:
-      return 'Authentication failed. Please try again';
   }
 }
 
