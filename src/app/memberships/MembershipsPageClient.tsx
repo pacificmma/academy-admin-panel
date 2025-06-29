@@ -77,7 +77,11 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filters, setFilters] = useState<MembershipFilters>({});
+  const [filters, setFilters] = useState<{
+    status?: string[];
+    classTypes?: string[];
+    duration?: string[];
+  }>({});
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
@@ -585,7 +589,10 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
             <Select
               multiple
               value={filters.status || []}
-              onChange={(e) => setFilters({ ...filters, status: e.target.value as string[] })}
+              onChange={(e) => setFilters({ 
+                ...filters, 
+                status: e.target.value as string[] 
+              })}
             >
               {MEMBERSHIP_STATUSES.map((status) => (
                 <MenuItem key={status.value} value={status.value}>
@@ -600,7 +607,10 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
             <Select
               multiple
               value={filters.duration || []}
-              onChange={(e) => setFilters({ ...filters, duration: e.target.value as string[] })}
+              onChange={(e) => setFilters({ 
+                ...filters, 
+                status: e.target.value as string[] 
+              })}
             >
               {MEMBERSHIP_DURATIONS.map((duration) => (
                 <MenuItem key={duration.value} value={duration.value}>

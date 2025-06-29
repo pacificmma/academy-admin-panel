@@ -12,6 +12,7 @@ export type MembershipStatus = 'active' | 'inactive' | 'archived';
 
 // Core membership plan interface
 export interface MembershipPlan extends BaseEntity {
+  memberCount?: number;
   name: string;
   description?: string;
   duration: MembershipDuration;
@@ -19,7 +20,7 @@ export interface MembershipPlan extends BaseEntity {
   price: number;
   currency: string;
   classTypes: ClassType[];
-  maxClassesPerWeek?: number; // null = unlimited
+  maxClassesPerWeek?: number | null;
   maxClassesPerMonth?: number; // null = unlimited
   allowDropIns: boolean;
   includedFeatures: string[];
@@ -36,8 +37,8 @@ export interface MembershipPlanFormData {
   duration: MembershipDuration;
   price: number;
   classTypes: ClassType[];
-  maxClassesPerWeek?: number;
-  maxClassesPerMonth?: number;
+  maxClassesPerWeek?: number | null;  // null ekle
+  maxClassesPerMonth?: number | null; // null ekle
   allowDropIns: boolean;
   includedFeatures: string[];
   status: MembershipStatus;
@@ -93,7 +94,7 @@ export interface MembershipStats {
   membershipDistribution: {
     planId: string;
     planName: string;
-    memberCount: number;
+    memberCount?: number;
     percentage: number;
   }[];
 }
@@ -111,13 +112,13 @@ export interface MembershipFilters {
 }
 
 // Constants and options
-export const MEMBERSHIP_DURATIONS: { value: MembershipDuration; label: string; days: number }[] = [
+export const MEMBERSHIP_DURATIONS = [
   { value: '1_month', label: '1 Month', days: 30 },
   { value: '3_months', label: '3 Months', days: 90 },
   { value: '6_months', label: '6 Months', days: 180 },
   { value: '12_months', label: '12 Months', days: 365 },
-  { value: 'unlimited', label: 'Unlimited', days: 0 },
-];
+  { value: 'unlimited', label: 'Unlimited', days: 9999 },
+] as const;
 
 export const CLASS_TYPES: { value: ClassType; label: string; color: string }[] = [
   { value: 'bjj', label: 'Brazilian Jiu-Jitsu', color: '#1976d2' },

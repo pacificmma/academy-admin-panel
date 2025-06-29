@@ -207,6 +207,7 @@ export async function POST(request: NextRequest) {
     const createdMembership: MembershipPlan = {
       id: docRef.id,
       ...membershipData,
+      memberCount: 0, // default değer ekle
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

@@ -201,9 +201,10 @@ export async function POST(request: NextRequest) {
     const createdMembership: MembershipPlan = {
       id: docRef.id,
       ...membershipData,
+      memberCount: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    };
+    } as MembershipPlan;
 
     const response: ApiResponse<MembershipPlan> = {
       success: true,

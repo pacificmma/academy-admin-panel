@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFirestore, collection, getDocs, query, where } from 'firebase/firestore';
 import { getSession } from '@/app/lib/auth/session';
-import { MembershipStats } from '@/app/types/membership';
+import { MembershipPlan, MembershipStats } from '@/app/types/membership';
 import { ApiResponse } from '@/app/types/api';
 
 const db = getFirestore();
@@ -22,10 +22,15 @@ export async function GET(request: NextRequest) {
     const plansQuery = query(collection(db, 'membershipPlans'));
     const plansSnapshot = await getDocs(plansQuery);
     
-    const plans = plansSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    const plans: MembershipPlan[] = plansSnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt,
+        updatedAt: data.updatedAt?.toDate?.()?.toISOString() || data.updatedAt,
+      } as MembershipPlan;
+    });
 
     // Calculate basic stats
     const totalPlans = plans.length;

@@ -33,14 +33,14 @@ import {
   Remove as RemoveIcon,
   Palette as PaletteIcon,
 } from '@mui/icons-material';
-import { 
-  MembershipPlan, 
-  MembershipPlanFormData, 
+import {
+  MembershipPlan,
+  MembershipPlanFormData,
   MEMBERSHIP_DURATIONS,
   CLASS_TYPES,
   MEMBERSHIP_STATUSES,
   DEFAULT_MEMBERSHIP_PLAN,
-  MEMBERSHIP_VALIDATION 
+  MEMBERSHIP_VALIDATION
 } from '../../types/membership';
 
 interface MembershipFormDialogProps {
@@ -52,13 +52,13 @@ interface MembershipFormDialogProps {
 }
 
 const POPULAR_COLORS = [
-  '#1976d2', '#d32f2f', '#f57c00', '#388e3c', 
+  '#1976d2', '#d32f2f', '#f57c00', '#388e3c',
   '#7b1fa2', '#455a64', '#e91e63', '#00796b'
 ];
 
 const DEFAULT_FEATURES = [
   'Access to all facilities',
-  'Shower facilities', 
+  'Shower facilities',
   'Equipment usage',
   'Free WiFi',
   'Parking',
@@ -101,8 +101,8 @@ export default function MembershipFormDialog({
           duration: membership.duration,
           price: membership.price,
           classTypes: membership.classTypes,
-          maxClassesPerWeek: membership.maxClassesPerWeek,
-          maxClassesPerMonth: membership.maxClassesPerMonth,
+          maxClassesPerWeek: membership.maxClassesPerWeek ?? undefined,
+          maxClassesPerMonth: membership.maxClassesPerMonth ?? undefined,
           allowDropIns: membership.allowDropIns,
           includedFeatures: membership.includedFeatures,
           status: membership.status,
@@ -159,7 +159,7 @@ export default function MembershipFormDialog({
     }
 
     // Classes per week validation
-    if (formData.maxClassesPerWeek !== undefined) {
+    if (formData.maxClassesPerWeek !== undefined && formData.maxClassesPerWeek !== null) {
       if (formData.maxClassesPerWeek < MEMBERSHIP_VALIDATION.maxClassesPerWeek.min) {
         newErrors.maxClassesPerWeek = 'Must be at least 1';
       } else if (formData.maxClassesPerWeek > MEMBERSHIP_VALIDATION.maxClassesPerWeek.max) {
@@ -168,7 +168,7 @@ export default function MembershipFormDialog({
     }
 
     // Classes per month validation
-    if (formData.maxClassesPerMonth !== undefined) {
+    if (formData.maxClassesPerMonth !== undefined && formData.maxClassesPerMonth !== null) {
       if (formData.maxClassesPerMonth < MEMBERSHIP_VALIDATION.maxClassesPerMonth.min) {
         newErrors.maxClassesPerMonth = 'Must be at least 1';
       } else if (formData.maxClassesPerMonth > MEMBERSHIP_VALIDATION.maxClassesPerMonth.max) {

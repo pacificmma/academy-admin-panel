@@ -1,12 +1,21 @@
 // src/app/types/api.ts - API response and request types
 
 export interface ApiResponse<T = any> {
-    success: boolean;
-    data?: T;
-    error?: string;
-    message?: string;
-  }
-  
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+  meta?: {
+    total?: number;
+    filters?: Record<string, any>;
+    pagination?: {
+      page: number;
+      limit: number;
+      totalPages: number;
+    };
+  };
+}
+
   export interface PaginatedResponse<T> extends ApiResponse<T[]> {
     pagination: {
       page: number;
