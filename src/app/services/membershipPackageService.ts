@@ -27,7 +27,7 @@ import {
     PackageSearchParams,
     PackageListResponse,
     AgeGroup,
-  } from '@/app/types/membershipPackages';
+  } from '@/app/types/membership';
   
   // Collection names
   const PACKAGES_COLLECTION = 'membershipPackages';
