@@ -128,24 +128,6 @@ const Sidebar: React.FC<SidebarProps> = ({
         path: '/discounts',
         roles: ['admin'],
       },
-      
-      // Analytics - Sadece Admin
-      {
-        text: 'Analytics',
-        icon: <AnalyticsIcon />,
-        path: '/analytics',
-        roles: ['admin'],
-        disabled: true, // Henüz hazır değil
-      },
-      
-      // Settings - Sadece Admin
-      {
-        text: 'Settings',
-        icon: <SettingsIcon />,
-        path: '/settings',
-        roles: ['admin'],
-        disabled: true, // Henüz hazır değil
-      },
     ];
 
     // Kullanıcının rolüne göre menü öğelerini filtrele

@@ -48,14 +48,14 @@ import Layout from '../components/layout/Layout';
 import MembershipFormDialog from '../components/forms/MembershipFormDialog';
 import DeleteConfirmationDialog from '../components/ui/DeleteConfirmationDialog';
 import { SessionData } from '../types';
-import { 
-  MembershipPlan, 
+import {
+  MembershipPlan,
   MembershipPlanFormData,
-  MembershipFilters, 
+  MembershipFilters,
   MembershipStats,
-  MEMBERSHIP_STATUSES, 
+  MEMBERSHIP_STATUSES,
   CLASS_TYPES,
-  MEMBERSHIP_DURATIONS 
+  MEMBERSHIP_DURATIONS
 } from '../types/membership';
 
 interface MembershipsPageClientProps {
@@ -102,13 +102,13 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
     try {
       setLoading(true);
       setError(null);
-      
+
       const params = new URLSearchParams();
       if (searchTerm) params.append('search', searchTerm);
       if (filters.status?.length) params.append('status', filters.status.join(','));
       if (filters.classTypes?.length) params.append('classTypes', filters.classTypes.join(','));
       if (filters.duration?.length) params.append('duration', filters.duration.join(','));
-      
+
       const response = await fetch(`/api/memberships?${params.toString()}`);
       const result = await response.json();
 
@@ -152,7 +152,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
   const handleCreateMembership = async (formData: MembershipPlanFormData) => {
     try {
       setSubmitLoading(true);
-      
+
       const response = await fetch('/api/memberships', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -181,7 +181,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
 
     try {
       setSubmitLoading(true);
-      
+
       const response = await fetch(`/api/memberships/${selectedMembership.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -211,7 +211,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
 
     try {
       setSubmitLoading(true);
-      
+
       const response = await fetch(`/api/memberships/${selectedMembership.id}`, {
         method: 'DELETE',
       });
@@ -463,8 +463,8 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
                             </Typography>
                             {membership.description && (
                               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                                {membership.description.length > 50 
-                                  ? `${membership.description.substring(0, 50)}...` 
+                                {membership.description.length > 50
+                                  ? `${membership.description.substring(0, 50)}...`
                                   : membership.description}
                               </Typography>
                             )}
@@ -498,8 +498,8 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
                         />
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2">
-                          0 {/* TODO: Add member count from member-membership relationship */}
+                        <Typography variant="body2" color="text.secondary">
+                          {membership.memberCount || 0}
                         </Typography>
                       </TableCell>
                       <TableCell align="right">
@@ -579,7 +579,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
           <Typography variant="subtitle2" gutterBottom>
             Filter Membership Plans
           </Typography>
-          
+
           <FormControl size="small" fullWidth sx={{ mb: 2 }}>
             <InputLabel>Status</InputLabel>
             <Select

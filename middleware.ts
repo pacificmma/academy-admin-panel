@@ -356,15 +356,6 @@ function getClientIP(request: NextRequest): string {
   return xRealIp || xClientIp || 'unknown';
 }
 
-// Clean up old rate limit entries periodically
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, value] of rateLimitStore.entries()) {
-    if (value.resetTime < now) {
-      rateLimitStore.delete(key);
-    }
-  }
-}, 5 * 60 * 1000); // Clean up every 5 minutes
 
 export const config = {
   matcher: [

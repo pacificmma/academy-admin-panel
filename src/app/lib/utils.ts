@@ -162,16 +162,6 @@ export function getBaseUrl(): string {
   return `http://localhost:${process.env.PORT ?? 3000}`;
 }
 
-export function buildUrl(path: string, params?: Record<string, string>): string {
-  const url = new URL(path, getBaseUrl());
-  if (params) {
-    Object.entries(params).forEach(([key, value]) => {
-      url.searchParams.set(key, value);
-    });
-  }
-  return url.toString();
-}
-
 // Role utilities
 export function hasPermission(userRole: string, allowedRoles: string[]): boolean {
   return allowedRoles.includes(userRole);
@@ -189,34 +179,6 @@ export function isStaff(role: string): boolean {
   return role === 'staff';
 }
 
-// Storage utilities (for client-side only)
-export function getFromLocalStorage(key: string): string | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-export function setToLocalStorage(key: string, value: string): void {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // Ignore storage errors
-  }
-}
-
-export function removeFromLocalStorage(key: string): void {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.removeItem(key);
-  } catch {
-    // Ignore storage errors
-  }
-}
-
 // Error handling utilities
 export function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -229,34 +191,4 @@ export function createError(message: string, code?: string, statusCode?: number)
   if (code) error.code = code;
   if (statusCode) error.statusCode = statusCode;
   return error;
-}
-
-// Async utilities
-export function delay(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-export function debounce<T extends (...args: any[]) => any>(
-  func: T,
-  wait: number
-): (...args: Parameters<T>) => void {
-  let timeout: NodeJS.Timeout;
-  return (...args: Parameters<T>) => {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => func(...args), wait);
-  };
-}
-
-export function throttle<T extends (...args: any[]) => any>(
-  func: T,
-  limit: number
-): (...args: Parameters<T>) => void {
-  let inThrottle: boolean;
-  return (...args: Parameters<T>) => {
-    if (!inThrottle) {
-      func(...args);
-      inThrottle = true;
-      setTimeout(() => (inThrottle = false), limit);
-    }
-  };
 }
