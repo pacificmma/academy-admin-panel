@@ -1,333 +1,139 @@
-// src/app/types/membership.ts - Membership related types and interfaces
+// src/app/types/membership.ts - Complete membership management types
+import { BaseEntity } from './common';
 
-import { BaseEntity } from './staff';
+// Membership plan duration types
+export type MembershipDuration = '1_month' | '3_months' | '6_months' | '12_months' | 'unlimited';
 
-// Core membership types
-export type MembershipType = 
-  | 'full_access' 
-  | 'bjj_only' 
-  | 'mma_only' 
-  | 'boxing_only' 
-  | 'muay_thai_only' 
-  | 'kickboxing_only'
-  | 'wrestling_only'
-  | 'judo_only'
-  | 'karate_only'
-  | 'custom';
+// Class types available at the gym
+export type ClassType = 'bjj' | 'mma' | 'muay_thai' | 'boxing' | 'general_fitness' | 'all';
 
-export type MembershipDuration = 1 | 3 | 6 | 12; // months
-
+// Membership plan status
 export type MembershipStatus = 'active' | 'inactive' | 'archived';
 
-// Membership plan structure
+// Core membership plan interface
 export interface MembershipPlan extends BaseEntity {
   name: string;
   description?: string;
-  type: MembershipType;
-  duration: MembershipDuration; // in months
+  duration: MembershipDuration;
+  durationInDays: number; // Auto-calculated based on duration
   price: number;
-  currency: string; // ISO currency code (USD, EUR, etc.)
-  
-  // Features and access
-  includedClasses: string[]; // Array of class types included
-  classLimitPerMonth?: number; // null means unlimited
-  personalTrainingIncluded?: number; // Number of sessions
-  guestPassesIncluded?: number;
-  
-  // Restrictions and conditions
-  ageRestrictions?: {
-    minAge?: number;
-    maxAge?: number;
-  };
-  
-  // Administrative
-  isActive: boolean;
-  isPublic: boolean; // Should appear on public membership page
-  sortOrder: number; // For display ordering
-  maxActiveMembers?: number; // Limit total active members for this plan
-  
-  // Special conditions
-  requiresPhysicalExam?: boolean;
-  requiresParentalConsent?: boolean; // For minors
-  
-  // Promotional
-  isPromotional?: boolean;
-  promotionalEndDate?: string;
-  originalPrice?: number; // If promotional, store original price
-  
-  // Auto-renewal and billing
-  autoRenewal: boolean;
-  gracePeriodDays: number; // Days after expiration before suspension
-  
-  // Metadata
-  createdBy: string; // Admin user ID
-  lastModifiedBy?: string;
-  notes?: string; // Internal admin notes
+  currency: string;
+  classTypes: ClassType[];
+  maxClassesPerWeek?: number; // null = unlimited
+  maxClassesPerMonth?: number; // null = unlimited
+  allowDropIns: boolean;
+  includedFeatures: string[];
+  status: MembershipStatus;
+  isPopular?: boolean; // For highlighting in UI
+  colorCode?: string; // For UI theming
+  displayOrder: number; // For sorting in lists
 }
+
+// Form data for creating/editing membership plans
+export interface MembershipPlanFormData {
+  name: string;
+  description?: string;
+  duration: MembershipDuration;
+  price: number;
+  classTypes: ClassType[];
+  maxClassesPerWeek?: number;
+  maxClassesPerMonth?: number;
+  allowDropIns: boolean;
+  includedFeatures: string[];
+  status: MembershipStatus;
+  isPopular?: boolean;
+  colorCode?: string;
+}
+
+// API request types
+export interface CreateMembershipPlanRequest extends MembershipPlanFormData {}
+
+export interface UpdateMembershipPlanRequest extends Partial<MembershipPlanFormData> {}
 
 // Member's active membership instance
 export interface MemberMembership extends BaseEntity {
   memberId: string;
   membershipPlanId: string;
-  
-  // Dates
+  membershipPlan?: MembershipPlan; // Populated in queries
   startDate: string;
   endDate: string;
-  purchaseDate: string;
-  
-  // Payment info
-  amountPaid: number;
-  currency: string;
-  paymentMethod?: 'cash' | 'card' | 'bank_transfer' | 'online' | 'family_plan';
-  paymentReference?: string;
+  isActive: boolean;
+  remainingClasses?: number; // For limited plans
+  usedClasses: number;
+  paymentStatus: 'pending' | 'paid' | 'overdue' | 'cancelled';
+  purchasePrice: number; // Price at time of purchase
   discountApplied?: string; // Discount code used
   discountAmount?: number;
-  
-  // Status
-  status: 'active' | 'expired' | 'cancelled' | 'suspended' | 'pending';
-  
-  // Usage tracking
-  classesAttended: number;
-  personalTrainingUsed: number;
-  guestPassesUsed: number;
-  
-  // Family linking
-  parentMembershipId?: string; // If this is a child membership linked to parent
-  isChildMembership: boolean;
-  
-  // Administrative
-  createdBy: string; // Admin user ID who created this membership
-  cancelledBy?: string; // Admin user ID who cancelled
+  autoRenew: boolean;
+  cancellationDate?: string;
   cancellationReason?: string;
-  suspendedBy?: string;
-  suspensionReason?: string;
-  suspensionDate?: string;
-  
-  // Auto-renewal
-  autoRenewal: boolean;
-  nextBillingDate?: string;
-  
-  // Notes
-  adminNotes?: string;
-  memberNotes?: string;
-}
-
-// Membership plan creation/update requests
-export interface CreateMembershipPlanRequest {
-  name: string;
-  description?: string;
-  type: MembershipType;
-  duration: MembershipDuration;
-  price: number;
-  currency: string;
-  includedClasses: string[];
-  classLimitPerMonth?: number;
-  personalTrainingIncluded?: number;
-  guestPassesIncluded?: number;
-  ageRestrictions?: {
-    minAge?: number;
-    maxAge?: number;
-  };
-  isActive: boolean;
-  isPublic: boolean;
-  sortOrder: number;
-  maxActiveMembers?: number;
-  requiresPhysicalExam?: boolean;
-  requiresParentalConsent?: boolean;
-  autoRenewal: boolean;
-  gracePeriodDays: number;
   notes?: string;
 }
 
-export interface UpdateMembershipPlanRequest extends Partial<CreateMembershipPlanRequest> {
-  lastModifiedBy: string;
-}
-
-// Member membership creation request
-export interface CreateMemberMembershipRequest {
-  memberId: string;
-  membershipPlanId: string;
-  startDate: string;
-  amountPaid: number;
-  currency: string;
-  paymentMethod: 'cash' | 'card' | 'bank_transfer' | 'online' | 'family_plan';
-  paymentReference?: string;
-  discountApplied?: string;
-  discountAmount?: number;
-  autoRenewal: boolean;
-  isChildMembership: boolean;
-  parentMembershipId?: string;
-  adminNotes?: string;
-  createdBy: string;
-}
-
-// Membership statistics and analytics
+// Statistics and analytics types
 export interface MembershipStats {
   totalPlans: number;
   activePlans: number;
-  totalActiveMembers: number;
   totalRevenue: number;
   monthlyRevenue: number;
-  averageMembershipDuration: number;
-  
-  // Plan-specific stats
-  planStats: {
-    [planId: string]: {
-      name: string;
-      activeMembers: number;
-      totalRevenue: number;
-      averageDuration: number;
-    };
-  };
-  
-  // Monthly breakdown
-  monthlyBreakdown: {
-    month: string;
-    newMemberships: number;
-    renewals: number;
-    cancellations: number;
-    revenue: number;
+  popularPlan: string;
+  membershipDistribution: {
+    planId: string;
+    planName: string;
+    memberCount: number;
+    percentage: number;
   }[];
 }
 
-// Search and filtering
-export interface MembershipPlanFilters {
-  type?: MembershipType;
-  isActive?: boolean;
-  isPublic?: boolean;
-  minPrice?: number;
-  maxPrice?: number;
-  duration?: MembershipDuration;
-  searchTerm?: string;
+// Filter and search options
+export interface MembershipFilters {
+  status?: MembershipStatus[];
+  classTypes?: ClassType[];
+  duration?: MembershipDuration[];
+  priceRange?: {
+    min: number;
+    max: number;
+  };
+  search?: string;
 }
 
-export interface MemberMembershipFilters {
-  memberId?: string;
-  membershipPlanId?: string;
-  status?: MemberMembership['status'];
-  startDateFrom?: string;
-  startDateTo?: string;
-  endDateFrom?: string;
-  endDateTo?: string;
-  isChildMembership?: boolean;
-  searchTerm?: string;
-}
-
-// Class types for membership plans
-export const AVAILABLE_CLASS_TYPES = [
-  'BJJ Fundamentals',
-  'BJJ Advanced',
-  'BJJ Competition',
-  'MMA Basics',
-  'MMA Advanced',
-  'Boxing Fundamentals',
-  'Boxing Advanced',
-  'Muay Thai',
-  'Kickboxing',
-  'Wrestling',
-  'Judo',
-  'Karate',
-  'Self Defense',
-  'Cardio Kickboxing',
-  'Youth Classes',
-  'Women Only Classes',
-  'Open Mat',
-  'Personal Training',
-] as const;
-
-export type ClassType = typeof AVAILABLE_CLASS_TYPES[number];
-
-// Default membership plan templates
-export const DEFAULT_MEMBERSHIP_PLANS: Omit<MembershipPlan, keyof BaseEntity | 'createdBy'>[] = [
-  {
-    name: '1 Month Full Access',
-    description: 'Complete access to all classes and facilities for 1 month',
-    type: 'full_access',
-    duration: 1,
-    price: 150,
-    currency: 'USD',
-    includedClasses: [...AVAILABLE_CLASS_TYPES],
-    isActive: true,
-    isPublic: true,
-    sortOrder: 1,
-    autoRenewal: true,
-    gracePeriodDays: 3,
-  },
-  {
-    name: '3 Month Full Access',
-    description: 'Complete access to all classes and facilities for 3 months',
-    type: 'full_access',
-    duration: 3,
-    price: 400,
-    currency: 'USD',
-    includedClasses: [...AVAILABLE_CLASS_TYPES],
-    isActive: true,
-    isPublic: true,
-    sortOrder: 2,
-    autoRenewal: true,
-    gracePeriodDays: 7,
-  },
-  {
-    name: '6 Month Full Access',
-    description: 'Complete access to all classes and facilities for 6 months',
-    type: 'full_access',
-    duration: 6,
-    price: 750,
-    currency: 'USD',
-    includedClasses: [...AVAILABLE_CLASS_TYPES],
-    isActive: true,
-    isPublic: true,
-    sortOrder: 3,
-    autoRenewal: true,
-    gracePeriodDays: 14,
-  },
-  {
-    name: '12 Month Full Access',
-    description: 'Complete access to all classes and facilities for 1 year',
-    type: 'full_access',
-    duration: 12,
-    price: 1400,
-    currency: 'USD',
-    includedClasses: [...AVAILABLE_CLASS_TYPES],
-    isActive: true,
-    isPublic: true,
-    sortOrder: 4,
-    autoRenewal: true,
-    gracePeriodDays: 30,
-  },
-  {
-    name: '3 Month BJJ Only',
-    description: 'Access to Brazilian Jiu-Jitsu classes only for 3 months',
-    type: 'bjj_only',
-    duration: 3,
-    price: 300,
-    currency: 'USD',
-    includedClasses: ['BJJ Fundamentals', 'BJJ Advanced', 'BJJ Competition', 'Open Mat'],
-    isActive: true,
-    isPublic: true,
-    sortOrder: 5,
-    autoRenewal: true,
-    gracePeriodDays: 7,
-  },
-  {
-    name: '6 Month MMA',
-    description: 'Mixed Martial Arts focused training for 6 months',
-    type: 'mma_only',
-    duration: 6,
-    price: 600,
-    currency: 'USD',
-    includedClasses: ['MMA Basics', 'MMA Advanced', 'Boxing Fundamentals', 'Wrestling', 'BJJ Fundamentals'],
-    isActive: true,
-    isPublic: true,
-    sortOrder: 6,
-    autoRenewal: true,
-    gracePeriodDays: 14,
-  },
+// Constants and options
+export const MEMBERSHIP_DURATIONS: { value: MembershipDuration; label: string; days: number }[] = [
+  { value: '1_month', label: '1 Month', days: 30 },
+  { value: '3_months', label: '3 Months', days: 90 },
+  { value: '6_months', label: '6 Months', days: 180 },
+  { value: '12_months', label: '12 Months', days: 365 },
+  { value: 'unlimited', label: 'Unlimited', days: 0 },
 ];
 
-// Validation helpers
+export const CLASS_TYPES: { value: ClassType; label: string; color: string }[] = [
+  { value: 'bjj', label: 'Brazilian Jiu-Jitsu', color: '#1976d2' },
+  { value: 'mma', label: 'Mixed Martial Arts', color: '#d32f2f' },
+  { value: 'muay_thai', label: 'Muay Thai', color: '#f57c00' },
+  { value: 'boxing', label: 'Boxing', color: '#388e3c' },
+  { value: 'general_fitness', label: 'General Fitness', color: '#7b1fa2' },
+  { value: 'all', label: 'All Classes', color: '#455a64' },
+];
+
+export const MEMBERSHIP_STATUSES: { value: MembershipStatus; label: string; color: string }[] = [
+  { value: 'active', label: 'Active', color: '#4caf50' },
+  { value: 'inactive', label: 'Inactive', color: '#ff9800' },
+  { value: 'archived', label: 'Archived', color: '#9e9e9e' },
+];
+
+// Default membership plan template
+export const DEFAULT_MEMBERSHIP_PLAN: Partial<MembershipPlanFormData> = {
+  currency: 'USD',
+  allowDropIns: true,
+  status: 'active',
+  isPopular: false,
+  includedFeatures: ['Access to all facilities', 'Shower facilities', 'Equipment usage'],
+};
+
+// Validation rules
 export const MEMBERSHIP_VALIDATION = {
   name: {
+    required: true,
     minLength: 3,
     maxLength: 100,
   },
@@ -335,18 +141,20 @@ export const MEMBERSHIP_VALIDATION = {
     maxLength: 500,
   },
   price: {
+    required: true,
     min: 0,
     max: 10000,
   },
-  duration: {
-    allowedValues: [1, 3, 6, 12] as MembershipDuration[],
+  classTypes: {
+    required: true,
+    minItems: 1,
   },
-  gracePeriodDays: {
-    min: 0,
-    max: 90,
+  maxClassesPerWeek: {
+    min: 1,
+    max: 30,
   },
-  sortOrder: {
-    min: 0,
-    max: 1000,
+  maxClassesPerMonth: {
+    min: 1,
+    max: 120,
   },
 } as const;
