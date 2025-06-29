@@ -1,4 +1,4 @@
-// src/app/types/membership.ts - Complete membership management types
+// src/app/types/membership.ts - Corrected version with proper types
 import { BaseEntity } from './common';
 
 // Membership plan duration types
@@ -10,7 +10,7 @@ export type ClassType = 'bjj' | 'mma' | 'muay_thai' | 'boxing' | 'general_fitnes
 // Membership plan status
 export type MembershipStatus = 'active' | 'inactive' | 'archived';
 
-// Core membership plan interface
+// Core membership plan interface - extends BaseEntity
 export interface MembershipPlan extends BaseEntity {
   memberCount?: number;
   name: string;
@@ -20,14 +20,15 @@ export interface MembershipPlan extends BaseEntity {
   price: number;
   currency: string;
   classTypes: ClassType[];
-  maxClassesPerWeek?: number | null;
-  maxClassesPerMonth?: number; // null = unlimited
+  maxClassesPerWeek?: number; // Allow undefined, not null
+  maxClassesPerMonth?: number; // Allow undefined, not null
   allowDropIns: boolean;
   includedFeatures: string[];
   status: MembershipStatus;
   isPopular?: boolean; // For highlighting in UI
   colorCode?: string; // For UI theming
   displayOrder: number; // For sorting in lists
+  createdBy?: string; // Add this field to match what's being used
 }
 
 // Form data for creating/editing membership plans
@@ -37,8 +38,8 @@ export interface MembershipPlanFormData {
   duration: MembershipDuration;
   price: number;
   classTypes: ClassType[];
-  maxClassesPerWeek?: number | null;  // null ekle
-  maxClassesPerMonth?: number | null; // null ekle
+  maxClassesPerWeek?: number | null; // null for "unlimited" in forms
+  maxClassesPerMonth?: number | null; // null for "unlimited" in forms
   allowDropIns: boolean;
   includedFeatures: string[];
   status: MembershipStatus;
@@ -71,6 +72,23 @@ export interface MemberMembership extends BaseEntity {
   notes?: string;
 }
 
+// Member membership creation request
+export interface CreateMemberMembershipRequest {
+  memberId: string;
+  membershipPlanId: string;
+  startDate: string;
+  amountPaid: number;
+  currency: string;
+  paymentMethod: 'cash' | 'card' | 'bank_transfer' | 'online' | 'family_plan';
+  paymentReference?: string;
+  discountApplied?: string;
+  discountAmount?: number;
+  autoRenewal: boolean;
+  isChildMembership: boolean;
+  parentMembershipId?: string;
+  adminNotes?: string;
+}
+
 // Member membership filters
 export interface MemberMembershipFilters {
   memberId?: string;
@@ -81,6 +99,17 @@ export interface MemberMembershipFilters {
   endDateFrom?: string;
   endDateTo?: string;
   isChildMembership?: boolean;
+  searchTerm?: string;
+}
+
+// Membership plan filters (for API queries)
+export interface MembershipPlanFilters {
+  type?: string;
+  isActive?: boolean;
+  isPublic?: boolean;
+  minPrice?: number;
+  maxPrice?: number;
+  duration?: string;
   searchTerm?: string;
 }
 
@@ -99,7 +128,7 @@ export interface MembershipStats {
   }[];
 }
 
-// Filter and search options
+// Filter and search options for UI
 export interface MembershipFilters {
   status?: MembershipStatus[];
   classTypes?: ClassType[];
