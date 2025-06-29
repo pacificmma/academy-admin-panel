@@ -1,6 +1,6 @@
 // src/app/memberships/page.tsx
 import { Metadata } from 'next';
-import { getSession } from '@/app/lib/auth/session';
+import { getServerSession } from '@/app/lib/auth/session';
 import { redirect } from 'next/navigation';
 import MembershipsPageClient from './MembershipsPageClient';
 
@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 };
 
 export default async function MembershipsPage() {
-  const session = await getSession();
+  const session = await getServerSession();
 
   if (!session) {
     redirect('/login');

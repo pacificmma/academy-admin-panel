@@ -1,7 +1,7 @@
 // src/app/memberships/MembershipsPageClient.tsx - Complete implementation
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Container,
@@ -29,6 +29,8 @@ import {
   Select,
   Alert,
   Snackbar,
+  CircularProgress,
+  Skeleton,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -50,6 +52,7 @@ import {
   MembershipPlan, 
   MembershipPlanFormData,
   MembershipFilters, 
+  MembershipStats,
   MEMBERSHIP_STATUSES, 
   CLASS_TYPES,
   MEMBERSHIP_DURATIONS 
@@ -59,9 +62,17 @@ interface MembershipsPageClientProps {
   session: SessionData;
 }
 
-export default function MembershipsPageClient({ session }: MembershipsPageClientProps) {
+export default function MembershipsPageClient({ session }: MembershipsPageClientProps): React.JSX.Element {
   // State management
   const [memberships, setMemberships] = useState<MembershipPlan[]>([]);
+  const [stats, setStats] = useState<MembershipStats>({
+    totalPlans: 0,
+    activePlans: 0,
+    totalRevenue: 0,
+    monthlyRevenue: 0,
+    popularPlan: '',
+    membershipDistribution: [],
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -69,141 +80,64 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
   const [filters, setFilters] = useState<MembershipFilters>({});
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [selectedMembership, setSelectedMembership] = useState<MembershipPlan | null>(null);
-  const [filterAnchorEl, setFilterAnchorEl] = useState<null | HTMLElement>(null);
-  const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
 
   // Dialog states
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedMembership, setSelectedMembership] = useState<MembershipPlan | null>(null);
   const [submitLoading, setSubmitLoading] = useState(false);
 
-  // Stats state
-  const [stats, setStats] = useState({
-    totalPlans: 0,
-    activePlans: 0,
-    totalRevenue: 0,
-    popularPlan: '',
-  });
+  // Menu states
+  const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
+  const [filterAnchorEl, setFilterAnchorEl] = useState<null | HTMLElement>(null);
 
-  // Load memberships data
+  // Load data on component mount
   useEffect(() => {
     loadMemberships();
-  }, [filters, searchTerm]);
+    loadStats();
+  }, []);
 
   const loadMemberships = async () => {
     try {
       setLoading(true);
-      const queryParams = new URLSearchParams();
+      setError(null);
       
-      if (searchTerm) queryParams.append('search', searchTerm);
-      if (filters.status?.length) queryParams.append('status', filters.status.join(','));
-      if (filters.classTypes?.length) queryParams.append('classTypes', filters.classTypes.join(','));
-      if (filters.duration?.length) queryParams.append('duration', filters.duration.join(','));
-      if (filters.priceRange) {
-        queryParams.append('minPrice', filters.priceRange.min.toString());
-        queryParams.append('maxPrice', filters.priceRange.max.toString());
-      }
-
-      const response = await fetch(`/api/memberships?${queryParams}`);
+      const params = new URLSearchParams();
+      if (searchTerm) params.append('search', searchTerm);
+      if (filters.status?.length) params.append('status', filters.status.join(','));
+      if (filters.classTypes?.length) params.append('classTypes', filters.classTypes.join(','));
+      if (filters.duration?.length) params.append('duration', filters.duration.join(','));
+      
+      const response = await fetch(`/api/memberships?${params.toString()}`);
       const result = await response.json();
 
-      if (!response.ok) {
+      if (response.ok) {
+        setMemberships(result.data || []);
+      } else {
         throw new Error(result.error || 'Failed to load memberships');
       }
-
-      setMemberships(result.data || []);
-      setStats(result.stats || stats);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load memberships');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCreateMembership = async (data: MembershipPlanFormData) => {
+  const loadStats = async () => {
     try {
-      setSubmitLoading(true);
-      const response = await fetch('/api/memberships', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-
+      const response = await fetch('/api/memberships/stats');
       const result = await response.json();
 
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to create membership');
+      if (response.ok) {
+        setStats(result.data);
       }
-
-      setMemberships(prev => [result.data, ...prev]);
-      setSuccessMessage('Membership plan created successfully');
-      setCreateDialogOpen(false);
-    } catch (err: any) {
-      setError(err.message);
-      throw err; // Re-throw to prevent dialog from closing
-    } finally {
-      setSubmitLoading(false);
+    } catch (err) {
+      // Stats are optional, don't show error for this
     }
   };
 
-  const handleEditMembership = async (data: MembershipPlanFormData) => {
-    if (!selectedMembership) return;
-
-    try {
-      setSubmitLoading(true);
-      const response = await fetch(`/api/memberships/${selectedMembership.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to update membership');
-      }
-
-      setMemberships(prev => 
-        prev.map(m => m.id === selectedMembership.id ? result.data : m)
-      );
-      setSuccessMessage('Membership plan updated successfully');
-      setEditDialogOpen(false);
-      setSelectedMembership(null);
-    } catch (err: any) {
-      setError(err.message);
-      throw err; // Re-throw to prevent dialog from closing
-    } finally {
-      setSubmitLoading(false);
-    }
-  };
-
-  const handleDeleteMembership = async () => {
-    if (!selectedMembership) return;
-
-    try {
-      setSubmitLoading(true);
-      const response = await fetch(`/api/memberships/${selectedMembership.id}`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) {
-        const result = await response.json();
-        throw new Error(result.error || 'Failed to delete membership');
-      }
-
-      setMemberships(prev => prev.filter(m => m.id !== selectedMembership.id));
-      setSuccessMessage('Membership plan deleted successfully');
-      setDeleteDialogOpen(false);
-      setSelectedMembership(null);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setSubmitLoading(false);
-    }
-  };
-
+  // Filter memberships based on search term
   const filteredMemberships = memberships.filter(membership =>
     membership.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     membership.description?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -214,6 +148,93 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
     page * rowsPerPage + rowsPerPage
   );
 
+  // Event handlers
+  const handleCreateMembership = async (formData: MembershipPlanFormData) => {
+    try {
+      setSubmitLoading(true);
+      
+      const response = await fetch('/api/memberships', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        setSuccessMessage('Membership plan created successfully');
+        setCreateDialogOpen(false);
+        loadMemberships();
+        loadStats();
+      } else {
+        throw new Error(result.error || 'Failed to create membership plan');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create membership plan');
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
+
+  const handleEditMembership = async (formData: MembershipPlanFormData) => {
+    if (!selectedMembership) return;
+
+    try {
+      setSubmitLoading(true);
+      
+      const response = await fetch(`/api/memberships/${selectedMembership.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        setSuccessMessage('Membership plan updated successfully');
+        setEditDialogOpen(false);
+        setSelectedMembership(null);
+        loadMemberships();
+        loadStats();
+      } else {
+        throw new Error(result.error || 'Failed to update membership plan');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update membership plan');
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
+
+  const handleDeleteMembership = async () => {
+    if (!selectedMembership) return;
+
+    try {
+      setSubmitLoading(true);
+      
+      const response = await fetch(`/api/memberships/${selectedMembership.id}`, {
+        method: 'DELETE',
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        setSuccessMessage('Membership plan deleted successfully');
+        setDeleteDialogOpen(false);
+        setSelectedMembership(null);
+        loadMemberships();
+        loadStats();
+      } else {
+        throw new Error(result.error || 'Failed to delete membership plan');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete membership plan');
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
+
+  // Utility functions
   const formatPrice = (price: number) => `$${price.toFixed(2)}`;
 
   const getStatusColor = (status: string) => {
@@ -310,27 +331,18 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
         <Grid container spacing={3} sx={{ mb: 4 }}>
           {statsCards.map((stat, index) => (
             <Grid item xs={12} sm={6} md={3} key={index}>
-              <Card>
+              <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
                 <CardContent>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Box
-                      sx={{
-                        p: 2,
-                        borderRadius: 2,
-                        bgcolor: `${stat.color}.50`,
-                        color: `${stat.color}.main`,
-                      }}
-                    >
-                      <stat.icon />
-                    </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <Box>
-                      <Typography variant="body2" color="text.secondary">
+                      <Typography color="text.secondary" gutterBottom>
                         {stat.title}
                       </Typography>
-                      <Typography variant="h6" fontWeight="600">
-                        {stat.value}
+                      <Typography variant="h5" component="div" fontWeight="600">
+                        {loading ? <Skeleton width={60} /> : stat.value}
                       </Typography>
                     </Box>
+                    <stat.icon sx={{ fontSize: 40, color: `${stat.color}.main` }} />
                   </Box>
                 </CardContent>
               </Card>
@@ -338,46 +350,47 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
           ))}
         </Grid>
 
-        {/* Actions and Filters */}
-        <Card sx={{ mb: 3 }}>
-          <CardContent>
-            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-              <Button
-                variant="contained"
-                startIcon={<AddIcon />}
-                onClick={() => setCreateDialogOpen(true)}
-                sx={{ borderRadius: 2 }}
-              >
-                Create Membership Plan
-              </Button>
-
+        {/* Actions Bar */}
+        <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid', borderColor: 'divider' }}>
+          <Grid container spacing={2} alignItems="center">
+            <Grid item xs={12} md={6}>
               <TextField
+                fullWidth
                 placeholder="Search membership plans..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                size="small"
-                sx={{ minWidth: 300 }}
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
-                      <SearchIcon color="action" />
+                      <SearchIcon />
                     </InputAdornment>
                   ),
                 }}
               />
-
-              <IconButton
-                onClick={(e) => setFilterAnchorEl(e.currentTarget)}
-                sx={{ bgcolor: 'grey.100' }}
-              >
-                <FilterIcon />
-              </IconButton>
-            </Box>
-          </CardContent>
-        </Card>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
+                <Button
+                  variant="outlined"
+                  startIcon={<FilterIcon />}
+                  onClick={(e) => setFilterAnchorEl(e.currentTarget)}
+                >
+                  Filters
+                </Button>
+                <Button
+                  variant="contained"
+                  startIcon={<AddIcon />}
+                  onClick={() => setCreateDialogOpen(true)}
+                >
+                  Create Plan
+                </Button>
+              </Box>
+            </Grid>
+          </Grid>
+        </Paper>
 
         {/* Memberships Table */}
-        <Card>
+        <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
           <TableContainer>
             <Table>
               <TableHead>
@@ -393,42 +406,66 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
               </TableHead>
               <TableBody>
                 {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
-                      Loading memberships...
-                    </TableCell>
-                  </TableRow>
+                  // Loading skeleton
+                  Array.from({ length: 5 }).map((_, index) => (
+                    <TableRow key={index}>
+                      <TableCell><Skeleton /></TableCell>
+                      <TableCell><Skeleton /></TableCell>
+                      <TableCell><Skeleton /></TableCell>
+                      <TableCell><Skeleton /></TableCell>
+                      <TableCell><Skeleton /></TableCell>
+                      <TableCell><Skeleton /></TableCell>
+                      <TableCell><Skeleton /></TableCell>
+                    </TableRow>
+                  ))
                 ) : paginatedMemberships.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
-                      {searchTerm ? 'No memberships found matching your search' : 'No membership plans created yet'}
+                    <TableCell colSpan={7} sx={{ textAlign: 'center', py: 4 }}>
+                      <Typography variant="body1" color="text.secondary">
+                        {searchTerm ? 'No membership plans found matching your search.' : 'No membership plans created yet.'}
+                      </Typography>
+                      {!searchTerm && (
+                        <Button
+                          variant="contained"
+                          startIcon={<AddIcon />}
+                          onClick={() => setCreateDialogOpen(true)}
+                          sx={{ mt: 2 }}
+                        >
+                          Create Your First Plan
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ) : (
                   paginatedMemberships.map((membership) => (
                     <TableRow key={membership.id} hover>
                       <TableCell>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                           <Box
                             sx={{
-                              width: 8,
-                              height: 8,
+                              width: 12,
+                              height: 12,
                               borderRadius: '50%',
-                              bgcolor: membership.colorCode || '#1976d2',
+                              backgroundColor: membership.colorCode || '#1976d2',
                             }}
                           />
                           <Box>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <Typography variant="body2" fontWeight="500">
-                                {membership.name}
-                              </Typography>
+                            <Typography variant="body2" fontWeight="500">
+                              {membership.name}
                               {membership.isPopular && (
-                                <Chip label="Popular" size="small" color="warning" />
+                                <Chip
+                                  label="Popular"
+                                  size="small"
+                                  color="secondary"
+                                  sx={{ ml: 1, fontSize: '0.75rem' }}
+                                />
                               )}
-                            </Box>
+                            </Typography>
                             {membership.description && (
-                              <Typography variant="caption" color="text.secondary">
-                                {membership.description}
+                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                {membership.description.length > 50 
+                                  ? `${membership.description.substring(0, 50)}...` 
+                                  : membership.description}
                               </Typography>
                             )}
                           </Box>
@@ -483,25 +520,33 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
             </Table>
           </TableContainer>
 
-          <TablePagination
-            component="div"
-            count={filteredMemberships.length}
-            page={page}
-            onPageChange={(_, newPage) => setPage(newPage)}
-            rowsPerPage={rowsPerPage}
-            onRowsPerPageChange={(e) => {
-              setRowsPerPage(parseInt(e.target.value, 10));
-              setPage(0);
-            }}
-            rowsPerPageOptions={[5, 10, 25, 50]}
-          />
-        </Card>
+          {/* Pagination */}
+          {!loading && filteredMemberships.length > 0 && (
+            <TablePagination
+              rowsPerPageOptions={[5, 10, 25]}
+              component="div"
+              count={filteredMemberships.length}
+              rowsPerPage={rowsPerPage}
+              page={page}
+              onPageChange={(_, newPage) => setPage(newPage)}
+              onRowsPerPageChange={(e) => {
+                setRowsPerPage(parseInt(e.target.value, 10));
+                setPage(0);
+              }}
+            />
+          )}
+        </Paper>
 
         {/* Action Menu */}
         <Menu
           anchorEl={menuAnchorEl}
           open={Boolean(menuAnchorEl)}
-          onClose={() => setMenuAnchorEl(null)}
+          onClose={() => {
+            setMenuAnchorEl(null);
+            setSelectedMembership(null);
+          }}
+          transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+          anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
         >
           <MenuItem
             onClick={() => {
@@ -509,7 +554,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
               setMenuAnchorEl(null);
             }}
           >
-            <EditIcon sx={{ mr: 1 }} fontSize="small" />
+            <EditIcon sx={{ mr: 1 }} />
             Edit Plan
           </MenuItem>
           <MenuItem
@@ -519,7 +564,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
             }}
             sx={{ color: 'error.main' }}
           >
-            <DeleteIcon sx={{ mr: 1 }} fontSize="small" />
+            <DeleteIcon sx={{ mr: 1 }} />
             Delete Plan
           </MenuItem>
         </Menu>
@@ -529,8 +574,12 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
           anchorEl={filterAnchorEl}
           open={Boolean(filterAnchorEl)}
           onClose={() => setFilterAnchorEl(null)}
-          PaperProps={{ sx: { minWidth: 250, p: 2 } }}
+          PaperProps={{ sx: { minWidth: 300, p: 2 } }}
         >
+          <Typography variant="subtitle2" gutterBottom>
+            Filter Membership Plans
+          </Typography>
+          
           <FormControl size="small" fullWidth sx={{ mb: 2 }}>
             <InputLabel>Status</InputLabel>
             <Select

@@ -70,6 +70,19 @@ export interface MemberMembership extends BaseEntity {
   notes?: string;
 }
 
+// Member membership filters
+export interface MemberMembershipFilters {
+  memberId?: string;
+  membershipPlanId?: string;
+  status?: 'active' | 'expired' | 'cancelled' | 'suspended';
+  startDateFrom?: string;
+  startDateTo?: string;
+  endDateFrom?: string;
+  endDateTo?: string;
+  isChildMembership?: boolean;
+  searchTerm?: string;
+}
+
 // Statistics and analytics types
 export interface MembershipStats {
   totalPlans: number;
@@ -123,7 +136,6 @@ export const MEMBERSHIP_STATUSES: { value: MembershipStatus; label: string; colo
 
 // Default membership plan template
 export const DEFAULT_MEMBERSHIP_PLAN: Partial<MembershipPlanFormData> = {
-  currency: 'USD',
   allowDropIns: true,
   status: 'active',
   isPopular: false,
