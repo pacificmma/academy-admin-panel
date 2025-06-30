@@ -1,8 +1,8 @@
-// src/app/types/membership.ts - Simplified version
+// src/app/types/membership.ts - Fixed version with week options
 import { BaseEntity } from './common';
 
-// Membership plan duration types
-export type MembershipDuration = '1_month' | '3_months' | '6_months' | '12_months' | 'unlimited';
+// Membership plan duration types - UPDATED WITH WEEK OPTIONS
+export type MembershipDuration = '1_week' | '2_weeks' | '3_weeks' | '4_weeks' | '1_month' | '3_months' | '6_months' | '12_months' | 'unlimited';
 
 // Class types available at the gym
 export type ClassType = 'bjj' | 'mma' | 'muay_thai' | 'boxing' | 'general_fitness' | 'all';
@@ -100,6 +100,7 @@ export interface MembershipPlanFilters {
   maxPrice?: number;
   duration?: string;
   searchTerm?: string;
+  adminNotes?: string;
 }
 
 // Statistics and analytics types
@@ -120,8 +121,12 @@ export interface MembershipFilters {
   search?: string;
 }
 
-// Constants and options
+// Constants and options - UPDATED WITH WEEK OPTIONS
 export const MEMBERSHIP_DURATIONS = [
+  { value: '1_week', label: '1 Week', days: 7 },
+  { value: '2_weeks', label: '2 Weeks', days: 14 },
+  { value: '3_weeks', label: '3 Weeks', days: 21 },
+  { value: '4_weeks', label: '4 Weeks', days: 28 },
   { value: '1_month', label: '1 Month', days: 30 },
   { value: '3_months', label: '3 Months', days: 90 },
   { value: '6_months', label: '6 Months', days: 180 },

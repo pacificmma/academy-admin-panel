@@ -1,7 +1,9 @@
-// src/app/api/memberships/[id]/route.ts - FIXED VERSION with correct validation
+// src/app/api/memberships/[id]/route.ts - CORRECTED with proper imports, week support, and TypeScript fixes
 import { NextRequest, NextResponse } from 'next/server';
-import { adminDb } from '@/app/lib/firebase/admin';
+import { adminAuth, adminDb } from '@/app/lib/firebase/admin';
 import { validateAPIAccess } from '@/app/lib/auth/session';
+import { MembershipPlan } from '@/app/types/membership';
+import type { Query, DocumentData } from 'firebase-admin/firestore';
 
 // ============================================
 // SECURITY & VALIDATION
@@ -40,7 +42,8 @@ function checkRateLimit(ip: string, maxRequests = 50, windowMs = 15 * 60 * 1000)
   return true;
 }
 
-function validateMembershipUpdate(data: any): ValidationResult {
+// Validation function for membership plan update data - UPDATED WITH WEEK SUPPORT
+function validateUpdateMembershipPlanData(data: any): ValidationResult {
   const errors: string[] = [];
   
   if (!data || typeof data !== 'object') {
@@ -49,29 +52,27 @@ function validateMembershipUpdate(data: any): ValidationResult {
 
   const { name, description, duration, price, classTypes, status, currency } = data;
 
-  // Validate fields if they are provided (all fields are optional for updates)
+  // Validate name (if provided)
   if (name !== undefined) {
-    if (typeof name !== 'string' || name.trim().length === 0) {
-      errors.push('Name must be a non-empty string');
-    } else if (name.trim().length < 3) {
-      errors.push('Name must be at least 3 characters long');
+    if (typeof name !== 'string' || name.trim().length < 3) {
+      errors.push('Name must be at least 3 characters');
     } else if (name.trim().length > 100) {
-      errors.push('Name must be less than 100 characters long');
+      errors.push('Name must be less than 100 characters');
     }
   }
 
-  if (description !== undefined) {
-    if (typeof description !== 'string') {
-      errors.push('Description must be a string');
-    } else if (description.length > 500) {
-      errors.push('Description must be less than 500 characters');
-    }
+  // Validate description (if provided)
+  if (description !== undefined && typeof description !== 'string') {
+    errors.push('Description must be a string');
+  } else if (description && description.trim().length > 500) {
+    errors.push('Description must be less than 500 characters');
   }
 
+  // Validate duration (if provided) - updated with week options
   if (duration !== undefined) {
-    const validDurations = ['1_month', '3_months', '6_months', '12_months', 'unlimited'];
+    const validDurations = ['1_week', '2_weeks', '3_weeks', '4_weeks', '1_month', '3_months', '6_months', '12_months', 'unlimited'];
     if (typeof duration !== 'string' || !validDurations.includes(duration)) {
-      errors.push('Duration must be one of: 1_month, 3_months, 6_months, 12_months, unlimited');
+      errors.push('Duration must be one of: 1_week, 2_weeks, 3_weeks, 4_weeks, 1_month, 3_months, 6_months, 12_months, unlimited');
     }
   }
 
@@ -122,8 +123,12 @@ function validateMembershipUpdate(data: any): ValidationResult {
   if (duration !== undefined) {
     sanitizedData.duration = duration.trim();
     
-    // Convert duration to days
+    // Convert duration to days (updated with week options)
     const durationToDays: Record<string, number> = {
+      '1_week': 7,
+      '2_weeks': 14,
+      '3_weeks': 21,
+      '4_weeks': 28,
       '1_month': 30,
       '3_months': 90,
       '6_months': 180,
@@ -136,357 +141,216 @@ function validateMembershipUpdate(data: any): ValidationResult {
   if (currency !== undefined) sanitizedData.currency = currency.trim();
   if (classTypes !== undefined) sanitizedData.classTypes = classTypes.map((type: string) => type.trim());
   if (status !== undefined) sanitizedData.status = status;
-
+  
   // Always update the updatedAt timestamp
   sanitizedData.updatedAt = new Date().toISOString();
 
   return { isValid: true, errors: [], sanitizedData };
 }
 
-function addSecurityHeaders(response: NextResponse): NextResponse {
-  response.headers.set('X-Content-Type-Options', 'nosniff');
-  response.headers.set('X-Frame-Options', 'DENY');
-  response.headers.set('X-XSS-Protection', '1; mode=block');
-  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-  
-  if (process.env.NODE_ENV === 'production') {
-    response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-  }
-  
-  return response;
-}
-
-function sanitizeOutput(data: any): any {
-  if (Array.isArray(data)) {
-    return data.map(item => sanitizeOutput(item));
-  }
-  
-  if (data && typeof data === 'object') {
-    const sanitized = { ...data };
-    delete sanitized._internal;
-    delete sanitized.secrets;
-    delete sanitized.privateData;
-    return sanitized;
-  }
-  
-  return data;
-}
-
 // ============================================
 // API ENDPOINTS
 // ============================================
 
-// GET /api/memberships/[id]
+// GET - Fetch specific membership plan
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
-) {
+): Promise<NextResponse> {
   const clientIP = getClientIP(request);
 
   try {
-    if (!checkRateLimit(clientIP, 100, 15 * 60 * 1000)) {
-      const response = NextResponse.json(
-        { success: false, error: 'Rate limit exceeded' },
+    // Rate limiting
+    if (!checkRateLimit(clientIP)) {
+      return NextResponse.json(
+        { error: 'Too many requests' },
         { status: 429 }
       );
-      return addSecurityHeaders(response);
     }
 
-    const { success, session, error } = await validateAPIAccess(request, ['admin', 'staff']);
-    
-    if (!success) {
-      const response = NextResponse.json(
-        { success: false, error },
-        { status: error === 'Authentication required' ? 401 : 403 }
+    // Validate API access
+    const { session } = await validateAPIAccess(request);
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
       );
-      return addSecurityHeaders(response);
     }
 
     const { id } = params;
 
-    if (!id || typeof id !== 'string') {
-      const response = NextResponse.json(
-        { success: false, error: 'Invalid membership plan ID' },
-        { status: 400 }
+    // Fetch the membership plan
+    const doc = await adminDb.collection('membershipPlans').doc(id).get();
+
+    if (!doc.exists) {
+      return NextResponse.json(
+        { error: 'Membership plan not found' },
+        { status: 404 }
       );
-      return addSecurityHeaders(response);
     }
 
-    try {
-      const docRef = adminDb.collection('membershipPlans').doc(id);
-      const doc = await docRef.get();
+    const membershipPlan: MembershipPlan = {
+      id: doc.id,
+      ...doc.data(),
+    } as MembershipPlan;
 
-      if (!doc.exists) {
-        const response = NextResponse.json(
-          { success: false, error: 'Membership plan not found' },
-          { status: 404 }
-        );
-        return addSecurityHeaders(response);
-      }
+    return NextResponse.json({ data: membershipPlan });
 
-      const membershipData = {
-        id: doc.id,
-        ...doc.data()
-      };
-
-      const response = NextResponse.json({
-        success: true,
-        data: sanitizeOutput(membershipData)
-      }, { status: 200 });
-
-      return addSecurityHeaders(response);
-
-    } catch (dbError: any) {
-      const response = NextResponse.json(
-        { success: false, error: 'Failed to load membership plan' },
-        { status: 500 }
-      );
-      return addSecurityHeaders(response);
-    }
-
-  } catch (error: any) {
-    const response = NextResponse.json(
-      { 
-        success: false, 
-        error: process.env.NODE_ENV === 'development' 
-          ? error.message 
-          : 'Internal server error' 
-      },
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'Failed to fetch membership plan' },
       { status: 500 }
     );
-    return addSecurityHeaders(response);
   }
 }
 
-// PUT /api/memberships/[id]
+// PUT - Update membership plan
 export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
-) {
+): Promise<NextResponse> {
   const clientIP = getClientIP(request);
 
   try {
-    if (!checkRateLimit(clientIP, 30, 15 * 60 * 1000)) {
-      const response = NextResponse.json(
-        { success: false, error: 'Rate limit exceeded' },
+    // Rate limiting
+    if (!checkRateLimit(clientIP)) {
+      return NextResponse.json(
+        { error: 'Too many requests' },
         { status: 429 }
       );
-      return addSecurityHeaders(response);
+    }
+
+    // Validate API access
+    const { session } = await validateAPIAccess(request);
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
     }
 
     // Only admins can update membership plans
-    const { success, session, error } = await validateAPIAccess(request, ['admin']);
-    
-    if (!success) {
-      const response = NextResponse.json(
-        { success: false, error },
-        { status: error === 'Authentication required' ? 401 : 403 }
+    if (session.role !== 'admin') {
+      return NextResponse.json(
+        { error: 'Insufficient permissions' },
+        { status: 403 }
       );
-      return addSecurityHeaders(response);
     }
 
     const { id } = params;
 
-    if (!id || typeof id !== 'string') {
-      const response = NextResponse.json(
-        { success: false, error: 'Invalid membership plan ID' },
-        { status: 400 }
+    // Check if membership plan exists
+    const existingDoc = await adminDb.collection('membershipPlans').doc(id).get();
+    if (!existingDoc.exists) {
+      return NextResponse.json(
+        { error: 'Membership plan not found' },
+        { status: 404 }
       );
-      return addSecurityHeaders(response);
     }
 
-    let body;
-    try {
-      body = await request.json();
-    } catch (parseError) {
-      const response = NextResponse.json(
-        { success: false, error: 'Invalid JSON format' },
-        { status: 400 }
-      );
-      return addSecurityHeaders(response);
-    }
-
-    const validation = validateMembershipUpdate(body);
+    // Parse request body
+    const body = await request.json();
+    
+    // Validate input data
+    const validation = validateUpdateMembershipPlanData(body);
     if (!validation.isValid) {
-      const response = NextResponse.json(
-        { 
-          success: false, 
-          error: 'Validation failed', 
-          details: validation.errors 
-        },
+      return NextResponse.json(
+        { error: 'Validation failed', details: validation.errors },
         { status: 400 }
       );
-      return addSecurityHeaders(response);
     }
 
-    try {
-      // Check if membership plan exists
-      const docRef = adminDb.collection('membershipPlans').doc(id);
-      const doc = await docRef.get();
+    // Update the membership plan
+    await adminDb.collection('membershipPlans').doc(id).update(validation.sanitizedData);
+    
+    // Fetch the updated document
+    const updatedDoc = await adminDb.collection('membershipPlans').doc(id).get();
+    const updatedPlan: MembershipPlan = {
+      id: updatedDoc.id,
+      ...updatedDoc.data(),
+    } as MembershipPlan;
 
-      if (!doc.exists) {
-        const response = NextResponse.json(
-          { success: false, error: 'Membership plan not found' },
-          { status: 404 }
-        );
-        return addSecurityHeaders(response);
-      }
+    return NextResponse.json({
+      message: 'Membership plan updated successfully',
+      data: updatedPlan
+    });
 
-      // Update the document
-      await docRef.update({
-        ...validation.sanitizedData,
-        lastModifiedBy: session!.uid,
-      });
-
-      // Fetch the updated document
-      const updatedDoc = await docRef.get();
-      const updatedMembership = {
-        id: updatedDoc.id,
-        ...updatedDoc.data()
-      };
-
-      const response = NextResponse.json({
-        success: true,
-        data: sanitizeOutput(updatedMembership),
-        message: 'Membership plan updated successfully'
-      }, { status: 200 });
-
-      return addSecurityHeaders(response);
-
-    } catch (dbError: any) {
-      const response = NextResponse.json(
-        { success: false, error: 'Failed to update membership plan' },
-        { status: 500 }
-      );
-      return addSecurityHeaders(response);
-    }
-
-  } catch (error: any) {
-    const response = NextResponse.json(
-      { 
-        success: false, 
-        error: process.env.NODE_ENV === 'development' 
-          ? error.message 
-          : 'Internal server error' 
-      },
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'Failed to update membership plan' },
       { status: 500 }
     );
-    return addSecurityHeaders(response);
   }
 }
 
-// DELETE /api/memberships/[id]
+// DELETE - Delete membership plan
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
-) {
+): Promise<NextResponse> {
   const clientIP = getClientIP(request);
 
   try {
-    if (!checkRateLimit(clientIP, 10, 15 * 60 * 1000)) {
-      const response = NextResponse.json(
-        { success: false, error: 'Rate limit exceeded' },
+    // Rate limiting
+    if (!checkRateLimit(clientIP)) {
+      return NextResponse.json(
+        { error: 'Too many requests' },
         { status: 429 }
       );
-      return addSecurityHeaders(response);
+    }
+
+    // Validate API access
+    const { session } = await validateAPIAccess(request);
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
     }
 
     // Only admins can delete membership plans
-    const { success, session, error } = await validateAPIAccess(request, ['admin']);
-    
-    if (!success) {
-      const response = NextResponse.json(
-        { success: false, error },
-        { status: error === 'Authentication required' ? 401 : 403 }
+    if (session.role !== 'admin') {
+      return NextResponse.json(
+        { error: 'Insufficient permissions' },
+        { status: 403 }
       );
-      return addSecurityHeaders(response);
     }
 
     const { id } = params;
 
-    if (!id || typeof id !== 'string') {
-      const response = NextResponse.json(
-        { success: false, error: 'Invalid membership plan ID' },
-        { status: 400 }
+    // Check if membership plan exists
+    const existingDoc = await adminDb.collection('membershipPlans').doc(id).get();
+    if (!existingDoc.exists) {
+      return NextResponse.json(
+        { error: 'Membership plan not found' },
+        { status: 404 }
       );
-      return addSecurityHeaders(response);
     }
 
-    try {
-      // Check if membership plan exists
-      const docRef = adminDb.collection('membershipPlans').doc(id);
-      const doc = await docRef.get();
+    // Check if the plan is being used by any active memberships
+    const activeMemberships = await adminDb.collection('memberMemberships')
+      .where('membershipPlanId', '==', id)
+      .where('isActive', '==', true)
+      .get();
 
-      if (!doc.exists) {
-        const response = NextResponse.json(
-          { success: false, error: 'Membership plan not found' },
-          { status: 404 }
-        );
-        return addSecurityHeaders(response);
-      }
-
-      // Check if any members are currently using this plan
-      const memberMembershipsSnapshot = await adminDb
-        .collection('memberMemberships')
-        .where('membershipPlanId', '==', id)
-        .where('isActive', '==', true)
-        .get();
-
-      if (!memberMembershipsSnapshot.empty) {
-        const response = NextResponse.json(
-          { 
-            success: false, 
-            error: 'Cannot delete membership plan. Active members are currently using this plan.',
-            activeMembers: memberMembershipsSnapshot.size
-          },
-          { status: 409 }
-        );
-        return addSecurityHeaders(response);
-      }
-
-      // Delete the membership plan
-      await docRef.delete();
-
-      const response = NextResponse.json({
-        success: true,
-        message: 'Membership plan deleted successfully'
-      }, { status: 200 });
-
-      return addSecurityHeaders(response);
-
-    } catch (dbError: any) {
-      const response = NextResponse.json(
-        { success: false, error: 'Failed to delete membership plan' },
-        { status: 500 }
+    if (!activeMemberships.empty) {
+      return NextResponse.json(
+        { error: 'Cannot delete membership plan that is currently in use by active members' },
+        { status: 409 }
       );
-      return addSecurityHeaders(response);
     }
 
-  } catch (error: any) {
-    const response = NextResponse.json(
-      { 
-        success: false, 
-        error: process.env.NODE_ENV === 'development' 
-          ? error.message 
-          : 'Internal server error' 
-      },
+    // Delete the membership plan
+    await adminDb.collection('membershipPlans').doc(id).delete();
+
+    return NextResponse.json({
+      message: 'Membership plan deleted successfully'
+    });
+
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'Failed to delete membership plan' },
       { status: 500 }
     );
-    return addSecurityHeaders(response);
   }
-}
-
-// Handle OPTIONS for CORS
-export async function OPTIONS() {
-  const origin = process.env.NODE_ENV === 'production' 
-    ? process.env.NEXT_PUBLIC_APP_URL || 'https://your-domain.com'
-    : 'http://localhost:3000';
-
-  const response = new NextResponse(null, { status: 200 });
-  response.headers.set('Access-Control-Allow-Origin', origin);
-  response.headers.set('Access-Control-Allow-Methods', 'GET, PUT, DELETE, OPTIONS');
-  response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  response.headers.set('Access-Control-Max-Age', '86400');
-
-  return addSecurityHeaders(response);
 }

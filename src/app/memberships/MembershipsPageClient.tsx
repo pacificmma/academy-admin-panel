@@ -1,7 +1,7 @@
-// src/app/memberships/MembershipsPageClient.tsx - FIXED VERSION with correct dialog props
+// src/app/memberships/MembershipsPageClient.tsx - FIXED with proper authentication
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Container,
@@ -45,6 +45,7 @@ import {
 import Layout from '../components/layout/Layout';
 import MembershipFormDialog from '../components/forms/MembershipFormDialog';
 import DeleteConfirmationDialog from '../components/ui/DeleteConfirmationDialog';
+import { useAuth } from '../contexts/AuthContext';
 import { SessionData } from '../types';
 import {
   MembershipPlan,
@@ -61,6 +62,8 @@ interface MembershipsPageClientProps {
 }
 
 export default function MembershipsPageClient({ session }: MembershipsPageClientProps): React.JSX.Element {
+  const { user } = useAuth();
+  
   // State management
   const [memberships, setMemberships] = useState<MembershipPlan[]>([]);
   const [stats, setStats] = useState<MembershipStats>({
@@ -90,28 +93,44 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
   const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
   const [filterAnchorEl, setFilterAnchorEl] = useState<null | HTMLElement>(null);
 
+  // Get authentication headers
+  const getAuthHeaders = useCallback(async () => {
+    if (!user) throw new Error('Not authenticated');
+    const token = await user.getIdToken();
+    return {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    };
+  }, [user]);
+
   // Load data on component mount
   useEffect(() => {
-    loadMemberships();
-    loadStats();
-  }, []);
+    if (user) {
+      loadMemberships();
+      loadStats();
+    }
+  }, [user]);
 
-  const loadMemberships = async (): Promise<void> => {
+  const loadMemberships = useCallback(async (): Promise<void> => {
     try {
       setLoading(true);
       setError(null);
 
+      const headers = await getAuthHeaders();
       const params = new URLSearchParams();
+      
       if (searchTerm) params.append('search', searchTerm);
       if (filters.status?.length) params.append('status', filters.status.join(','));
       if (filters.classTypes?.length) params.append('classTypes', filters.classTypes.join(','));
       if (filters.duration?.length) params.append('duration', filters.duration.join(','));
 
-      const response = await fetch(`/api/memberships?${params.toString()}`);
+      const url = `/api/memberships${params.toString() ? `?${params.toString()}` : ''}`;
+      const response = await fetch(url, { headers });
       const result = await response.json();
 
       if (response.ok) {
         setMemberships(result.data || []);
+        console.log('Loaded memberships:', result.data?.length || 0);
       } else {
         throw new Error(result.error || 'Failed to load memberships');
       }
@@ -120,11 +139,12 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
     } finally {
       setLoading(false);
     }
-  };
+  }, [getAuthHeaders, searchTerm, filters]);
 
-  const loadStats = async (): Promise<void> => {
+  const loadStats = useCallback(async (): Promise<void> => {
     try {
-      const response = await fetch('/api/memberships/stats');
+      const headers = await getAuthHeaders();
+      const response = await fetch('/api/memberships/stats', { headers });
       const result = await response.json();
 
       if (response.ok) {
@@ -134,7 +154,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
       // Stats are optional, don't show error for this
       console.warn('Failed to load stats:', err);
     }
-  };
+  }, [getAuthHeaders]);
 
   // Filter memberships based on search term
   const filteredMemberships = memberships.filter(membership =>
@@ -147,14 +167,15 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
     page * rowsPerPage + rowsPerPage
   );
 
-  // Event handlers with proper async/await handling
-  const handleCreateMembership = async (formData: MembershipPlanFormData): Promise<void> => {
+  // Event handlers with proper authentication
+  const handleCreateMembership = useCallback(async (formData: MembershipPlanFormData): Promise<void> => {
     try {
       setSubmitLoading(true);
 
+      const headers = await getAuthHeaders();
       const response = await fetch('/api/memberships', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(formData),
       });
 
@@ -163,6 +184,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
       if (response.ok) {
         setSuccessMessage('Membership plan created successfully');
         setCreateDialogOpen(false);
+        // Refresh the list
         await Promise.all([loadMemberships(), loadStats()]);
       } else {
         throw new Error(result.error || 'Failed to create membership plan');
@@ -172,17 +194,18 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
     } finally {
       setSubmitLoading(false);
     }
-  };
+  }, [getAuthHeaders, loadMemberships, loadStats]);
 
-  const handleEditMembership = async (formData: MembershipPlanFormData): Promise<void> => {
+  const handleEditMembership = useCallback(async (formData: MembershipPlanFormData): Promise<void> => {
     if (!selectedMembership) return;
 
     try {
       setSubmitLoading(true);
 
+      const headers = await getAuthHeaders();
       const response = await fetch(`/api/memberships/${selectedMembership.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(formData),
       });
 
@@ -192,6 +215,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
         setSuccessMessage('Membership plan updated successfully');
         setEditDialogOpen(false);
         setSelectedMembership(null);
+        // Refresh the list
         await Promise.all([loadMemberships(), loadStats()]);
       } else {
         throw new Error(result.error || 'Failed to update membership plan');
@@ -201,16 +225,18 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
     } finally {
       setSubmitLoading(false);
     }
-  };
+  }, [selectedMembership, getAuthHeaders, loadMemberships, loadStats]);
 
-  const handleDeleteMembership = async (): Promise<void> => {
+  const handleDeleteMembership = useCallback(async (): Promise<void> => {
     if (!selectedMembership) return;
 
     try {
       setSubmitLoading(true);
 
+      const headers = await getAuthHeaders();
       const response = await fetch(`/api/memberships/${selectedMembership.id}`, {
         method: 'DELETE',
+        headers,
       });
 
       const result = await response.json();
@@ -219,6 +245,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
         setSuccessMessage('Membership plan deleted successfully');
         setDeleteDialogOpen(false);
         setSelectedMembership(null);
+        // Refresh the list
         await Promise.all([loadMemberships(), loadStats()]);
       } else {
         throw new Error(result.error || 'Failed to delete membership plan');
@@ -228,7 +255,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
     } finally {
       setSubmitLoading(false);
     }
-  };
+  }, [selectedMembership, getAuthHeaders, loadMemberships, loadStats]);
 
   // Utility functions
   const formatPrice = (price: number): string => `$${price.toFixed(2)}`;
@@ -250,7 +277,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
     return durationConfig?.label || duration;
   };
 
-  // Stats cards - cleaned version
+  // Stats cards
   const statsCards = [
     {
       title: 'Total Plans',
@@ -312,44 +339,33 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
           </Alert>
         </Snackbar>
 
-        {/* Statistics Cards */}
+        {/* Stats Cards */}
         <Grid container spacing={3} sx={{ mb: 4 }}>
           {statsCards.map((card, index) => (
             <Grid item xs={12} sm={6} md={3} key={index}>
-              <Card
-                elevation={0}
-                sx={{
-                  background: `${card.color === 'primary' ? '#e3f2fd' : '#e8f5e8'}`,
-                  border: '1px solid',
-                  borderColor: `${card.color}.200`,
-                  transition: 'transform 0.2s ease-in-out',
-                  '&:hover': {
-                    transform: 'translateY(-2px)',
-                  },
-                }}
-              >
+              <Card elevation={2}>
                 <CardContent>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                     <Box
                       sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: 48,
-                        height: 48,
+                        p: 2,
                         borderRadius: 2,
-                        bgcolor: `${card.color}.100`,
-                        color: `${card.color}.700`,
+                        bgcolor: `${card.color}.main`,
+                        color: 'white',
                       }}
                     >
                       <card.icon />
                     </Box>
-                    <Box sx={{ flex: 1 }}>
-                      <Typography variant="body2" color="text.secondary" gutterBottom>
-                        {card.title}
+                    <Box>
+                      <Typography variant="h4" component="div" sx={{ fontWeight: 700 }}>
+                        {loading ? (
+                          <Skeleton width={40} />
+                        ) : (
+                          card.value
+                        )}
                       </Typography>
-                      <Typography variant="h5" component="p" fontWeight="bold">
-                        {card.value}
+                      <Typography variant="body2" color="text.secondary">
+                        {card.title}
                       </Typography>
                     </Box>
                   </Box>
@@ -359,76 +375,66 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
           ))}
         </Grid>
 
-        {/* Main Content */}
-        <Paper elevation={0} sx={{ borderRadius: 3, overflow: 'hidden' }}>
-          {/* Toolbar */}
-          <Box
-            sx={{
-              p: 3,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              borderBottom: '1px solid',
-              borderColor: 'divider',
-              bgcolor: 'grey.50',
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
-              <TextField
-                placeholder="Search membership plans..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                variant="outlined"
-                size="small"
-                sx={{ minWidth: 300 }}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon />
-                    </InputAdornment>
-                  ),
-                }}
-              />
-              <IconButton
-                onClick={(e) => setFilterAnchorEl(e.currentTarget)}
+        {/* Controls */}
+        <Paper elevation={1} sx={{ mb: 3, p: 3 }}>
+          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+            <TextField
+              size="small"
+              placeholder="Search membership plans..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon />
+                  </InputAdornment>
+                ),
+              }}
+              sx={{ minWidth: 300 }}
+            />
+            
+            <Button
+              variant="outlined"
+              startIcon={<FilterIcon />}
+              onClick={(e) => setFilterAnchorEl(e.currentTarget)}
+            >
+              Filters
+            </Button>
+            
+            <Box sx={{ ml: 'auto' }}>
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={() => setCreateDialogOpen(true)}
                 sx={{
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  borderRadius: 1,
+                  bgcolor: '#0F5C6B',
+                  '&:hover': { bgcolor: '#0a4a57' },
                 }}
               >
-                <FilterIcon />
-              </IconButton>
+                Add Plan
+              </Button>
             </Box>
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
-              onClick={() => setCreateDialogOpen(true)}
-              sx={{
-                bgcolor: '#0F5C6B',
-                '&:hover': { bgcolor: '#0a4a57' },
-              }}
-            >
-              Add Plan
-            </Button>
           </Box>
+        </Paper>
 
-          {/* Table */}
+        {/* Memberships Table */}
+        <Paper elevation={1}>
           <TableContainer>
             <Table>
               <TableHead>
-                <TableRow sx={{ bgcolor: 'grey.50' }}>
-                  <TableCell sx={{ fontWeight: 600 }}>Plan Name</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Duration</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Price</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Class Types</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Created</TableCell>
-                  <TableCell align="center" sx={{ fontWeight: 600 }}>Actions</TableCell>
+                <TableRow>
+                  <TableCell>Plan Name</TableCell>
+                  <TableCell>Duration</TableCell>
+                  <TableCell>Price</TableCell>
+                  <TableCell>Class Types</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell>Created</TableCell>
+                  <TableCell align="right">Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {loading ? (
+                  // Loading skeletons
                   Array.from({ length: 5 }).map((_, index) => (
                     <TableRow key={index}>
                       <TableCell><Skeleton /></TableCell>
@@ -442,81 +448,76 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
                   ))
                 ) : paginatedMemberships.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} sx={{ textAlign: 'center', py: 4 }}>
+                    <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
                       <Typography variant="body1" color="text.secondary">
-                        {searchTerm ? 'No membership plans found matching your search.' : 'No membership plans created yet.'}
+                        {searchTerm || Object.keys(filters).length > 0
+                          ? 'No membership plans match your search criteria'
+                          : 'No membership plans found'}
                       </Typography>
-                      {!searchTerm && (
-                        <Button
-                          variant="contained"
-                          startIcon={<AddIcon />}
-                          onClick={() => setCreateDialogOpen(true)}
-                          sx={{ mt: 2 }}
-                        >
-                          Create Your First Plan
-                        </Button>
-                      )}
                     </TableCell>
                   </TableRow>
                 ) : (
                   paginatedMemberships.map((membership) => (
                     <TableRow key={membership.id} hover>
                       <TableCell>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                          <Box
-                            sx={{
-                              width: 12,
-                              height: 12,
-                              borderRadius: '50%',
-                              backgroundColor:'#1976d2',
-                            }}
-                          />
-                          <Box>
-                            <Typography variant="body2" fontWeight="500">
-                              {membership.name}
+                        <Box>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                            {membership.name}
+                          </Typography>
+                          {membership.description && (
+                            <Typography variant="body2" color="text.secondary">
+                              {membership.description}
                             </Typography>
-                            {membership.description && (
-                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                                {membership.description.length > 50
-                                  ? `${membership.description.substring(0, 50)}...`
-                                  : membership.description}
-                              </Typography>
-                            )}
-                          </Box>
+                          )}
                         </Box>
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2">
-                          {getDurationLabel(membership.duration)}
-                        </Typography>
+                        {getDurationLabel(membership.duration)}
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2" fontWeight="500">
+                        <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
                           {formatPrice(membership.price)}
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2">
-                          {getClassTypeLabels(membership.classTypes)}
-                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                          {membership.classTypes.slice(0, 2).map((type) => (
+                            <Chip
+                              key={type}
+                              label={CLASS_TYPES.find(ct => ct.value === type)?.label || type}
+                              size="small"
+                              variant="outlined"
+                            />
+                          ))}
+                          {membership.classTypes.length > 2 && (
+                            <Chip
+                              label={`+${membership.classTypes.length - 2} more`}
+                              size="small"
+                              variant="outlined"
+                              color="default"
+                            />
+                          )}
+                        </Box>
                       </TableCell>
                       <TableCell>
                         <Chip
-                          label={membership.status}
+                          label={MEMBERSHIP_STATUSES.find(s => s.value === membership.status)?.label}
                           size="small"
-                          sx={{
-                            bgcolor: getStatusColor(membership.status),
-                            color: 'white',
-                            textTransform: 'capitalize',
+                          sx={{ 
+                            bgcolor: getStatusColor(membership.status) + '20',
+                            color: getStatusColor(membership.status),
+                            borderColor: getStatusColor(membership.status),
                           }}
+                          variant="outlined"
                         />
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2" color="text.secondary">
-                          {membership.createdAt ? new Date(membership.createdAt).toLocaleDateString() : '-'}
-                        </Typography>
+                        {membership.createdAt ? 
+                          new Date(membership.createdAt).toLocaleDateString() : 
+                          'N/A'
+                        }
                       </TableCell>
-                      <TableCell align="center">
+                      <TableCell align="right">
                         <IconButton
                           size="small"
                           onClick={(e) => {
@@ -533,20 +534,19 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
               </TableBody>
             </Table>
           </TableContainer>
-
-          {/* Pagination */}
-          {!loading && paginatedMemberships.length > 0 && (
+          
+          {!loading && filteredMemberships.length > 0 && (
             <TablePagination
+              rowsPerPageOptions={[5, 10, 25]}
               component="div"
               count={filteredMemberships.length}
+              rowsPerPage={rowsPerPage}
               page={page}
               onPageChange={(_, newPage) => setPage(newPage)}
-              rowsPerPage={rowsPerPage}
               onRowsPerPageChange={(e) => {
                 setRowsPerPage(parseInt(e.target.value, 10));
                 setPage(0);
               }}
-              rowsPerPageOptions={[5, 10, 25, 50]}
             />
           )}
         </Paper>
@@ -603,7 +603,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
           </MenuItem>
         </Menu>
 
-        {/* FIXED: Dialogs with correct props based on actual component interfaces */}
+        {/* Dialogs */}
         <MembershipFormDialog
           open={createDialogOpen}
           onClose={() => setCreateDialogOpen(false)}
