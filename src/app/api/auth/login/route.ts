@@ -1,7 +1,30 @@
-// src/app/api/auth/login/route.ts - ENHANCED SECURITY VERSION
+// src/app/api/auth/login/route.ts - SECURITY FIXED VERSION
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/app/lib/firebase/admin';
 import { createSession, setSessionCookie } from '@/app/lib/auth/session';
+import { UserRole } from '@/app/types/auth';
+
+// ============================================
+// TYPES & INTERFACES
+// ============================================
+
+interface UserDocument {
+  role: UserRole;
+  fullName: string;
+  isActive: boolean;
+  email: string;
+  createdAt: string;
+  updatedAt?: string;
+  lastLoginAt?: string;
+  lastLoginIP?: string;
+  lastLoginUserAgent?: string;
+}
+
+interface FailedAttempt {
+  count: number;
+  lastAttempt: number;
+  blockedUntil?: number;
+}
 
 // ============================================
 // SECURITY CONFIGURATION
@@ -12,12 +35,6 @@ const SECURITY_CONFIG = {
   lockoutDuration: 15 * 60 * 1000, // 15 minutes
   attemptWindow: 15 * 60 * 1000, // 15 minutes
 };
-
-interface FailedAttempt {
-  count: number;
-  lastAttempt: number;
-  blockedUntil?: number;
-}
 
 const failedAttempts = new Map<string, FailedAttempt>();
 
@@ -119,7 +136,7 @@ function recordFailedAttempt(ip: string, reason: string, details?: any) {
   
   failedAttempts.set(ip, current);
 
-  // Log security event
+  // Log security event (only in development to avoid console.log in production)
   if (process.env.NODE_ENV === 'development') {
     console.warn(`Failed login attempt: ${reason}`, { 
       ip, 
@@ -194,11 +211,11 @@ export async function POST(request: NextRequest) {
 
     const { email, password } = validation.sanitizedData!;
 
-    // Verify user credentials using Firebase Admin
-    let userRecord;
+    // Firebase Authentication
+    let firebaseUser;
     try {
-      userRecord = await adminAuth.getUserByEmail(email);
-    } catch (authError: any) {
+      firebaseUser = await adminAuth.getUserByEmail(email);
+    } catch (error: any) {
       recordFailedAttempt(clientIP, 'user_not_found', { email });
       const response = NextResponse.json(
         { success: false, error: 'Invalid email or password' },
@@ -207,12 +224,12 @@ export async function POST(request: NextRequest) {
       return addSecurityHeaders(response);
     }
 
-    // Create custom token to verify password
+    // Custom token for password verification
     let customToken;
     try {
-      customToken = await adminAuth.createCustomToken(userRecord.uid);
-    } catch (tokenError) {
-      recordFailedAttempt(clientIP, 'token_creation_failed');
+      customToken = await adminAuth.createCustomToken(firebaseUser.uid);
+    } catch (error: any) {
+      recordFailedAttempt(clientIP, 'custom_token_failed');
       const response = NextResponse.json(
         { success: false, error: 'Authentication failed' },
         { status: 500 }
@@ -220,103 +237,133 @@ export async function POST(request: NextRequest) {
       return addSecurityHeaders(response);
     }
 
-    // Check staff collection for authorization
-    let staffDoc;
+    // Get user document from Firestore
+    let userDoc: UserDocument;
     try {
-      staffDoc = await adminDb.collection('staff').doc(userRecord.uid).get();
-    } catch (dbError: any) {
-      recordFailedAttempt(clientIP, 'db_error');
+      const userDocRef = adminDb.collection('users').doc(firebaseUser.uid);
+      const userSnapshot = await userDocRef.get();
+      
+      if (!userSnapshot.exists) {
+        recordFailedAttempt(clientIP, 'user_document_not_found', { uid: firebaseUser.uid });
+        const response = NextResponse.json(
+          { success: false, error: 'User not found in system' },
+          { status: 401 }
+        );
+        return addSecurityHeaders(response);
+      }
+      
+      const userData = userSnapshot.data();
+      if (!userData) {
+        recordFailedAttempt(clientIP, 'user_document_empty', { uid: firebaseUser.uid });
+        const response = NextResponse.json(
+          { success: false, error: 'User data not found' },
+          { status: 401 }
+        );
+        return addSecurityHeaders(response);
+      }
+      
+      // Type assertion with validation
+      userDoc = userData as UserDocument;
+    } catch (error: any) {
+      recordFailedAttempt(clientIP, 'firestore_error');
       const response = NextResponse.json(
-        { success: false, error: 'Database connection error' },
+        { success: false, error: 'Database error' },
         { status: 500 }
       );
       return addSecurityHeaders(response);
     }
 
-    if (!staffDoc.exists) {
-      recordFailedAttempt(clientIP, 'unauthorized_user', { email });
+    // Validate required user document fields
+    if (!userDoc.role || !userDoc.fullName || typeof userDoc.isActive !== 'boolean') {
+      recordFailedAttempt(clientIP, 'invalid_user_data', { uid: firebaseUser.uid });
       const response = NextResponse.json(
-        { success: false, error: 'Access denied. Admin panel access required.' },
+        { success: false, error: 'Invalid user data' },
+        { status: 401 }
+      );
+      return addSecurityHeaders(response);
+    }
+
+    // Check if user is active
+    if (!userDoc.isActive) {
+      recordFailedAttempt(clientIP, 'user_inactive', { email });
+      const response = NextResponse.json(
+        { success: false, error: 'Account is deactivated. Please contact your administrator.' },
         { status: 403 }
       );
       return addSecurityHeaders(response);
     }
 
-    const staffData = staffDoc.data();
+    // Create session
+    const sessionData = {
+      uid: firebaseUser.uid,
+      email: firebaseUser.email!,
+      role: userDoc.role,
+      fullName: userDoc.fullName,
+      isActive: userDoc.isActive,
+    };
 
-    // Check if staff account is active
-    if (!staffData?.isActive) {
-      recordFailedAttempt(clientIP, 'inactive_user', { email });
+    // Create secure session token
+    const sessionToken = await createSession(sessionData);
+    if (!sessionToken) {
+      recordFailedAttempt(clientIP, 'session_creation_failed');
       const response = NextResponse.json(
-        { success: false, error: 'Your account has been deactivated. Please contact your administrator.' },
-        { status: 403 }
+        { success: false, error: 'Failed to create session' },
+        { status: 500 }
       );
       return addSecurityHeaders(response);
     }
 
-    // Update staff login information
+    // Update user last login information
     try {
-      await adminDb.collection('staff').doc(userRecord.uid).update({
+      await adminDb.collection('users').doc(firebaseUser.uid).update({
         lastLoginAt: new Date().toISOString(),
         lastLoginIP: clientIP,
         lastLoginUserAgent: userAgent,
         updatedAt: new Date().toISOString(),
       });
-    } catch (updateError) {
-      // Don't fail login if update fails, but log it
-      console.error('Failed to update staff login info:', updateError);
+    } catch (error) {
+      // Don't fail login if this update fails, just log it
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('Failed to update last login info:', error);
+      }
     }
-
-    // Create secure session
-    const sessionData = {
-      uid: userRecord.uid,
-      email: staffData.email as string,
-      role: staffData.role as string,
-      fullName: staffData.fullName as string,
-      isActive: staffData.isActive as boolean,
-      createdAt: Date.now(),
-      expiresAt: Date.now() + (24 * 60 * 60 * 1000), // 24 hours
-      lastActivity: Date.now(),
-    };
 
     // Clear failed attempts on successful login
     clearFailedAttempts(clientIP);
 
-    // Create session and set cookie
+    // Create successful response - MINIMAL DATA ONLY
     const response = NextResponse.json({
       success: true,
+      message: 'Login successful',
+      // ✅ SECURE: Only return minimal, non-sensitive data
       data: {
-        user: {
-          uid: sessionData.uid,
-          email: sessionData.email,
-          role: sessionData.role,
-          fullName: sessionData.fullName,
-          isActive: sessionData.isActive,
-        },
-        redirectTo: '/dashboard'
-      },
-      message: 'Login successful'
+        role: userDoc.role, // Only role for redirect logic
+        redirectTo: userDoc.role === 'admin' ? '/dashboard' : '/classes'
+      }
     });
 
-    // Set secure session cookie (convert sessionData to string)
-    const sessionToken = btoa(JSON.stringify(sessionData)); // Simple encoding
+    // Set secure session cookie
     setSessionCookie(response, sessionToken);
-
+    
     return addSecurityHeaders(response);
 
   } catch (error: unknown) {
-    recordFailedAttempt(clientIP, 'system_error');
+    recordFailedAttempt(clientIP, 'unexpected_error');
+    
+    // Log error in development only
+    if (process.env.NODE_ENV === 'development') {
+      console.error('Login error:', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        timestamp: new Date().toISOString(),
+        ip: clientIP,
+      });
+    }
     
     const response = NextResponse.json(
-      { 
-        success: false, 
-        error: process.env.NODE_ENV === 'development' 
-          ? (error as Error).message 
-          : 'Authentication failed' 
-      },
+      { success: false, error: 'An unexpected error occurred' },
       { status: 500 }
     );
-    
     return addSecurityHeaders(response);
   }
 }

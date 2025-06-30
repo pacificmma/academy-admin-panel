@@ -1,5 +1,4 @@
-// src/app/types/auth.ts - Authentication related types (UPDATED)
-
+// src/app/types/auth.ts - FIXED Authentication types with better security
 export type UserRole = 'admin' | 'trainer' | 'staff';
 
 export interface SessionData {
@@ -27,8 +26,8 @@ export interface AuthUser {
   createdAt: string;
   updatedAt?: string;
   lastLoginAt?: string;
-  lastLoginIP?: string;
-  lastLoginUserAgent?: string;
+  // ✅ SECURITY: Remove sensitive fields from client-side types
+  // lastLoginIP and lastLoginUserAgent should only exist in backend
 }
 
 export interface PermissionCheck {
@@ -42,13 +41,16 @@ export interface AuthContextType {
   loading: boolean;
   logout: () => Promise<void>;
   refreshSession: () => Promise<void>;
+  protectSession: () => void;
+  unprotectSession: () => void;
 }
 
-// API Response interfaces
+// API Response interfaces - SECURE VERSIONS
 export interface LoginResponse {
   success: boolean;
   data?: {
-    user: Omit<SessionData, 'createdAt' | 'expiresAt' | 'lastActivity'>;
+    // ✅ SECURITY: Only return minimal data needed for redirect
+    role: UserRole;
     redirectTo: string;
   };
   message?: string;
@@ -57,7 +59,14 @@ export interface LoginResponse {
 
 export interface SessionResponse {
   success: boolean;
-  session?: Omit<SessionData, 'createdAt' | 'expiresAt' | 'lastActivity'>;
+  session?: {
+    uid: string;
+    email: string;
+    role: UserRole;
+    fullName: string;
+    isActive: boolean;
+    // ✅ SECURITY: Don't expose timestamp data in API responses
+  };
   error?: string;
 }
 
@@ -81,3 +90,22 @@ export interface SecurityEvent {
   timestamp: string;
   details?: Record<string, any>;
 }
+
+// Enhanced security types
+export interface SecureUserData {
+  // Server-side only fields
+  lastLoginIP?: string;
+  lastLoginUserAgent?: string;
+  failedLoginAttempts?: number;
+  lastFailedLoginAt?: string;
+  accountLockoutUntil?: string;
+  securityFlags?: string[];
+}
+
+export interface UserDocument extends AuthUser, SecureUserData {
+  // Complete user document structure for Firestore
+  password?: never; // Passwords should never be in the document
+}
+
+// Client-safe user data (excludes sensitive server-side fields)
+export type ClientSafeUser = Omit<UserDocument, keyof SecureUserData>;
