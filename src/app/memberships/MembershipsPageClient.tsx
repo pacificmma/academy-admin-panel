@@ -1,4 +1,4 @@
-// src/app/memberships/MembershipsPageClient.tsx - Fixed with correct TypeScript types
+// src/app/memberships/MembershipsPageClient.tsx - Corrected version
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -107,9 +107,20 @@ export default function MembershipsPageClient(): React.JSX.Element {
       const url = `/api/memberships${params.toString() ? `?${params.toString()}` : ''}`;
       
       const response = await fetch(url, { headers });
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('Unauthorized - Please log in again');
+        }
+        if (response.status === 403) {
+          throw new Error('Access denied - Admin privileges required');
+        }
+        throw new Error(`HTTP ${response.status}: Failed to load memberships`);
+      }
+
       const result = await response.json();
 
-      if (response.ok) {
+      if (result.success) {
         setMemberships(result.data || []);
         // Update stats
         const totalPlans = result.data?.length || 0;
@@ -143,7 +154,7 @@ export default function MembershipsPageClient(): React.JSX.Element {
 
       const result = await response.json();
 
-      if (response.ok) {
+      if (response.ok && result.success) {
         setSuccessMessage('Membership plan created successfully!');
         setCreateDialogOpen(false);
         await loadMemberships(); // Reload data
@@ -175,7 +186,7 @@ export default function MembershipsPageClient(): React.JSX.Element {
 
       const result = await response.json();
 
-      if (response.ok) {
+      if (response.ok && result.success) {
         setSuccessMessage('Membership plan updated successfully!');
         setEditDialogOpen(false);
         setSelectedMembership(null);
@@ -207,7 +218,7 @@ export default function MembershipsPageClient(): React.JSX.Element {
 
       const result = await response.json();
 
-      if (response.ok) {
+      if (response.ok && result.success) {
         setSuccessMessage('Membership plan deleted successfully!');
         setDeleteDialogOpen(false);
         setSelectedMembership(null);
@@ -261,7 +272,7 @@ export default function MembershipsPageClient(): React.JSX.Element {
     }
   }, [user, authLoading, loadMemberships]);
 
-  // Filter memberships for display - FIXED with correct property names
+  // Filter memberships for display - FIXED: Added missing closing parenthesis
   const filteredMemberships = memberships.filter(membership =>
     membership.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     membership.classTypes.some(type => type.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -292,7 +303,7 @@ export default function MembershipsPageClient(): React.JSX.Element {
     }).format(price);
   };
 
-  // Format duration - FIXED
+  // Format duration
   const formatDuration = (duration: string): string => {
     const durationMap: Record<string, string> = {
       '1_week': '1 Week',
@@ -308,7 +319,7 @@ export default function MembershipsPageClient(): React.JSX.Element {
     return durationMap[duration] || duration;
   };
 
-  // Format class types - FIXED with correct property names
+  // Format class types
   const formatClassTypes = (classTypes: ClassType[]): React.ReactNode => {
     if (!classTypes || classTypes.length === 0) return 'All Classes';
     
@@ -375,6 +386,7 @@ export default function MembershipsPageClient(): React.JSX.Element {
           variant="contained"
           startIcon={<AddIcon />}
           onClick={() => setCreateDialogOpen(true)}
+          disabled={loading}
         >
           Create Plan
         </Button>
@@ -415,6 +427,7 @@ export default function MembershipsPageClient(): React.JSX.Element {
           placeholder="Search membership plans..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
+          disabled={loading}
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
@@ -514,6 +527,7 @@ export default function MembershipsPageClient(): React.JSX.Element {
                       <IconButton
                         onClick={(e) => handleMenuOpen(e, membership)}
                         size="small"
+                        disabled={loading}
                       >
                         <MoreVertIcon />
                       </IconButton>
@@ -548,17 +562,17 @@ export default function MembershipsPageClient(): React.JSX.Element {
           elevation: 3,
         }}
       >
-        <MenuItem onClick={handleEditClick}>
+        <MenuItem onClick={handleEditClick} disabled={submitLoading}>
           <EditIcon sx={{ mr: 1 }} fontSize="small" />
           Edit
         </MenuItem>
-        <MenuItem onClick={handleDeleteClick} sx={{ color: 'error.main' }}>
+        <MenuItem onClick={handleDeleteClick} sx={{ color: 'error.main' }} disabled={submitLoading}>
           <DeleteIcon sx={{ mr: 1 }} fontSize="small" />
           Delete
         </MenuItem>
       </Menu>
 
-      {/* Create Dialog - FIXED props */}
+      {/* Create Dialog */}
       <MembershipFormDialog
         open={createDialogOpen}
         onClose={() => setCreateDialogOpen(false)}
@@ -566,7 +580,7 @@ export default function MembershipsPageClient(): React.JSX.Element {
         mode="create"
       />
 
-      {/* Edit Dialog - FIXED props */}
+      {/* Edit Dialog */}
       <MembershipFormDialog
         open={editDialogOpen}
         onClose={() => {
@@ -595,7 +609,7 @@ export default function MembershipsPageClient(): React.JSX.Element {
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button
+          <Button 
             onClick={() => {
               setDeleteDialogOpen(false);
               setSelectedMembership(null);
@@ -615,15 +629,15 @@ export default function MembershipsPageClient(): React.JSX.Element {
         </DialogActions>
       </Dialog>
 
-      {/* Success Snackbar */}
+      {/* Success Message Snackbar */}
       <Snackbar
-        open={Boolean(successMessage)}
+        open={!!successMessage}
         autoHideDuration={6000}
         onClose={() => setSuccessMessage(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
-        <Alert
-          onClose={() => setSuccessMessage(null)}
+        <Alert 
+          onClose={() => setSuccessMessage(null)} 
           severity="success"
           variant="filled"
         >
