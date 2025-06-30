@@ -1,4 +1,4 @@
-// src/app/types/membership.ts - Corrected version with proper types
+// src/app/types/membership.ts - Simplified version
 import { BaseEntity } from './common';
 
 // Membership plan duration types
@@ -10,7 +10,7 @@ export type ClassType = 'bjj' | 'mma' | 'muay_thai' | 'boxing' | 'general_fitnes
 // Membership plan status
 export type MembershipStatus = 'active' | 'inactive' | 'archived';
 
-// Core membership plan interface - extends BaseEntity
+// Simplified core membership plan interface
 export interface MembershipPlan extends BaseEntity {
   memberCount?: number;
   name: string;
@@ -20,18 +20,12 @@ export interface MembershipPlan extends BaseEntity {
   price: number;
   currency: string;
   classTypes: ClassType[];
-  maxClassesPerWeek?: number; // Allow undefined, not null
-  maxClassesPerMonth?: number; // Allow undefined, not null
-  allowDropIns: boolean;
-  includedFeatures: string[];
   status: MembershipStatus;
-  isPopular?: boolean; // For highlighting in UI
-  colorCode?: string; // For UI theming
   displayOrder: number; // For sorting in lists
-  createdBy?: string; // Add this field to match what's being used
+  createdBy?: string;
 }
 
-// Form data for creating/editing membership plans
+// Simplified form data for creating/editing membership plans
 export interface MembershipPlanFormData {
   currency?: string;
   name: string;
@@ -39,13 +33,7 @@ export interface MembershipPlanFormData {
   duration: MembershipDuration;
   price: number;
   classTypes: ClassType[];
-  maxClassesPerWeek?: number | null; // null for "unlimited" in forms
-  maxClassesPerMonth?: number | null; // null for "unlimited" in forms
-  allowDropIns: boolean;
-  includedFeatures: string[];
   status: MembershipStatus;
-  isPopular?: boolean;
-  colorCode?: string;
 }
 
 // API request types
@@ -53,19 +41,19 @@ export interface CreateMembershipPlanRequest extends MembershipPlanFormData {}
 
 export interface UpdateMembershipPlanRequest extends Partial<MembershipPlanFormData> {}
 
-// Member's active membership instance
+// Member's active membership instance (unchanged as it's core functionality)
 export interface MemberMembership extends BaseEntity {
   memberId: string;
   membershipPlanId: string;
-  membershipPlan?: MembershipPlan; // Populated in queries
+  membershipPlan?: MembershipPlan;
   startDate: string;
   endDate: string;
   isActive: boolean;
-  remainingClasses?: number; // For limited plans
+  remainingClasses?: number;
   usedClasses: number;
   paymentStatus: 'pending' | 'paid' | 'overdue' | 'cancelled';
-  purchasePrice: number; // Price at time of purchase
-  discountApplied?: string; // Discount code used
+  purchasePrice: number;
+  discountApplied?: string;
   discountAmount?: number;
   autoRenew: boolean;
   cancellationDate?: string;
@@ -165,15 +153,12 @@ export const MEMBERSHIP_STATUSES: { value: MembershipStatus; label: string; colo
   { value: 'archived', label: 'Archived', color: '#9e9e9e' },
 ];
 
-// Default membership plan template
+// Simplified default membership plan template
 export const DEFAULT_MEMBERSHIP_PLAN: Partial<MembershipPlanFormData> = {
-  allowDropIns: true,
   status: 'active',
-  isPopular: false,
-  includedFeatures: ['Access to all facilities', 'Shower facilities', 'Equipment usage'],
 };
 
-// Validation rules
+// Simplified validation rules
 export const MEMBERSHIP_VALIDATION = {
   name: {
     required: true,
@@ -191,13 +176,5 @@ export const MEMBERSHIP_VALIDATION = {
   classTypes: {
     required: true,
     minItems: 1,
-  },
-  maxClassesPerWeek: {
-    min: 1,
-    max: 30,
-  },
-  maxClassesPerMonth: {
-    min: 1,
-    max: 120,
   },
 } as const;

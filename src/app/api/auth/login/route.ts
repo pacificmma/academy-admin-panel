@@ -1,22 +1,21 @@
-// src/app/api/auth/login/route.ts - Enhanced with proper validation
+// src/app/api/auth/login/route.ts - SECURE LOGIN API
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/app/lib/firebase/admin';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/app/lib/firebase/config';
 import { createSession, setSessionCookie } from '@/app/lib/auth/session';
+import { getClientIP, checkRateLimit, handleError } from '@/app/lib/security/api-security';
 
-// Inline validation utilities (to replace unused validation.ts)
+// Input validation
 interface ValidationResult {
   isValid: boolean;
   errors: string[];
   sanitizedData?: any;
 }
 
-// Input validation and sanitization
-function validateAndSanitizeLoginInput(body: any): ValidationResult {
+function validateLoginInput(body: any): ValidationResult {
   const errors: string[] = [];
   
-  // Check if body exists
   if (!body || typeof body !== 'object') {
     return { isValid: false, errors: ['Invalid request body'] };
   }
@@ -56,7 +55,6 @@ function validateAndSanitizeLoginInput(body: any): ValidationResult {
     }
   }
 
-  // Return validation result
   if (errors.length > 0) {
     return { isValid: false, errors };
   }
@@ -70,7 +68,7 @@ function validateAndSanitizeLoginInput(body: any): ValidationResult {
   return { isValid: true, errors: [], sanitizedData };
 }
 
-// Security utilities (inline instead of separate config file)
+// Security configuration
 const SECURITY_CONFIG = {
   maxFailedAttempts: 5,
   lockoutDuration: 15 * 60 * 1000, // 15 minutes
@@ -79,19 +77,6 @@ const SECURITY_CONFIG = {
 
 // Track failed login attempts (in production, use Redis)
 const failedAttempts = new Map<string, { count: number; lastAttempt: number; blockedUntil?: number }>();
-
-// Security helper functions
-function getClientIP(request: NextRequest): string {
-  const xForwardedFor = request.headers.get('x-forwarded-for');
-  const xRealIp = request.headers.get('x-real-ip');
-  const xClientIp = request.headers.get('x-client-ip');
-  
-  if (xForwardedFor) {
-    return xForwardedFor.split(',')[0].trim();
-  }
-  
-  return xRealIp || xClientIp || 'unknown';
-}
 
 function checkAccountLockout(ip: string): { allowed: boolean; remainingTime: number } {
   const attempts = failedAttempts.get(ip);
@@ -136,27 +121,15 @@ function recordFailedAttempt(ip: string, reason: string, details?: any) {
   current.lastAttempt = now;
   
   failedAttempts.set(ip, current);
+
+  // Log security event (in production, send to logging service)
+  if (process.env.NODE_ENV === 'development') {
+    console.warn(`Failed login attempt: ${reason}`, { ip, details, timestamp: new Date().toISOString() });
+  }
 }
 
 function clearFailedAttempts(ip: string) {
   failedAttempts.delete(ip);
-}
-
-function validateEnvironment() {
-  const required = [
-    'NEXTAUTH_SECRET',
-    'FIREBASE_PROJECT_ID',
-    'FIREBASE_CLIENT_EMAIL',
-    'FIREBASE_PRIVATE_KEY',
-    'NEXT_PUBLIC_FIREBASE_API_KEY'
-  ];
-  
-  const missing = required.filter(key => !process.env[key]);
-  
-  return {
-    valid: missing.length === 0,
-    missing
-  };
 }
 
 function getAuthErrorMessage(errorCode: string): string {
@@ -183,6 +156,14 @@ export async function POST(request: NextRequest) {
     const clientIP = getClientIP(request);
     const userAgent = request.headers.get('user-agent') || 'unknown';
 
+    // Rate limiting
+    if (!checkRateLimit(clientIP, 10, 15 * 60 * 1000)) {
+      return NextResponse.json(
+        { success: false, error: 'Too many requests. Please try again later.' },
+        { status: 429 }
+      );
+    }
+
     // Check for account lockout
     const lockoutCheck = checkAccountLockout(clientIP);
     if (!lockoutCheck.allowed) {
@@ -192,15 +173,6 @@ export async function POST(request: NextRequest) {
           error: `Account temporarily locked. Try again in ${Math.ceil(lockoutCheck.remainingTime / 60000)} minutes.` 
         },
         { status: 429 }
-      );
-    }
-
-    // Validate environment variables
-    const envCheck = validateEnvironment();
-    if (!envCheck.valid) {
-      return NextResponse.json(
-        { success: false, error: 'Server configuration error' },
-        { status: 500 }
       );
     }
 
@@ -216,8 +188,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate and sanitize input using our inline validation
-    const validation = validateAndSanitizeLoginInput(body);
+    // Validate and sanitize input
+    const validation = validateLoginInput(body);
     if (!validation.isValid) {
       recordFailedAttempt(clientIP, 'invalid_input');
       return NextResponse.json(
@@ -247,7 +219,7 @@ export async function POST(request: NextRequest) {
 
     const { user } = signInResult;
 
-    // Check staff collection
+    // Check staff collection for authorization
     let staffDoc;
     try {
       const staffDocRef = adminDb.collection('staff').doc(user.uid);
@@ -265,58 +237,33 @@ export async function POST(request: NextRequest) {
       await auth.signOut();
       recordFailedAttempt(clientIP, 'unauthorized_user', { email });
       return NextResponse.json(
-        { success: false, error: 'Access denied. You are not authorized to use this system' },
+        { success: false, error: 'Access denied. Admin panel access required.' },
         { status: 403 }
       );
     }
 
     const staffData = staffDoc.data();
-    // Check if user account is active
+
+    // Check if staff account is active
     if (!staffData?.isActive) {
       await auth.signOut();
-      recordFailedAttempt(clientIP, 'inactive_account', { email });
+      recordFailedAttempt(clientIP, 'inactive_user', { email });
       return NextResponse.json(
-        { success: false, error: 'Your account has been deactivated. Please contact your administrator' },
+        { success: false, error: 'Your account has been deactivated. Please contact your administrator.' },
         { status: 403 }
       );
     }
 
-    // Validate required staff data
-    if (!staffData.role || !staffData.fullName) {
-      await auth.signOut();
-      recordFailedAttempt(clientIP, 'incomplete_profile');
-      return NextResponse.json(
-        { success: false, error: 'Account setup incomplete. Please contact your administrator' },
-        { status: 422 }
-      );
-    }
-
-    // Clear failed attempts on successful login
-    clearFailedAttempts(clientIP);
-
-    // Update login tracking in database
-    try {
-      await staffDoc.ref.update({
-        lastLoginAt: new Date().toISOString(),
-        lastLoginIP: clientIP,
-        lastLoginUserAgent: userAgent,
-        loginCount: (staffData.loginCount || 0) + 1,
-      });
-    } catch (updateError) {
-    }
-
-    // Create enhanced session
-    const sessionData = {
-      uid: user.uid,
-      email: user.email!,
-      role: staffData.role,
-      fullName: staffData.fullName,
-      isActive: staffData.isActive,
-    };
-
+    // Create session
     let sessionToken;
     try {
-      sessionToken = await createSession(sessionData, request);
+      sessionToken = await createSession({
+        uid: user.uid,
+        email: user.email!,
+        role: staffData.role,
+        fullName: staffData.fullName,
+        isActive: staffData.isActive
+      });
     } catch (sessionError: any) {
       await auth.signOut();
       return NextResponse.json(
@@ -325,45 +272,40 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create response with security headers
+    // Clear failed attempts on successful login
+    clearFailedAttempts(clientIP);
+
+    // Update last login timestamp
+    try {
+      await staffDocRef.update({
+        lastLoginAt: new Date(),
+        lastLoginIP: clientIP,
+        lastLoginUserAgent: userAgent
+      });
+    } catch (updateError) {
+      // Non-critical error, continue with login
+    }
+
+    // Create response and set secure cookie
     const response = NextResponse.json({
       success: true,
-      message: 'Login successful',
       user: {
         uid: user.uid,
         email: user.email,
         role: staffData.role,
         fullName: staffData.fullName,
-      },
+        isActive: staffData.isActive
+      }
     });
 
-    // Set secure HTTP-only cookie
-    response.headers.set('Set-Cookie', setSessionCookie(sessionToken));
-    
-    // Add security headers
-    response.headers.set('X-Content-Type-Options', 'nosniff');
-    response.headers.set('X-Frame-Options', 'DENY');
+    // Set secure session cookie
+    setSessionCookie(response, sessionToken);
 
     return response;
 
   } catch (error: any) {
-
-    
-    return NextResponse.json(
-      { success: false, error: 'An unexpected error occurred' },
-      { status: 500 }
-    );
+    const clientIP = getClientIP(request);
+    recordFailedAttempt(clientIP, 'system_error');
+    return handleError(error);
   }
 }
-
-// Clean up old entries periodically
-setInterval(() => {
-  const now = Date.now();
-  const cutoff = now - (2 * SECURITY_CONFIG.attemptWindow);
-  
-  for (const [ip, attempts] of failedAttempts.entries()) {
-    if (attempts.lastAttempt < cutoff && (!attempts.blockedUntil || attempts.blockedUntil < now)) {
-      failedAttempts.delete(ip);
-    }
-  }
-}, 5 * 60 * 1000); // Clean up every 5 minutes
