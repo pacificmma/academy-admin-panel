@@ -1,19 +1,146 @@
 // src/app/api/members/[id]/route.ts - Secure Member ID API
 import { NextRequest, NextResponse } from 'next/server';
-import { adminDb } from '@/app/lib/firebase/admin';
-import { withSecurity, handleError, sanitizeOutput, getDocumentIdFromPath } from '@/app/lib/security/api-security';
-import { validateMemberInput } from '@/app/lib/security/validation';
+import { adminDb, adminAuth } from '@/app/lib/firebase/admin';
+import { validateAPIAccess } from '@/app/lib/auth/session';
+import { UserRole } from '@/app/types';
+
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
+
+function getClientIP(request: NextRequest): string {
+  const xForwardedFor = request.headers.get('x-forwarded-for');
+  return xForwardedFor?.split(',')[0].trim() || 'unknown';
+}
+
+const requestCounts = new Map<string, { count: number; resetTime: number }>();
+
+function checkRateLimit(ip: string, maxRequests = 100, windowMs = 15 * 60 * 1000): boolean {
+  const now = Date.now();
+  const windowStart = now - windowMs;
+  
+  let requestInfo = requestCounts.get(ip);
+  
+  if (!requestInfo || requestInfo.resetTime <= windowStart) {
+    requestInfo = { count: 1, resetTime: now + windowMs };
+    requestCounts.set(ip, requestInfo);
+    return true;
+  }
+  
+  if (requestInfo.count >= maxRequests) {
+    return false;
+  }
+  
+  requestInfo.count++;
+  return true;
+}
+
+function sanitizeOutput(data: any): any {
+  if (Array.isArray(data)) {
+    return data.map(item => sanitizeOutput(item));
+  }
+  
+  if (data && typeof data === 'object') {
+    const sanitized = { ...data };
+    delete sanitized._internal;
+    delete sanitized.secrets;
+    delete sanitized.privateData;
+    delete sanitized.password;
+    return sanitized;
+  }
+  
+  return data;
+}
+
+function validateMemberInput(data: any): { isValid: boolean; errors: string[]; sanitizedData?: any } {
+  const errors: string[] = [];
+  
+  if (!data || typeof data !== 'object') {
+    return { isValid: false, errors: ['Invalid request body'] };
+  }
+
+  const { email, firstName, lastName, phone, dateOfBirth, emergencyContact, martialArtsLevel, parentId } = data;
+
+  // Email validation
+  if (!email || typeof email !== 'string') {
+    errors.push('Valid email is required');
+  } else {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      errors.push('Please enter a valid email address');
+    }
+  }
+
+  // Name validation
+  if (!firstName || typeof firstName !== 'string' || firstName.trim().length < 1) {
+    errors.push('First name is required');
+  }
+  if (!lastName || typeof lastName !== 'string' || lastName.trim().length < 1) {
+    errors.push('Last name is required');
+  }
+
+  if (errors.length > 0) {
+    return { isValid: false, errors };
+  }
+
+  // Sanitize data
+  const sanitizedData = {
+    email: email.toLowerCase().trim(),
+    firstName: firstName.trim(),
+    lastName: lastName.trim(),
+    phone: phone?.trim() || '',
+    dateOfBirth: dateOfBirth || '',
+    emergencyContact: emergencyContact || {},
+    martialArtsLevel: martialArtsLevel || {},
+    parentId: parentId?.trim() || null,
+  };
+
+  return { isValid: true, errors: [], sanitizedData };
+}
+
+function getDocumentIdFromPath(request: NextRequest): string | null {
+  const url = new URL(request.url);
+  const segments = url.pathname.split('/');
+  return segments[segments.length - 1] || null;
+}
+
+function handleError(error: any): NextResponse {
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  
+  const errorResponse = {
+    success: false,
+    error: isDevelopment ? error.message : 'An error occurred',
+    timestamp: new Date().toISOString(),
+  };
+  
+  return NextResponse.json(errorResponse, { status: 500 });
+}
+
+// ============================================
+// API ENDPOINTS
+// ============================================
 
 // GET /api/members/[id] - Get specific member
 export async function GET(request: NextRequest) {
   try {
-    // Apply security checks
-    const { session, error } = await withSecurity(request, {
-      requiredRoles: ['admin', 'staff'],
-      rateLimit: { maxRequests: 200, windowMs: 15 * 60 * 1000 }
-    });
+    const clientIP = getClientIP(request);
+    
+    // Rate limiting
+    if (!checkRateLimit(clientIP, 200, 15 * 60 * 1000)) {
+      return NextResponse.json(
+        { success: false, error: 'Rate limit exceeded' },
+        { status: 429 }
+      );
+    }
 
-    if (error) return error;
+    // Security check
+    const { success, session, error } = await validateAPIAccess(request, ['admin', 'staff']);
+    if (!success) {
+      return NextResponse.json(
+        { success: false, error: error || 'Unauthorized' },
+        { status: 401 }
+      );
+    }
 
     // Extract member ID from URL
     const memberId = getDocumentIdFromPath(request);
@@ -35,18 +162,20 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      let memberData = { id: memberDoc.id, ...memberDoc.data() };
+      // FIXED: Properly type memberData with any to allow dynamic properties
+      let memberData: any = { id: memberDoc.id, ...memberDoc.data() };
 
       // If member has parent, include parent info
       if (memberData.parentId) {
         try {
           const parentDoc = await adminDb.collection('members').doc(memberData.parentId).get();
           if (parentDoc.exists) {
+            const parentData = parentDoc.data();
             memberData.parentInfo = {
               id: parentDoc.id,
-              firstName: parentDoc.data()?.firstName,
-              lastName: parentDoc.data()?.lastName,
-              email: parentDoc.data()?.email
+              firstName: parentData?.firstName,
+              lastName: parentData?.lastName,
+              email: parentData?.email
             };
           }
         } catch (parentError) {
@@ -61,13 +190,16 @@ export async function GET(request: NextRequest) {
           .get();
         
         if (!childrenSnapshot.empty) {
-          memberData.children = childrenSnapshot.docs.map(doc => ({
-            id: doc.id,
-            firstName: doc.data().firstName,
-            lastName: doc.data().lastName,
-            email: doc.data().email,
-            membershipStatus: doc.data().membershipStatus
-          }));
+          memberData.children = childrenSnapshot.docs.map(doc => {
+            const childData = doc.data();
+            return {
+              id: doc.id,
+              firstName: childData.firstName,
+              lastName: childData.lastName,
+              email: childData.email,
+              membershipStatus: childData.membershipStatus
+            };
+          });
         }
       } catch (childrenError) {
         // Children info is optional, continue without it
@@ -90,13 +222,24 @@ export async function GET(request: NextRequest) {
 // PUT /api/members/[id] - Update member
 export async function PUT(request: NextRequest) {
   try {
-    // Apply security checks
-    const { session, error } = await withSecurity(request, {
-      requiredRoles: ['admin'],
-      rateLimit: { maxRequests: 50, windowMs: 15 * 60 * 1000 }
-    });
+    const clientIP = getClientIP(request);
+    
+    // Rate limiting
+    if (!checkRateLimit(clientIP, 50, 15 * 60 * 1000)) {
+      return NextResponse.json(
+        { success: false, error: 'Rate limit exceeded' },
+        { status: 429 }
+      );
+    }
 
-    if (error) return error;
+    // Security check - only admins can update
+    const { success, session, error } = await validateAPIAccess(request, ['admin']);
+    if (!success) {
+      return NextResponse.json(
+        { success: false, error: error || 'Unauthorized' },
+        { status: 401 }
+      );
+    }
 
     // Extract member ID from URL
     const memberId = getDocumentIdFromPath(request);
@@ -212,13 +355,24 @@ export async function PUT(request: NextRequest) {
 // DELETE /api/members/[id] - Delete (deactivate) member
 export async function DELETE(request: NextRequest) {
   try {
-    // Apply security checks (only admins can delete)
-    const { session, error } = await withSecurity(request, {
-      requiredRoles: ['admin'],
-      rateLimit: { maxRequests: 20, windowMs: 15 * 60 * 1000 }
-    });
+    const clientIP = getClientIP(request);
+    
+    // Rate limiting
+    if (!checkRateLimit(clientIP, 20, 15 * 60 * 1000)) {
+      return NextResponse.json(
+        { success: false, error: 'Rate limit exceeded' },
+        { status: 429 }
+      );
+    }
 
-    if (error) return error;
+    // Security check - only admins can delete
+    const { success, session, error } = await validateAPIAccess(request, ['admin']);
+    if (!success) {
+      return NextResponse.json(
+        { success: false, error: error || 'Unauthorized' },
+        { status: 401 }
+      );
+    }
 
     // Extract member ID from URL
     const memberId = getDocumentIdFromPath(request);

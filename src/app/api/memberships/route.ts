@@ -1,6 +1,7 @@
 // src/app/api/memberships/route.ts - COMPLETE FIXED VERSION
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb, adminAuth } from '@/app/lib/firebase/admin';
+import type { Query, CollectionReference, DocumentData } from 'firebase-admin/firestore';
 
 // ============================================
 // INTERFACES & TYPES
@@ -70,7 +71,8 @@ async function verifyAdminPermission(request: NextRequest) {
 
     const staffData = staffDoc.data();
     
-    if (staffData?.role !== 'admin' || !staffData?.isActive) {
+    // FIXED: Add null check for staffData
+    if (!staffData || staffData.role !== 'admin' || !staffData.isActive) {
       return null;
     }
 
@@ -229,13 +231,15 @@ export async function GET(request: NextRequest) {
     const status = url.searchParams.get('status');
 
     try {
-      let query = adminDb.collection('memberships');
+      // FIXED: Properly type the query variable
+      let query: Query<DocumentData> | CollectionReference<DocumentData> = adminDb.collection('memberships');
 
       if (status && ['active', 'inactive', 'archived'].includes(status)) {
         query = query.where('status', '==', status);
       }
 
       const offset = (page - 1) * limit;
+      // FIXED: Chain orderBy calls properly
       query = query.orderBy('displayOrder', 'asc').orderBy('createdAt', 'desc');
 
       const snapshot = await query.get();

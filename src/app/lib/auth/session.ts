@@ -65,7 +65,6 @@ async function verifySession(token: string): Promise<SessionData | null> {
         return null;
       }
     } catch (dbError) {
-      console.error('Database verification failed during session check:', dbError);
       return null;
     }
 
@@ -174,7 +173,6 @@ export async function getSession(request: NextRequest): Promise<SessionData | nu
 // SERVER-SIDE SESSION (For SSR/SSG)
 // ============================================
 
-// **FIX: This was missing!** 
 // Get session from server-side (for page components)
 export async function getServerSession(): Promise<SessionData | null> {
   try {
@@ -205,7 +203,6 @@ export async function updateSessionActivity(sessionData: SessionData): Promise<s
     try {
       return await refreshSession(sessionData);
     } catch (error) {
-      console.error('Session refresh failed:', error);
       return null;
     }
   }
@@ -224,7 +221,6 @@ export async function updateSessionActivity(sessionData: SessionData): Promise<s
       audience: 'pacific-mma-admin-users',
     });
   } catch (error) {
-    console.error('Session activity update failed:', error);
     return null;
   }
 }
@@ -255,7 +251,6 @@ export async function validateAPIAccess(
 
     return { success: true, session };
   } catch (error) {
-    console.error('API access validation failed:', error);
     return { success: false, session: null, error: 'Session validation failed' };
   }
 }

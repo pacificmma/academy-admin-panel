@@ -1,4 +1,4 @@
-// src/lib/firebase/admin.ts - Server-side Firebase Admin SDK
+// src/app/lib/firebase/admin.ts - Server-side Firebase Admin SDK
 import { initializeApp, getApps, cert, ServiceAccount } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -53,9 +53,13 @@ if (!getApps().length) {
   }
 }
 
-// Export Firebase Admin services
+// Export Firebase Admin services with consistent naming
 export const adminAuth = getAuth();
 export const adminDb = getFirestore();
+
+// Legacy alias exports for backward compatibility
+export const auth = adminAuth;
+export const db = adminDb;
 
 // Helper function to verify ID tokens
 export async function verifyIdToken(token: string) {

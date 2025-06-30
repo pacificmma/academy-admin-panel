@@ -1,4 +1,84 @@
 // src/app/api/member-memberships/[id]/route.ts - Individual member membership operations
+import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
+import { adminAuth, adminDb } from '@/app/lib/firebase/admin';
+import { PERMISSIONS } from '@/app/lib/api/permissions';
+import { 
+  MemberMembership, 
+  CreateMemberMembershipRequest,
+  MemberMembershipFilters 
+} from '@/app/types/membership';
+
+const createMemberMembershipSchema = z.object({
+  memberId: z.string().min(1),
+  membershipPlanId: z.string().min(1),
+  startDate: z.string(),
+  amountPaid: z.number().min(0),
+  currency: z.string().length(3),
+  paymentMethod: z.enum(['cash', 'card', 'bank_transfer', 'online', 'family_plan']),
+  paymentReference: z.string().optional(),
+  discountApplied: z.string().optional(),
+  discountAmount: z.number().min(0).optional(),
+  autoRenewal: z.boolean(),
+  isChildMembership: z.boolean(),
+  parentMembershipId: z.string().optional(),
+  adminNotes: z.string().max(1000).optional(),
+});
+
+// Utility function to verify admin permission
+async function verifyMembershipPermission(request: NextRequest, operation: 'read' | 'create' | 'update' | 'delete') {
+  try {
+    const token = request.headers.get('authorization')?.replace('Bearer ', '');
+    if (!token) {
+      return null;
+    }
+
+    const decodedToken = await adminAuth.verifyIdToken(token);
+    const userDoc = await adminDb.collection('staff').doc(decodedToken.uid).get();
+    
+    if (!userDoc.exists) {
+      return null;
+    }
+
+    const userData = userDoc.data();
+    
+    // FIXED: Check if userData exists before accessing properties
+    if (!userData) {
+      return null;
+    }
+    
+    // Check permissions based on operation
+    let hasPermission = false;
+    switch (operation) {
+      case 'read':
+        hasPermission = PERMISSIONS.members.read.includes(userData.role) || 
+                       PERMISSIONS.members.viewBasicInfo.includes(userData.role);
+        break;
+      case 'create':
+        hasPermission = PERMISSIONS.members.create.includes(userData.role);
+        break;
+      case 'update':
+        hasPermission = PERMISSIONS.members.update.includes(userData.role);
+        break;
+      case 'delete':
+        hasPermission = PERMISSIONS.members.delete.includes(userData.role);
+        break;
+    }
+
+    if (!hasPermission) {
+      return null;
+    }
+
+    return {
+      uid: decodedToken.uid,
+      role: userData.role,
+      email: userData.email,
+      fullName: userData.fullName
+    };
+  } catch (error) {
+    return null;
+  }
+}
 
 // GET /api/member-memberships/[id] - Get specific member membership
 export async function GET(
@@ -14,7 +94,8 @@ export async function GET(
         );
       }
   
-      const membershipDoc = await db.collection('memberMemberships').doc(params.id).get();
+      // FIXED: Use adminDb instead of db
+      const membershipDoc = await adminDb.collection('memberMemberships').doc(params.id).get();
       
       if (!membershipDoc.exists) {
         return NextResponse.json(
@@ -57,8 +138,8 @@ export async function GET(
   
       const body = await request.json();
       
-      // Check if membership exists
-      const membershipDoc = await db.collection('memberMemberships').doc(params.id).get();
+      // FIXED: Use adminDb instead of db
+      const membershipDoc = await adminDb.collection('memberMemberships').doc(params.id).get();
       if (!membershipDoc.exists) {
         return NextResponse.json(
           { error: 'Member membership not found' },
@@ -76,10 +157,11 @@ export async function GET(
       delete updateData.createdAt;
       delete updateData.createdBy;
   
-      await db.collection('memberMemberships').doc(params.id).update(updateData);
+      // FIXED: Use adminDb instead of db
+      await adminDb.collection('memberMemberships').doc(params.id).update(updateData);
   
       // Get updated document
-      const updatedDoc = await db.collection('memberMemberships').doc(params.id).get();
+      const updatedDoc = await adminDb.collection('memberMemberships').doc(params.id).get();
       const updatedMembership: MemberMembership = {
         id: updatedDoc.id,
         ...updatedDoc.data()

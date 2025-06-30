@@ -1,8 +1,6 @@
 // src/app/api/member-memberships/[id]/cancel/route.ts - Cancel membership endpoint
-
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/app/lib/firebase/admin';
-import { db } from '@/app/lib/firebase/admin';
+import { adminAuth, adminDb } from '@/app/lib/firebase/admin';
 import { PERMISSIONS } from '@/app/lib/api/permissions';
 
 // Utility function to verify admin permission
@@ -13,8 +11,8 @@ async function verifyMembershipPermission(request: NextRequest) {
       return null;
     }
 
-    const decodedToken = await auth.verifyIdToken(token);
-    const userDoc = await db.collection('staff').doc(decodedToken.uid).get();
+    const decodedToken = await adminAuth.verifyIdToken(token);
+    const userDoc = await adminDb.collection('staff').doc(decodedToken.uid).get();
     
     if (!userDoc.exists) {
       return null;
@@ -22,19 +20,28 @@ async function verifyMembershipPermission(request: NextRequest) {
 
     const userData = userDoc.data();
     
-    if (!PERMISSIONS.members.update.includes(userData?.role)) {
+    // FIXED: Check if userData exists before accessing properties
+    if (!userData) {
+      return null;
+    }
+    
+    // FIXED: Remove optional chaining since we've already checked userData exists
+    if (!PERMISSIONS.members.update.includes(userData.role)) {
       return null;
     }
 
     return {
       uid: decodedToken.uid,
       role: userData.role,
-      ...userData
+      email: userData.email,
+      fullName: userData.fullName,
+      isActive: userData.isActive
     };
   } catch (error) {
     return null;
   }
 }
+
 // POST /api/member-memberships/[id]/cancel - Cancel membership
 export async function POST(
     request: NextRequest,
@@ -60,7 +67,7 @@ export async function POST(
       }
   
       // Check if membership exists and is active
-      const membershipDoc = await db.collection('memberMemberships').doc(params.id).get();
+      const membershipDoc = await adminDb.collection('memberMemberships').doc(params.id).get();
       if (!membershipDoc.exists) {
         return NextResponse.json(
           { error: 'Member membership not found' },
@@ -76,7 +83,7 @@ export async function POST(
         );
       }
   
-      await db.collection('memberMemberships').doc(params.id).update({
+      await adminDb.collection('memberMemberships').doc(params.id).update({
         status: 'cancelled',
         cancellationReason: reason.trim(),
         cancelledBy: user.uid,
