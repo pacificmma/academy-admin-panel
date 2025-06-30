@@ -1,16 +1,11 @@
-// src/app/api/memberships/[id]/route.ts - Dynamic Route for UPDATE and DELETE
+// src/app/api/memberships/[id]/route.ts - FIXED WITH CONSISTENT AUTHENTICATION
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth, adminDb } from '@/app/lib/firebase/admin';
+import { adminDb } from '@/app/lib/firebase/admin';
+import { validateAPIAccess } from '@/app/lib/auth/session';
 
 // ============================================
-// SHARED UTILITIES
+// SECURITY & VALIDATION
 // ============================================
-
-interface ValidationResult {
-  isValid: boolean;
-  errors: string[];
-  sanitizedData?: any;
-}
 
 const requestCounts = new Map<string, { count: number; resetTime: number }>();
 
@@ -39,38 +34,7 @@ function checkRateLimit(ip: string, maxRequests = 50, windowMs = 15 * 60 * 1000)
   return true;
 }
 
-async function verifyAdminPermission(request: NextRequest) {
-  try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '');
-    if (!token) {
-      return null;
-    }
-
-    const decodedToken = await adminAuth.verifyIdToken(token);
-    const staffDoc = await adminDb.collection('staff').doc(decodedToken.uid).get();
-    
-    if (!staffDoc.exists) {
-      return null;
-    }
-
-    const staffData = staffDoc.data();
-    
-    if (staffData?.role !== 'admin' || !staffData?.isActive) {
-      return null;
-    }
-
-    return {
-      uid: decodedToken.uid,
-      role: staffData.role,
-      email: staffData.email,
-      fullName: staffData.fullName
-    };
-  } catch (error) {
-    return null;
-  }
-}
-
-function validateMembershipInput(data: any): ValidationResult {
+function validateMembershipUpdate(data: any) {
   const errors: string[] = [];
   
   if (!data || typeof data !== 'object') {
@@ -79,75 +43,74 @@ function validateMembershipInput(data: any): ValidationResult {
 
   const { name, description, duration, price, classTypes, status } = data;
 
-  // Name validation
-  if (!name || typeof name !== 'string') {
-    errors.push('Membership name is required');
-  } else {
-    if (name.trim().length < 2 || name.length > 100) {
-      errors.push('Membership name must be between 2 and 100 characters');
+  // Validate fields if they are provided
+  if (name !== undefined && (typeof name !== 'string' || name.trim().length === 0)) {
+    errors.push('Name must be a non-empty string');
+  }
+
+  if (description !== undefined && (typeof description !== 'string' || description.trim().length === 0)) {
+    errors.push('Description must be a non-empty string');
+  }
+
+  if (duration !== undefined && (typeof duration !== 'string' || duration.trim().length === 0)) {
+    errors.push('Duration must be a non-empty string');
+  }
+
+  if (price !== undefined && (typeof price !== 'number' || price < 0)) {
+    errors.push('Price must be a positive number');
+  }
+
+  if (classTypes !== undefined && (!Array.isArray(classTypes) || classTypes.length === 0)) {
+    errors.push('Class types must be a non-empty array');
+  }
+
+  if (classTypes && Array.isArray(classTypes)) {
+    for (const type of classTypes) {
+      if (typeof type !== 'string' || type.trim().length === 0) {
+        errors.push('All class types must be non-empty strings');
+        break;
+      }
     }
   }
 
-  // Description validation
-  if (description && typeof description === 'string' && description.length > 500) {
-    errors.push('Description cannot exceed 500 characters');
-  }
-
-  // Duration validation
-  const validDurations = ['1_month', '3_months', '6_months', '12_months', 'unlimited'];
-  if (!duration || !validDurations.includes(duration)) {
-    errors.push('Valid duration is required');
-  }
-
-  // Price validation
-  if (typeof price !== 'number' || price < 0 || price > 10000) {
-    errors.push('Price must be a positive number less than 10,000');
-  }
-
-  // Class types validation
-  const validClassTypes = ['bjj', 'mma', 'muay_thai', 'boxing', 'general_fitness', 'all'];
-  if (!Array.isArray(classTypes) || classTypes.length === 0) {
-    errors.push('At least one class type must be selected');
-  } else {
-    const invalidTypes = classTypes.filter(type => !validClassTypes.includes(type));
-    if (invalidTypes.length > 0) {
-      errors.push('Invalid class types detected');
-    }
-  }
-
-  // Status validation
-  const validStatuses = ['active', 'inactive', 'archived'];
-  if (!status || !validStatuses.includes(status)) {
-    errors.push('Valid status is required');
+  if (status !== undefined && !['active', 'inactive', 'archived'].includes(status)) {
+    errors.push('Status must be one of: active, inactive, archived');
   }
 
   if (errors.length > 0) {
     return { isValid: false, errors };
   }
 
-  // Calculate duration in days with proper typing
-  const durationMap: Record<string, number> = {
-    '1_month': 30,
-    '3_months': 90,
-    '6_months': 180,
-    '12_months': 365,
-    'unlimited': 999999
-  };
+  // Sanitize the data
+  const sanitizedData: any = {};
   
-  const durationDays = durationMap[duration as string] || 30;
-
-  // Sanitize data
-  const sanitizedData = {
-    name: name.trim(),
-    description: description?.trim() || '',
-    duration,
-    durationInDays: durationDays,
-    price: Math.round(price * 100) / 100,
-    currency: 'USD',
-    classTypes: classTypes.map((type: string) => type.trim()),
-    status,
-    displayOrder: 0,
-  };
+  if (name !== undefined) sanitizedData.name = name.trim();
+  if (description !== undefined) sanitizedData.description = description.trim();
+  if (duration !== undefined) {
+    sanitizedData.duration = duration.trim();
+    
+    // Convert duration to days
+    const durationLower = duration.toLowerCase();
+    let durationDays = 0;
+    
+    if (durationLower.includes('month')) {
+      const months = parseInt(durationLower.match(/\d+/)?.[0] || '0');
+      durationDays = months * 30;
+    } else if (durationLower.includes('year')) {
+      const years = parseInt(durationLower.match(/\d+/)?.[0] || '0');
+      durationDays = years * 365;
+    } else if (durationLower.includes('day')) {
+      durationDays = parseInt(durationLower.match(/\d+/)?.[0] || '0');
+    } else {
+      durationDays = 30;
+    }
+    
+    sanitizedData.durationDays = durationDays;
+  }
+  
+  if (price !== undefined) sanitizedData.price = Math.round(price * 100) / 100;
+  if (classTypes !== undefined) sanitizedData.classTypes = classTypes.map((type: string) => type.trim());
+  if (status !== undefined) sanitizedData.status = status;
 
   return { isValid: true, errors: [], sanitizedData };
 }
@@ -182,7 +145,7 @@ function addSecurityHeaders(response: NextResponse): NextResponse {
 }
 
 // ============================================
-// DYNAMIC ROUTE HANDLERS
+// API ENDPOINTS
 // ============================================
 
 // PUT /api/memberships/[id] - Update membership plan
@@ -201,11 +164,13 @@ export async function PUT(
       return addSecurityHeaders(response);
     }
 
-    const user = await verifyAdminPermission(request);
-    if (!user) {
+    // FIXED: Use session-based authentication instead of Bearer token
+    const { success, session, error } = await validateAPIAccess(request, ['admin']);
+    
+    if (!success) {
       const response = NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
+        { success: false, error },
+        { status: error === 'Authentication required' ? 401 : 403 }
       );
       return addSecurityHeaders(response);
     }
@@ -231,7 +196,7 @@ export async function PUT(
       return addSecurityHeaders(response);
     }
 
-    const validation = validateMembershipInput(body);
+    const validation = validateMembershipUpdate(body);
     if (!validation.isValid) {
       const response = NextResponse.json(
         { 
@@ -246,7 +211,8 @@ export async function PUT(
 
     try {
       // Check if membership exists
-      const membershipDoc = await adminDb.collection('memberships').doc(membershipId).get();
+      const membershipRef = adminDb.collection('membershipPlans').doc(membershipId);
+      const membershipDoc = await membershipRef.get();
       
       if (!membershipDoc.exists) {
         const response = NextResponse.json(
@@ -256,18 +222,20 @@ export async function PUT(
         return addSecurityHeaders(response);
       }
 
+      // Update the membership
       const updateData = {
         ...validation.sanitizedData,
         updatedAt: new Date().toISOString(),
-        updatedBy: user.uid
+        updatedBy: session!.uid
       };
 
-      await adminDb.collection('memberships').doc(membershipId).update(updateData);
+      await membershipRef.update(updateData);
 
+      // Get the updated membership
+      const updatedDoc = await membershipRef.get();
       const updatedMembership = {
-        id: membershipId,
-        ...membershipDoc.data(),
-        ...updateData
+        id: updatedDoc.id,
+        ...updatedDoc.data()
       };
 
       const response = NextResponse.json({
@@ -300,7 +268,7 @@ export async function PUT(
   }
 }
 
-// DELETE /api/memberships/[id] - Archive membership plan
+// DELETE /api/memberships/[id] - Delete membership plan
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -316,11 +284,13 @@ export async function DELETE(
       return addSecurityHeaders(response);
     }
 
-    const user = await verifyAdminPermission(request);
-    if (!user) {
+    // FIXED: Use session-based authentication instead of Bearer token
+    const { success, session, error } = await validateAPIAccess(request, ['admin']);
+    
+    if (!success) {
       const response = NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
+        { success: false, error },
+        { status: error === 'Authentication required' ? 401 : 403 }
       );
       return addSecurityHeaders(response);
     }
@@ -337,7 +307,8 @@ export async function DELETE(
 
     try {
       // Check if membership exists
-      const membershipDoc = await adminDb.collection('memberships').doc(membershipId).get();
+      const membershipRef = adminDb.collection('membershipPlans').doc(membershipId);
+      const membershipDoc = await membershipRef.get();
       
       if (!membershipDoc.exists) {
         const response = NextResponse.json(
@@ -347,42 +318,37 @@ export async function DELETE(
         return addSecurityHeaders(response);
       }
 
-      // Check if membership is in use by active members
-      const memberMembershipsSnapshot = await adminDb
-        .collection('member-memberships')
+      // Check if membership has active members (optional safety check)
+      const memberMemberships = await adminDb
+        .collection('memberMemberships')
         .where('membershipPlanId', '==', membershipId)
-        .where('isActive', '==', true)
+        .where('status', '==', 'active')
         .get();
 
-      if (!memberMembershipsSnapshot.empty) {
+      if (!memberMemberships.empty) {
         const response = NextResponse.json(
           { 
             success: false, 
-            error: 'Cannot delete membership plan. It is currently in use by active members.' 
+            error: 'Cannot delete membership plan with active members. Please transfer or cancel their memberships first.' 
           },
-          { status: 400 }
+          { status: 409 }
         );
         return addSecurityHeaders(response);
       }
 
-      // Soft delete - mark as archived instead of actual deletion
-      await adminDb.collection('memberships').doc(membershipId).update({
-        status: 'archived',
-        archivedAt: new Date().toISOString(),
-        archivedBy: user.uid,
-        updatedAt: new Date().toISOString()
-      });
+      // Delete the membership
+      await membershipRef.delete();
 
       const response = NextResponse.json({
         success: true,
-        message: 'Membership plan archived successfully'
+        message: 'Membership plan deleted successfully'
       });
 
       return addSecurityHeaders(response);
 
     } catch (dbError: any) {
       const response = NextResponse.json(
-        { success: false, error: 'Failed to archive membership plan' },
+        { success: false, error: 'Failed to delete membership plan' },
         { status: 500 }
       );
       return addSecurityHeaders(response);
@@ -418,11 +384,13 @@ export async function GET(
       return addSecurityHeaders(response);
     }
 
-    const user = await verifyAdminPermission(request);
-    if (!user) {
+    // FIXED: Use session-based authentication instead of Bearer token
+    const { success, session, error } = await validateAPIAccess(request, ['admin']);
+    
+    if (!success) {
       const response = NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
+        { success: false, error },
+        { status: error === 'Authentication required' ? 401 : 403 }
       );
       return addSecurityHeaders(response);
     }
@@ -438,7 +406,7 @@ export async function GET(
     }
 
     try {
-      const membershipDoc = await adminDb.collection('memberships').doc(membershipId).get();
+      const membershipDoc = await adminDb.collection('membershipPlans').doc(membershipId).get();
       
       if (!membershipDoc.exists) {
         const response = NextResponse.json(

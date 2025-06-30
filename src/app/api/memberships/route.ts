@@ -1,6 +1,7 @@
-// src/app/api/memberships/route.ts - COMPLETE FIXED VERSION
+// src/app/api/memberships/route.ts - FIXED WITH CONSISTENT AUTHENTICATION
 import { NextRequest, NextResponse } from 'next/server';
-import { adminDb, adminAuth } from '@/app/lib/firebase/admin';
+import { adminDb } from '@/app/lib/firebase/admin';
+import { validateAPIAccess } from '@/app/lib/auth/session';
 import type { Query, CollectionReference, DocumentData } from 'firebase-admin/firestore';
 
 // ============================================
@@ -55,38 +56,6 @@ function checkRateLimit(ip: string, maxRequests = 50, windowMs = 15 * 60 * 1000)
   return true;
 }
 
-async function verifyAdminPermission(request: NextRequest) {
-  try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '');
-    if (!token) {
-      return null;
-    }
-
-    const decodedToken = await adminAuth.verifyIdToken(token);
-    const staffDoc = await adminDb.collection('staff').doc(decodedToken.uid).get();
-    
-    if (!staffDoc.exists) {
-      return null;
-    }
-
-    const staffData = staffDoc.data();
-    
-    // FIXED: Add null check for staffData
-    if (!staffData || staffData.role !== 'admin' || !staffData.isActive) {
-      return null;
-    }
-
-    return {
-      uid: decodedToken.uid,
-      role: staffData.role,
-      email: staffData.email,
-      fullName: staffData.fullName
-    };
-  } catch (error) {
-    return null;
-  }
-}
-
 function validateMembershipInput(data: any): ValidationResult {
   const errors: string[] = [];
   
@@ -96,73 +65,69 @@ function validateMembershipInput(data: any): ValidationResult {
 
   const { name, description, duration, price, classTypes, status } = data;
 
-  // Name validation
-  if (!name || typeof name !== 'string') {
-    errors.push('Membership name is required');
-  } else {
-    if (name.trim().length < 2 || name.length > 100) {
-      errors.push('Membership name must be between 2 and 100 characters');
-    }
+  // Validate required fields
+  if (!name || typeof name !== 'string' || name.trim().length === 0) {
+    errors.push('Name is required and must be a non-empty string');
   }
 
-  // Description validation
-  if (description && typeof description === 'string' && description.length > 500) {
-    errors.push('Description cannot exceed 500 characters');
+  if (!description || typeof description !== 'string' || description.trim().length === 0) {
+    errors.push('Description is required and must be a non-empty string');
   }
 
-  // Duration validation
-  const validDurations = ['1_month', '3_months', '6_months', '12_months', 'unlimited'];
-  if (!duration || !validDurations.includes(duration)) {
-    errors.push('Valid duration is required');
+  if (!duration || typeof duration !== 'string' || duration.trim().length === 0) {
+    errors.push('Duration is required and must be a non-empty string');
   }
 
-  // Price validation
-  if (typeof price !== 'number' || price < 0 || price > 10000) {
-    errors.push('Price must be a positive number less than 10,000');
+  if (price === undefined || price === null || typeof price !== 'number' || price < 0) {
+    errors.push('Price is required and must be a positive number');
   }
 
-  // Class types validation
-  const validClassTypes = ['bjj', 'mma', 'muay_thai', 'boxing', 'general_fitness', 'all'];
   if (!Array.isArray(classTypes) || classTypes.length === 0) {
-    errors.push('At least one class type must be selected');
-  } else {
-    const invalidTypes = classTypes.filter(type => !validClassTypes.includes(type));
-    if (invalidTypes.length > 0) {
-      errors.push('Invalid class types detected');
+    errors.push('Class types are required and must be a non-empty array');
+  }
+
+  if (classTypes && Array.isArray(classTypes)) {
+    for (const type of classTypes) {
+      if (typeof type !== 'string' || type.trim().length === 0) {
+        errors.push('All class types must be non-empty strings');
+        break;
+      }
     }
   }
 
-  // Status validation
-  const validStatuses = ['active', 'inactive', 'archived'];
-  if (!status || !validStatuses.includes(status)) {
-    errors.push('Valid status is required');
+  if (status && !['active', 'inactive', 'archived'].includes(status)) {
+    errors.push('Status must be one of: active, inactive, archived');
   }
 
   if (errors.length > 0) {
     return { isValid: false, errors };
   }
 
-  // Calculate duration in days with proper typing
-  const durationMap: Record<string, number> = {
-    '1_month': 30,
-    '3_months': 90,
-    '6_months': 180,
-    '12_months': 365,
-    'unlimited': 999999
-  };
+  // Convert duration to days for consistency
+  const durationLower = duration.toLowerCase();
+  let durationDays = 0;
   
-  const durationDays = durationMap[duration as string] || 30;
+  if (durationLower.includes('month')) {
+    const months = parseInt(durationLower.match(/\d+/)?.[0] || '0');
+    durationDays = months * 30;
+  } else if (durationLower.includes('year')) {
+    const years = parseInt(durationLower.match(/\d+/)?.[0] || '0');
+    durationDays = years * 365;
+  } else if (durationLower.includes('day')) {
+    durationDays = parseInt(durationLower.match(/\d+/)?.[0] || '0');
+  } else {
+    durationDays = 30; // Default to 30 days
+  }
 
-  // Sanitize data
   const sanitizedData = {
     name: name.trim(),
-    description: description?.trim() || '',
-    duration,
-    durationInDays: durationDays,
+    description: description.trim(),
+    duration: duration.trim(),
+    durationDays: durationDays,
     price: Math.round(price * 100) / 100,
     currency: 'USD',
     classTypes: classTypes.map((type: string) => type.trim()),
-    status,
+    status: status || 'active',
     displayOrder: 0,
   };
 
@@ -215,60 +180,71 @@ export async function GET(request: NextRequest) {
       return addSecurityHeaders(response);
     }
 
-    const user = await verifyAdminPermission(request);
-    if (!user) {
+    // FIXED: Use session-based authentication instead of Bearer token
+    const { success, session, error } = await validateAPIAccess(request, ['admin']);
+    
+    if (!success) {
       const response = NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
+        { success: false, error },
+        { status: error === 'Authentication required' ? 401 : 403 }
       );
       return addSecurityHeaders(response);
     }
 
     const url = new URL(request.url);
     const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
-    const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || '20')));
-    const search = url.searchParams.get('search')?.trim();
-    const status = url.searchParams.get('status');
+    const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || '10')));
+    const offset = (page - 1) * limit;
+
+    const searchTerm = url.searchParams.get('search')?.trim();
+    const statusFilter = url.searchParams.get('status');
+    const sortBy = url.searchParams.get('sortBy') || 'createdAt';
+    const sortOrder = url.searchParams.get('sortOrder') === 'asc' ? 'asc' : 'desc';
 
     try {
-      // FIXED: Properly type the query variable
-      let query: Query<DocumentData> | CollectionReference<DocumentData> = adminDb.collection('memberships');
+      let query: Query<DocumentData> = adminDb.collection('membershipPlans');
 
-      if (status && ['active', 'inactive', 'archived'].includes(status)) {
-        query = query.where('status', '==', status);
+      // Apply filters
+      if (statusFilter && ['active', 'inactive', 'archived'].includes(statusFilter)) {
+        query = query.where('status', '==', statusFilter);
       }
 
-      const offset = (page - 1) * limit;
-      // FIXED: Chain orderBy calls properly
-      query = query.orderBy('displayOrder', 'asc').orderBy('createdAt', 'desc');
+      // Apply sorting
+      query = query.orderBy(sortBy, sortOrder);
 
+      // Execute query
       const snapshot = await query.get();
-      let memberships: MembershipData[] = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as MembershipData[];
+      let memberships: MembershipData[] = [];
 
-      if (search) {
-        const searchLower = search.toLowerCase();
+      snapshot.forEach(doc => {
+        memberships.push({
+          id: doc.id,
+          ...doc.data()
+        } as MembershipData);
+      });
+
+      // Apply search filter (client-side for now)
+      if (searchTerm) {
+        const searchLower = searchTerm.toLowerCase();
         memberships = memberships.filter(membership => 
           membership.name?.toLowerCase().includes(searchLower) ||
-          membership.description?.toLowerCase().includes(searchLower)
+          membership.description?.toLowerCase().includes(searchLower) ||
+          membership.classTypes?.some(type => type.toLowerCase().includes(searchLower))
         );
       }
 
-      const total = memberships.length;
-      memberships = memberships.slice(offset, offset + limit);
-
-      const sanitizedMemberships = sanitizeOutput(memberships);
+      // Apply pagination
+      const totalCount = memberships.length;
+      const paginatedMemberships = memberships.slice(offset, offset + limit);
 
       const response = NextResponse.json({
         success: true,
-        data: sanitizedMemberships,
+        data: sanitizeOutput(paginatedMemberships),
         pagination: {
           page,
           limit,
-          total,
-          pages: Math.ceil(total / limit)
+          total: totalCount,
+          pages: Math.ceil(totalCount / limit)
         }
       });
 
@@ -276,7 +252,7 @@ export async function GET(request: NextRequest) {
 
     } catch (dbError: any) {
       const response = NextResponse.json(
-        { success: false, error: 'Failed to fetch memberships' },
+        { success: false, error: 'Failed to fetch membership plans' },
         { status: 500 }
       );
       return addSecurityHeaders(response);
@@ -309,11 +285,13 @@ export async function POST(request: NextRequest) {
       return addSecurityHeaders(response);
     }
 
-    const user = await verifyAdminPermission(request);
-    if (!user) {
+    // FIXED: Use session-based authentication instead of Bearer token
+    const { success, session, error } = await validateAPIAccess(request, ['admin']);
+    
+    if (!success) {
       const response = NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
+        { success: false, error },
+        { status: error === 'Authentication required' ? 401 : 403 }
       );
       return addSecurityHeaders(response);
     }
@@ -347,11 +325,11 @@ export async function POST(request: NextRequest) {
         ...validation.sanitizedData,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        createdBy: user.uid,
+        createdBy: session!.uid,
         memberCount: 0
       };
 
-      const docRef = await adminDb.collection('memberships').add(membershipData);
+      const docRef = await adminDb.collection('membershipPlans').add(membershipData);
 
       const newMembership = {
         id: docRef.id,
@@ -399,7 +377,7 @@ export async function OPTIONS() {
     headers: {
       'Access-Control-Allow-Origin': origin,
       'Access-Control-Allow-Credentials': 'true',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       'Access-Control-Max-Age': '86400',
     },
