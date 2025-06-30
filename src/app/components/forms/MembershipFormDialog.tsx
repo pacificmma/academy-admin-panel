@@ -1,4 +1,4 @@
-// src/app/components/forms/MembershipFormDialog.tsx - Complete Membership Form Dialog Component
+// src/app/components/forms/MembershipFormDialog.tsx - Fixed version with proper class type handling
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -20,6 +20,7 @@ import {
   InputAdornment,
   FormHelperText,
   Autocomplete,
+  Alert,
 } from '@mui/material';
 import {
   Save as SaveIcon,
@@ -120,8 +121,8 @@ export default function MembershipFormDialog({
       newErrors.price = 'Price must be less than $10,000';
     }
 
-    // Class types validation
-    if (formData.classTypes.length === 0) {
+    // Class types validation - FIXED
+    if (!formData.classTypes || formData.classTypes.length === 0) {
       newErrors.classTypes = 'At least one class type must be selected';
     }
 
@@ -143,10 +144,19 @@ export default function MembershipFormDialog({
 
     setLoading(true);
     try {
-      await onSubmit(formData);
+      // Ensure classTypes are properly formatted
+      const submitData = {
+        ...formData,
+        classTypes: formData.classTypes.filter(type => type), // Remove any empty values
+        name: formData.name.trim(),
+        description: formData.description?.trim() || '',
+      };
+
+      await onSubmit(submitData);
       onClose();
     } catch (error) {
       // Error handling is done by parent component
+      console.error('Form submission error:', error);
     } finally {
       setLoading(false);
     }
@@ -177,7 +187,7 @@ export default function MembershipFormDialog({
       PaperProps={{
         sx: {
           borderRadius: 2,
-          minHeight: '500px',
+          minHeight: '600px',
         }
       }}
     >
@@ -271,7 +281,7 @@ export default function MembershipFormDialog({
               />
             </Grid>
 
-            {/* Class Types */}
+            {/* Class Types - FIXED IMPLEMENTATION */}
             <Grid item xs={12}>
               <Autocomplete
                 multiple
@@ -279,7 +289,9 @@ export default function MembershipFormDialog({
                 getOptionLabel={(option) => option.label}
                 value={CLASS_TYPES.filter(ct => formData.classTypes.includes(ct.value))}
                 onChange={(_, newValue) => {
-                  handleInputChange('classTypes', newValue.map(option => option.value));
+                  // Extract just the values from the selected options
+                  const selectedValues = newValue.map(option => option.value);
+                  handleInputChange('classTypes', selectedValues);
                 }}
                 renderTags={(value, getTagProps) =>
                   value.map((option, index) => (
@@ -290,6 +302,11 @@ export default function MembershipFormDialog({
                       size="small"
                       color="primary"
                       variant="outlined"
+                      sx={{ 
+                        backgroundColor: option.color + '20',
+                        borderColor: option.color,
+                        color: option.color,
+                      }}
                     />
                   ))
                 }
@@ -297,17 +314,18 @@ export default function MembershipFormDialog({
                   <TextField
                     {...params}
                     label="Class Types"
-                    placeholder="Select class types included in this plan"
+                    placeholder={formData.classTypes.length === 0 ? "Select class types included in this plan" : ""}
                     error={!!errors.classTypes}
                     helperText={errors.classTypes || 'Choose which class types are included'}
                     required
                   />
                 )}
                 disabled={loading}
+                isOptionEqualToValue={(option, value) => option.value === value.value}
               />
             </Grid>
 
-            {/* Status */}
+            {/* Status and Currency */}
             <Grid item xs={12} sm={6}>
               <FormControl fullWidth>
                 <InputLabel>Status</InputLabel>
@@ -336,45 +354,51 @@ export default function MembershipFormDialog({
               </FormControl>
             </Grid>
 
-            {/* Currency */}
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
                 label="Currency"
                 value={formData.currency}
                 onChange={(e) => handleInputChange('currency', e.target.value)}
-                placeholder="USD"
-                disabled={loading}
                 helperText="Currency code (e.g., USD, EUR, GBP)"
+                disabled={loading}
+                placeholder="USD"
               />
             </Grid>
-          </Grid>
 
-          {/* Preview Section */}
-          {formData.name && (
-            <Box sx={{ mt: 4, p: 3, bgcolor: 'grey.50', borderRadius: 2 }}>
-              <Typography variant="h6" gutterBottom color="primary">
-                Plan Preview
-              </Typography>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                <Typography variant="body1">
-                  <strong>Name:</strong> {formData.name}
+            {/* Plan Preview */}
+            <Grid item xs={12}>
+              <Box sx={{ 
+                p: 2, 
+                bgcolor: 'grey.50', 
+                borderRadius: 1,
+                border: '1px solid',
+                borderColor: 'grey.200'
+              }}>
+                <Typography variant="h6" gutterBottom color="primary">
+                  Plan Preview
                 </Typography>
-                <Typography variant="body1">
+                <Typography variant="body2" color="text.secondary" gutterBottom>
+                  <strong>Name:</strong> {formData.name || 'Enter plan name'}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" gutterBottom>
                   <strong>Duration:</strong> {getDurationLabel(formData.duration)}
                 </Typography>
-                <Typography variant="body1">
+                <Typography variant="body2" color="text.secondary" gutterBottom>
                   <strong>Price:</strong> ${formData.price.toFixed(2)} {formData.currency}
                 </Typography>
-                <Typography variant="body1">
-                  <strong>Class Types:</strong> {formData.classTypes.map(getClassTypeLabel).join(', ') || 'None selected'}
+                <Typography variant="body2" color="text.secondary" gutterBottom>
+                  <strong>Class Types:</strong> {formData.classTypes.length > 0 
+                    ? formData.classTypes.map(type => getClassTypeLabel(type)).join(', ')
+                    : 'No class types selected'
+                  }
                 </Typography>
-                <Typography variant="body1">
-                  <strong>Status:</strong> {MEMBERSHIP_STATUSES.find(s => s.value === formData.status)?.label}
+                <Typography variant="body2" color="text.secondary">
+                  <strong>Status:</strong> {formData.status.charAt(0).toUpperCase() + formData.status.slice(1)}
                 </Typography>
               </Box>
-            </Box>
-          )}
+            </Grid>
+          </Grid>
         </DialogContent>
 
         <DialogActions sx={{ p: 3, borderTop: '1px solid', borderColor: 'divider' }}>
@@ -382,7 +406,6 @@ export default function MembershipFormDialog({
             onClick={handleClose}
             disabled={loading}
             startIcon={<CloseIcon />}
-            sx={{ mr: 1 }}
           >
             Cancel
           </Button>
@@ -390,34 +413,10 @@ export default function MembershipFormDialog({
             type="submit"
             variant="contained"
             disabled={loading}
-            startIcon={loading ? undefined : <SaveIcon />}
-            sx={{
-              bgcolor: '#0F5C6B',
-              '&:hover': { bgcolor: '#0a4a57' },
-              minWidth: 120,
-            }}
+            startIcon={<SaveIcon />}
+            sx={{ minWidth: 120 }}
           >
-            {loading ? (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Box
-                  sx={{
-                    width: 16,
-                    height: 16,
-                    border: '2px solid #ffffff40',
-                    borderTop: '2px solid #ffffff',
-                    borderRadius: '50%',
-                    animation: 'spin 1s linear infinite',
-                    '@keyframes spin': {
-                      '0%': { transform: 'rotate(0deg)' },
-                      '100%': { transform: 'rotate(360deg)' },
-                    },
-                  }}
-                />
-                Saving...
-              </Box>
-            ) : (
-              mode === 'create' ? 'Create Plan' : 'Update Plan'
-            )}
+            {loading ? 'Saving...' : (mode === 'create' ? 'Create Plan' : 'Update Plan')}
           </Button>
         </DialogActions>
       </Box>

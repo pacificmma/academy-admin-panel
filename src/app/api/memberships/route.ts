@@ -1,9 +1,8 @@
-// src/app/api/memberships/route.ts - CORRECTED with proper imports and week support
+// src/app/api/memberships/route.ts - Fixed version with proper validation
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/app/lib/firebase/admin';
 import { validateAPIAccess } from '@/app/lib/auth/session';
 import { MembershipPlan, CreateMembershipPlanRequest } from '@/app/types/membership';
-import type { Query, DocumentData } from 'firebase-admin/firestore';
 
 // ============================================
 // SECURITY & VALIDATION
@@ -25,27 +24,27 @@ function getClientIP(request: NextRequest): string {
 function checkRateLimit(ip: string, maxRequests = 50, windowMs = 15 * 60 * 1000): boolean {
   const now = Date.now();
   const windowStart = now - windowMs;
-  
+
   let requestInfo = requestCounts.get(ip);
-  
+
   if (!requestInfo || requestInfo.resetTime <= windowStart) {
     requestInfo = { count: 1, resetTime: now + windowMs };
     requestCounts.set(ip, requestInfo);
     return true;
   }
-  
+
   if (requestInfo.count >= maxRequests) {
     return false;
   }
-  
+
   requestInfo.count++;
   return true;
 }
 
-// Validation function for membership plan data - UPDATED WITH WEEK SUPPORT
+// Fixed validation function for membership plan data
 function validateMembershipPlanData(data: any): ValidationResult {
   const errors: string[] = [];
-  
+
   if (!data || typeof data !== 'object') {
     return { isValid: false, errors: ['Invalid request body'] };
   }
@@ -66,43 +65,46 @@ function validateMembershipPlanData(data: any): ValidationResult {
     errors.push('Description must be less than 500 characters');
   }
 
-  // Validate duration (updated with week options)
+  // Validate duration - updated with week options
   const validDurations = ['1_week', '2_weeks', '3_weeks', '4_weeks', '1_month', '3_months', '6_months', '12_months', 'unlimited'];
   if (!duration || typeof duration !== 'string' || !validDurations.includes(duration)) {
     errors.push('Duration must be one of: 1_week, 2_weeks, 3_weeks, 4_weeks, 1_month, 3_months, 6_months, 12_months, unlimited');
   }
 
   // Validate price
-  if (price === undefined || price === null || typeof price !== 'number' || price < 0) {
-    errors.push('Price is required and must be a positive number');
+  if (typeof price !== 'number' || price < 0) {
+    errors.push('Price must be a positive number');
   } else if (price > 10000) {
     errors.push('Price must be less than $10,000');
   }
 
-  // Validate class types
-  if (!Array.isArray(classTypes) || classTypes.length === 0) {
+  // Validate class types - FIXED VALIDATION
+  const validClassTypes = ['bjj', 'mma', 'muay_thai', 'boxing', 'general_fitness', 'all'];
+  if (!classTypes || !Array.isArray(classTypes) || classTypes.length === 0) {
     errors.push('At least one class type must be selected');
   } else {
-    const validClassTypes = ['bjj', 'mma', 'muay_thai', 'boxing', 'general_fitness', 'all'];
-    for (const type of classTypes) {
-      if (typeof type !== 'string' || !validClassTypes.includes(type)) {
-        errors.push('Invalid class type: ' + type);
-        break;
-      }
+    const invalidTypes = classTypes.filter(type => !validClassTypes.includes(type));
+    if (invalidTypes.length > 0) {
+      errors.push(`Invalid class types: ${invalidTypes.join(', ')}`);
     }
   }
 
   // Validate status
   const validStatuses = ['active', 'inactive', 'archived'];
-  if (status && !validStatuses.includes(status)) {
+  if (!status || typeof status !== 'string' || !validStatuses.includes(status)) {
     errors.push('Status must be one of: active, inactive, archived');
+  }
+
+  // Validate currency (optional)
+  if (currency && (typeof currency !== 'string' || currency.trim().length < 2)) {
+    errors.push('Currency must be a valid currency code');
   }
 
   if (errors.length > 0) {
     return { isValid: false, errors };
   }
 
-  // Convert duration to days for storage (updated with week options)
+  // Calculate duration in days
   const durationToDays: Record<string, number> = {
     '1_week': 7,
     '2_weeks': 14,
@@ -115,21 +117,19 @@ function validateMembershipPlanData(data: any): ValidationResult {
     'unlimited': 9999
   };
 
-  const durationInDays = durationToDays[duration] || 30;
-
-  // Sanitize and prepare data for storage
+  // Sanitize and prepare data
   const sanitizedData = {
     name: name.trim(),
     description: description?.trim() || '',
-    duration: duration.trim(),
-    durationInDays,
+    duration,
+    durationInDays: durationToDays[duration] || 30,
     price: Math.round(price * 100) / 100, // Round to 2 decimal places
-    classTypes: classTypes.map((type: string) => type.trim()),
-    status: status || 'active',
     currency: currency?.trim() || 'USD',
+    classTypes: classTypes.map((type: string) => type.trim()),
+    status,
+    displayOrder: 0, // Default display order
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    displayOrder: 0,
   };
 
   return { isValid: true, errors: [], sanitizedData };
@@ -139,7 +139,7 @@ function validateMembershipPlanData(data: any): ValidationResult {
 // API ENDPOINTS
 // ============================================
 
-// GET - Fetch all membership plans
+// GET - Fetch membership plans with proper error handling
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const clientIP = getClientIP(request);
 
@@ -184,13 +184,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     snapshot.forEach(doc => {
       const data = doc.data();
-      
+
       // Filter by search term if provided
       if (search) {
         const searchLower = search.toLowerCase();
         const nameMatch = data.name?.toLowerCase().includes(searchLower);
         const descriptionMatch = data.description?.toLowerCase().includes(searchLower);
-        
+
         if (!nameMatch && !descriptionMatch) {
           return; // Skip this document
         }
@@ -207,12 +207,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const total = totalSnapshot.size;
 
     return NextResponse.json({
+      success: true,
       data: membershipPlans,
       total,
       hasMore: offset + limit < total,
     });
 
   } catch (error) {
+    console.error('Error fetching membership plans:', error);
     return NextResponse.json(
       { error: 'Failed to fetch membership plans' },
       { status: 500 }
@@ -220,7 +222,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   }
 }
 
-// POST - Create new membership plan
+// POST - Create new membership plan with improved error handling
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const clientIP = getClientIP(request);
 
@@ -252,12 +254,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // Parse request body
     const body = await request.json();
-    
+
     // Validate input data
     const validation = validateMembershipPlanData(body);
     if (!validation.isValid) {
       return NextResponse.json(
-        { error: 'Validation failed', details: validation.errors },
+        {
+          error: 'Validation failed',
+          details: validation.errors,
+          received: body // Help debug what was received
+        },
         { status: 400 }
       );
     }
@@ -270,7 +276,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // Create the membership plan in Firestore
     const docRef = await adminDb.collection('membershipPlans').add(membershipPlanData);
-    
+
     // Fetch the created document
     const createdDoc = await docRef.get();
     const createdPlan = {
@@ -279,7 +285,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     } as MembershipPlan;
 
     return NextResponse.json(
-      { 
+      {
+        success: true,
         message: 'Membership plan created successfully',
         data: createdPlan
       },
@@ -287,6 +294,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
 
   } catch (error) {
+    console.error('Error creating membership plan:', error);
     return NextResponse.json(
       { error: 'Failed to create membership plan' },
       { status: 500 }
