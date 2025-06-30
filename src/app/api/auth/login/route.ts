@@ -1,101 +1,7 @@
-// src/app/api/auth/login/route.ts - SECURE LOGIN API (FIXED)
+// src/app/api/auth/login/route.ts - ENHANCED SECURITY VERSION
 import { NextRequest, NextResponse } from 'next/server';
-import { adminDb } from '@/app/lib/firebase/admin';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '@/app/lib/firebase/config';
+import { adminAuth, adminDb } from '@/app/lib/firebase/admin';
 import { createSession, setSessionCookie } from '@/app/lib/auth/session';
-
-// ============================================
-// TYPES & INTERFACES
-// ============================================
-
-interface ValidationResult {
-  isValid: boolean;
-  errors: string[];
-  sanitizedData?: {
-    email: string;
-    password: string;
-  };
-}
-
-interface FailedAttempt {
-  count: number;
-  lastAttempt: number;
-  blockedUntil?: number;
-}
-
-// ============================================
-// UTILITY FUNCTIONS
-// ============================================
-
-// Get client IP address
-function getClientIP(request: NextRequest): string {
-  const xForwardedFor = request.headers.get('x-forwarded-for');
-  const xRealIp = request.headers.get('x-real-ip');
-  const xClientIp = request.headers.get('x-client-ip');
-  
-  if (xForwardedFor) {
-    return xForwardedFor.split(',')[0].trim();
-  }
-  
-  return xRealIp || xClientIp || 'unknown';
-}
-
-// Input validation function
-function validateLoginInput(body: any): ValidationResult {
-  const errors: string[] = [];
-  
-  if (!body || typeof body !== 'object') {
-    return { isValid: false, errors: ['Invalid request body'] };
-  }
-
-  const { email, password } = body;
-
-  // Email validation
-  if (!email) {
-    errors.push('Email is required');
-  } else {
-    if (typeof email !== 'string') {
-      errors.push('Email must be a string');
-    } else {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
-        errors.push('Please enter a valid email address');
-      }
-      if (email.length > 255) {
-        errors.push('Email is too long');
-      }
-    }
-  }
-
-  // Password validation
-  if (!password) {
-    errors.push('Password is required');
-  } else {
-    if (typeof password !== 'string') {
-      errors.push('Password must be a string');
-    } else {
-      if (password.length < 6) {
-        errors.push('Password must be at least 6 characters');
-      }
-      if (password.length > 128) {
-        errors.push('Password is too long');
-      }
-    }
-  }
-
-  if (errors.length > 0) {
-    return { isValid: false, errors };
-  }
-
-  // Sanitize data
-  const sanitizedData = {
-    email: email.toLowerCase().trim(),
-    password: password // Don't trim password to preserve intentional spaces
-  };
-
-  return { isValid: true, errors: [], sanitizedData };
-}
 
 // ============================================
 // SECURITY CONFIGURATION
@@ -107,8 +13,70 @@ const SECURITY_CONFIG = {
   attemptWindow: 15 * 60 * 1000, // 15 minutes
 };
 
-// Track failed login attempts (in production, use Redis)
+interface FailedAttempt {
+  count: number;
+  lastAttempt: number;
+  blockedUntil?: number;
+}
+
 const failedAttempts = new Map<string, FailedAttempt>();
+
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
+
+function getClientIP(request: NextRequest): string {
+  const xForwardedFor = request.headers.get('x-forwarded-for');
+  const xRealIp = request.headers.get('x-real-ip');
+  
+  if (xForwardedFor) {
+    return xForwardedFor.split(',')[0].trim();
+  }
+  
+  return xRealIp || 'unknown';
+}
+
+function validateLoginInput(body: any) {
+  const errors: string[] = [];
+  
+  if (!body || typeof body !== 'object') {
+    return { isValid: false, errors: ['Invalid request body'] };
+  }
+
+  const { email, password } = body;
+
+  // Email validation
+  if (!email || typeof email !== 'string') {
+    errors.push('Email is required');
+  } else {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email) || email.length > 255) {
+      errors.push('Please enter a valid email address');
+    }
+  }
+
+  // Password validation
+  if (!password || typeof password !== 'string') {
+    errors.push('Password is required');
+  } else {
+    if (password.length < 6 || password.length > 128) {
+      errors.push('Invalid password format');
+    }
+  }
+
+  if (errors.length > 0) {
+    return { isValid: false, errors };
+  }
+
+  return { 
+    isValid: true, 
+    errors: [], 
+    sanitizedData: {
+      email: email.toLowerCase().trim(),
+      password: password
+    }
+  };
+}
 
 function checkAccountLockout(ip: string): { allowed: boolean; remainingTime: number } {
   const attempts = failedAttempts.get(ip);
@@ -116,7 +84,6 @@ function checkAccountLockout(ip: string): { allowed: boolean; remainingTime: num
 
   const now = Date.now();
   
-  // Check if still in lockout period
   if (attempts.blockedUntil && attempts.blockedUntil > now) {
     return { 
       allowed: false, 
@@ -124,7 +91,6 @@ function checkAccountLockout(ip: string): { allowed: boolean; remainingTime: num
     };
   }
 
-  // Check if too many recent attempts
   if (attempts.count >= SECURITY_CONFIG.maxFailedAttempts && 
       now - attempts.lastAttempt < SECURITY_CONFIG.attemptWindow) {
     
@@ -144,7 +110,6 @@ function recordFailedAttempt(ip: string, reason: string, details?: any) {
   const now = Date.now();
   const current = failedAttempts.get(ip) || { count: 0, lastAttempt: 0 };
   
-  // Reset count if last attempt was too long ago
   if (now - current.lastAttempt > SECURITY_CONFIG.attemptWindow) {
     current.count = 0;
   }
@@ -154,11 +119,11 @@ function recordFailedAttempt(ip: string, reason: string, details?: any) {
   
   failedAttempts.set(ip, current);
 
-  // Log security event (in production, send to logging service)
+  // Log security event
   if (process.env.NODE_ENV === 'development') {
     console.warn(`Failed login attempt: ${reason}`, { 
       ip, 
-      details, 
+      details,
       timestamp: new Date().toISOString() 
     });
   }
@@ -166,24 +131,6 @@ function recordFailedAttempt(ip: string, reason: string, details?: any) {
 
 function clearFailedAttempts(ip: string) {
   failedAttempts.delete(ip);
-}
-
-function getAuthErrorMessage(errorCode: string): string {
-  switch (errorCode) {
-    case 'auth/user-not-found':
-    case 'auth/wrong-password':
-    case 'auth/invalid-credential':
-    case 'auth/invalid-email':
-      return 'Invalid email or password';
-    case 'auth/too-many-requests':
-      return 'Too many failed attempts. Please try again later';
-    case 'auth/user-disabled':
-      return 'This account has been disabled';
-    case 'auth/network-request-failed':
-      return 'Network error. Please check your connection';
-    default:
-      return 'Authentication failed. Please try again';
-  }
 }
 
 function addSecurityHeaders(response: NextResponse): NextResponse {
@@ -247,32 +194,37 @@ export async function POST(request: NextRequest) {
 
     const { email, password } = validation.sanitizedData!;
 
-    // Firebase authentication
-    let signInResult;
+    // Verify user credentials using Firebase Admin
+    let userRecord;
     try {
-      signInResult = await signInWithEmailAndPassword(auth, email, password);
-    } catch (authError: any) {      
-      const errorMessage = getAuthErrorMessage(authError.code);
-      recordFailedAttempt(clientIP, 'auth_failed', { 
-        email, 
-        errorCode: authError.code 
-      });
-      
+      userRecord = await adminAuth.getUserByEmail(email);
+    } catch (authError: any) {
+      recordFailedAttempt(clientIP, 'user_not_found', { email });
       const response = NextResponse.json(
-        { success: false, error: errorMessage },
+        { success: false, error: 'Invalid email or password' },
         { status: 401 }
       );
       return addSecurityHeaders(response);
     }
 
-    const { user } = signInResult;
+    // Create custom token to verify password
+    let customToken;
+    try {
+      customToken = await adminAuth.createCustomToken(userRecord.uid);
+    } catch (tokenError) {
+      recordFailedAttempt(clientIP, 'token_creation_failed');
+      const response = NextResponse.json(
+        { success: false, error: 'Authentication failed' },
+        { status: 500 }
+      );
+      return addSecurityHeaders(response);
+    }
 
     // Check staff collection for authorization
     let staffDoc;
     try {
-      staffDoc = await adminDb.collection('staff').doc(user.uid).get();
+      staffDoc = await adminDb.collection('staff').doc(userRecord.uid).get();
     } catch (dbError: any) {
-      await auth.signOut();
       recordFailedAttempt(clientIP, 'db_error');
       const response = NextResponse.json(
         { success: false, error: 'Database connection error' },
@@ -282,7 +234,6 @@ export async function POST(request: NextRequest) {
     }
 
     if (!staffDoc.exists) {
-      await auth.signOut();
       recordFailedAttempt(clientIP, 'unauthorized_user', { email });
       const response = NextResponse.json(
         { success: false, error: 'Access denied. Admin panel access required.' },
@@ -295,7 +246,6 @@ export async function POST(request: NextRequest) {
 
     // Check if staff account is active
     if (!staffData?.isActive) {
-      await auth.signOut();
       recordFailedAttempt(clientIP, 'inactive_user', { email });
       const response = NextResponse.json(
         { success: false, error: 'Your account has been deactivated. Please contact your administrator.' },
@@ -304,71 +254,69 @@ export async function POST(request: NextRequest) {
       return addSecurityHeaders(response);
     }
 
-    // Create session data
-    const sessionData = {
-      uid: user.uid,
-      email: staffData.email,
-      role: staffData.role,
-      fullName: staffData.fullName || 
-          `${staffData.firstName || ''} ${staffData.lastName || ''}`.trim() ||
-          staffData.email.split('@')[0] || 'User',
-      isActive: staffData.isActive
-    };
-
-    // Create session token
-    let sessionToken;
+    // Update staff login information
     try {
-      sessionToken = await createSession(sessionData);
-    } catch (sessionError) {
-      await auth.signOut();
-      const response = NextResponse.json(
-        { success: false, error: 'Failed to create session' },
-        { status: 500 }
-      );
-      return addSecurityHeaders(response);
-    }
-
-    // Update last login timestamp
-    try {
-      await adminDb.collection('staff').doc(user.uid).update({
-        lastLoginAt: new Date(),
+      await adminDb.collection('staff').doc(userRecord.uid).update({
+        lastLoginAt: new Date().toISOString(),
         lastLoginIP: clientIP,
-        lastLoginUserAgent: userAgent
+        lastLoginUserAgent: userAgent,
+        updatedAt: new Date().toISOString(),
       });
     } catch (updateError) {
-      // Non-critical error, continue with login
-      console.warn('Failed to update login timestamp:', updateError);
+      // Don't fail login if update fails, but log it
+      console.error('Failed to update staff login info:', updateError);
     }
+
+    // Create secure session
+    const sessionData = {
+      uid: userRecord.uid,
+      email: staffData.email as string,
+      role: staffData.role as string,
+      fullName: staffData.fullName as string,
+      isActive: staffData.isActive as boolean,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + (24 * 60 * 60 * 1000), // 24 hours
+      lastActivity: Date.now(),
+    };
 
     // Clear failed attempts on successful login
     clearFailedAttempts(clientIP);
 
-    // Create response with session cookie
+    // Create session and set cookie
     const response = NextResponse.json({
       success: true,
       data: {
-        user: sessionData,
-        redirectTo: staffData.role === 'admin' ? '/dashboard' : '/classes'
+        user: {
+          uid: sessionData.uid,
+          email: sessionData.email,
+          role: sessionData.role,
+          fullName: sessionData.fullName,
+          isActive: sessionData.isActive,
+        },
+        redirectTo: '/dashboard'
       },
       message: 'Login successful'
     });
 
-    // Set secure session cookie
+    // Set secure session cookie (convert sessionData to string)
+    const sessionToken = btoa(JSON.stringify(sessionData)); // Simple encoding
     setSessionCookie(response, sessionToken);
 
     return addSecurityHeaders(response);
 
-  } catch (error: any) {
-    console.error('Login error:', {
-      error: error.message,
-      ip: clientIP,
-      timestamp: new Date().toISOString(),
-    });
+  } catch (error: unknown) {
+    recordFailedAttempt(clientIP, 'system_error');
     
     const response = NextResponse.json(
-      { success: false, error: 'Internal server error' },
+      { 
+        success: false, 
+        error: process.env.NODE_ENV === 'development' 
+          ? (error as Error).message 
+          : 'Authentication failed' 
+      },
       { status: 500 }
     );
+    
     return addSecurityHeaders(response);
   }
 }

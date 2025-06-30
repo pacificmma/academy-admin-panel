@@ -1,327 +1,405 @@
-// src/app/api/memberships/route.ts - Complete professional implementation
+// src/app/api/memberships/route.ts - COMPLETE FIXED VERSION
 import { NextRequest, NextResponse } from 'next/server';
-import { adminDb } from '@/app/lib/firebase/admin';
-import { getSession } from '@/app/lib/auth/session';
-import { 
-  MembershipPlan, 
-  CreateMembershipPlanRequest,
-  MEMBERSHIP_DURATIONS,
-  MembershipDuration
-} from '@/app/types/membership';
-import { ApiResponse } from '@/app/types/api';
+import { adminDb, adminAuth } from '@/app/lib/firebase/admin';
 
-// Helper function to calculate duration in days
-function getDurationInDays(duration: MembershipDuration): number {
-  const durationMap = {
+// ============================================
+// INTERFACES & TYPES
+// ============================================
+
+interface ValidationResult {
+  isValid: boolean;
+  errors: string[];
+  sanitizedData?: any;
+}
+
+interface MembershipData {
+  id: string;
+  name?: string;
+  description?: string;
+  duration?: string;
+  price?: number;
+  classTypes?: string[];
+  status?: string;
+  [key: string]: any;
+}
+
+// ============================================
+// SECURITY & VALIDATION
+// ============================================
+
+const requestCounts = new Map<string, { count: number; resetTime: number }>();
+
+function getClientIP(request: NextRequest): string {
+  const xForwardedFor = request.headers.get('x-forwarded-for');
+  return xForwardedFor?.split(',')[0].trim() || 'unknown';
+}
+
+function checkRateLimit(ip: string, maxRequests = 50, windowMs = 15 * 60 * 1000): boolean {
+  const now = Date.now();
+  const windowStart = now - windowMs;
+  
+  let requestInfo = requestCounts.get(ip);
+  
+  if (!requestInfo || requestInfo.resetTime <= windowStart) {
+    requestInfo = { count: 1, resetTime: now + windowMs };
+    requestCounts.set(ip, requestInfo);
+    return true;
+  }
+  
+  if (requestInfo.count >= maxRequests) {
+    return false;
+  }
+  
+  requestInfo.count++;
+  return true;
+}
+
+async function verifyAdminPermission(request: NextRequest) {
+  try {
+    const token = request.headers.get('authorization')?.replace('Bearer ', '');
+    if (!token) {
+      return null;
+    }
+
+    const decodedToken = await adminAuth.verifyIdToken(token);
+    const staffDoc = await adminDb.collection('staff').doc(decodedToken.uid).get();
+    
+    if (!staffDoc.exists) {
+      return null;
+    }
+
+    const staffData = staffDoc.data();
+    
+    if (staffData?.role !== 'admin' || !staffData?.isActive) {
+      return null;
+    }
+
+    return {
+      uid: decodedToken.uid,
+      role: staffData.role,
+      email: staffData.email,
+      fullName: staffData.fullName
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
+function validateMembershipInput(data: any): ValidationResult {
+  const errors: string[] = [];
+  
+  if (!data || typeof data !== 'object') {
+    return { isValid: false, errors: ['Invalid request body'] };
+  }
+
+  const { name, description, duration, price, classTypes, status } = data;
+
+  // Name validation
+  if (!name || typeof name !== 'string') {
+    errors.push('Membership name is required');
+  } else {
+    if (name.trim().length < 2 || name.length > 100) {
+      errors.push('Membership name must be between 2 and 100 characters');
+    }
+  }
+
+  // Description validation
+  if (description && typeof description === 'string' && description.length > 500) {
+    errors.push('Description cannot exceed 500 characters');
+  }
+
+  // Duration validation
+  const validDurations = ['1_month', '3_months', '6_months', '12_months', 'unlimited'];
+  if (!duration || !validDurations.includes(duration)) {
+    errors.push('Valid duration is required');
+  }
+
+  // Price validation
+  if (typeof price !== 'number' || price < 0 || price > 10000) {
+    errors.push('Price must be a positive number less than 10,000');
+  }
+
+  // Class types validation
+  const validClassTypes = ['bjj', 'mma', 'muay_thai', 'boxing', 'general_fitness', 'all'];
+  if (!Array.isArray(classTypes) || classTypes.length === 0) {
+    errors.push('At least one class type must be selected');
+  } else {
+    const invalidTypes = classTypes.filter(type => !validClassTypes.includes(type));
+    if (invalidTypes.length > 0) {
+      errors.push('Invalid class types detected');
+    }
+  }
+
+  // Status validation
+  const validStatuses = ['active', 'inactive', 'archived'];
+  if (!status || !validStatuses.includes(status)) {
+    errors.push('Valid status is required');
+  }
+
+  if (errors.length > 0) {
+    return { isValid: false, errors };
+  }
+
+  // Calculate duration in days with proper typing
+  const durationMap: Record<string, number> = {
     '1_month': 30,
     '3_months': 90,
     '6_months': 180,
     '12_months': 365,
-    'unlimited': 9999
+    'unlimited': 999999
   };
-  return durationMap[duration];
+  
+  const durationDays = durationMap[duration as string] || 30;
+
+  // Sanitize data
+  const sanitizedData = {
+    name: name.trim(),
+    description: description?.trim() || '',
+    duration,
+    durationInDays: durationDays,
+    price: Math.round(price * 100) / 100,
+    currency: 'USD',
+    classTypes: classTypes.map((type: string) => type.trim()),
+    status,
+    displayOrder: 0,
+  };
+
+  return { isValid: true, errors: [], sanitizedData };
 }
 
-// Helper function to safely convert Firestore timestamp
-function convertTimestamp(timestamp: any): string {
-  if (!timestamp) return new Date().toISOString();
-  if (typeof timestamp === 'string') return timestamp;
-  if (timestamp.toDate && typeof timestamp.toDate === 'function') {
-    return timestamp.toDate().toISOString();
+function sanitizeOutput(data: any): any {
+  if (Array.isArray(data)) {
+    return data.map(item => sanitizeOutput(item));
   }
-  return new Date().toISOString();
+  
+  if (data && typeof data === 'object') {
+    const sanitized = { ...data };
+    delete sanitized._internal;
+    delete sanitized.secrets;
+    delete sanitized.privateData;
+    return sanitized;
+  }
+  
+  return data;
 }
 
-// Helper function to convert null to undefined for API consistency
-function normalizeOptionalNumber(value: any): number | undefined {
-  if (value === null || value === undefined) return undefined;
-  if (typeof value === 'number') return value;
-  return undefined;
+function addSecurityHeaders(response: NextResponse): NextResponse {
+  response.headers.set('X-Content-Type-Options', 'nosniff');
+  response.headers.set('X-Frame-Options', 'DENY');
+  response.headers.set('X-XSS-Protection', '1; mode=block');
+  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  
+  if (process.env.NODE_ENV === 'production') {
+    response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  
+  return response;
 }
 
-// Validation function for membership plan data
-function validateMembershipPlan(data: any): { isValid: boolean; errors: string[] } {
-  const errors: string[] = [];
+// ============================================
+// API ENDPOINTS
+// ============================================
 
-  if (!data.name || typeof data.name !== 'string' || data.name.trim().length === 0) {
-    errors.push('Plan name is required');
-  } else if (data.name.trim().length < 3) {
-    errors.push('Plan name must be at least 3 characters');
-  } else if (data.name.trim().length > 100) {
-    errors.push('Plan name must be less than 100 characters');
-  }
-
-  if (data.description && typeof data.description === 'string' && data.description.length > 500) {
-    errors.push('Description must be less than 500 characters');
-  }
-
-  if (!data.duration || !MEMBERSHIP_DURATIONS.find(d => d.value === data.duration)) {
-    errors.push('Valid duration is required');
-  }
-
-  if (typeof data.price !== 'number' || data.price < 0 || data.price > 10000) {
-    errors.push('Price must be a number between 0 and 10000');
-  }
-
-  if (!Array.isArray(data.classTypes) || data.classTypes.length === 0) {
-    errors.push('At least one class type must be selected');
-  }
-
-  if (data.maxClassesPerWeek !== null && data.maxClassesPerWeek !== undefined) {
-    if (typeof data.maxClassesPerWeek !== 'number' || data.maxClassesPerWeek < 1 || data.maxClassesPerWeek > 30) {
-      errors.push('Max classes per week must be between 1 and 30 or left empty for unlimited');
-    }
-  }
-
-  if (data.maxClassesPerMonth !== null && data.maxClassesPerMonth !== undefined) {
-    if (typeof data.maxClassesPerMonth !== 'number' || data.maxClassesPerMonth < 1 || data.maxClassesPerMonth > 120) {
-      errors.push('Max classes per month must be between 1 and 120 or left empty for unlimited');
-    }
-  }
-
-  return { isValid: errors.length === 0, errors };
-}
-
-// GET /api/memberships - Fetch membership plans
+// GET /api/memberships
 export async function GET(request: NextRequest) {
+  const clientIP = getClientIP(request);
+
   try {
-    const session = await getSession(request);
-    if (!session) {
-      return NextResponse.json(
+    if (!checkRateLimit(clientIP, 100, 15 * 60 * 1000)) {
+      const response = NextResponse.json(
+        { success: false, error: 'Rate limit exceeded' },
+        { status: 429 }
+      );
+      return addSecurityHeaders(response);
+    }
+
+    const user = await verifyAdminPermission(request);
+    if (!user) {
+      const response = NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 401 }
       );
+      return addSecurityHeaders(response);
     }
 
-    // Only admins and staff can view membership plans
-    if (!['admin', 'staff', 'trainer'].includes(session.role)) {
-      return NextResponse.json(
-        { success: false, error: 'Insufficient permissions' },
-        { status: 403 }
-      );
-    }
+    const url = new URL(request.url);
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
+    const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || '20')));
+    const search = url.searchParams.get('search')?.trim();
+    const status = url.searchParams.get('status');
 
-    const { searchParams } = new URL(request.url);
-    const search = searchParams.get('search');
-    const status = searchParams.get('status');
-    const classTypes = searchParams.get('classTypes');
-    const duration = searchParams.get('duration');
-    const minPrice = searchParams.get('minPrice');
-    const maxPrice = searchParams.get('maxPrice');
+    try {
+      let query = adminDb.collection('memberships');
 
-    // Fetch membership plans from Firestore using Admin SDK
-    const membershipPlansRef = adminDb.collection('membershipPlans');
-    let query = membershipPlansRef.orderBy('displayOrder', 'asc');
+      if (status && ['active', 'inactive', 'archived'].includes(status)) {
+        query = query.where('status', '==', status);
+      }
 
-    // Apply Firestore-level filters where possible
-    if (status && status !== 'all') {
-      query = query.where('status', '==', status);
-    }
+      const offset = (page - 1) * limit;
+      query = query.orderBy('displayOrder', 'asc').orderBy('createdAt', 'desc');
 
-    const snapshot = await query.get();
-    let memberships: MembershipPlan[] = [];
-
-    // Process each document
-    snapshot.forEach((doc) => {
-      const data = doc.data();
-      
-      const membership: MembershipPlan = {
+      const snapshot = await query.get();
+      let memberships: MembershipData[] = snapshot.docs.map(doc => ({
         id: doc.id,
-        name: data.name || '',
-        description: data.description || '',
-        duration: data.duration,
-        durationInDays: data.durationInDays || getDurationInDays(data.duration),
-        price: data.price || 0,
-        currency: data.currency || 'USD',
-        classTypes: data.classTypes || [],
-        status: data.status || 'active',
-        displayOrder: data.displayOrder || 0,
-        memberCount: data.memberCount || 0,
-        createdBy: data.createdBy,
-        createdAt: convertTimestamp(data.createdAt),
-        updatedAt: convertTimestamp(data.updatedAt),
-      };
+        ...doc.data()
+      })) as MembershipData[];
 
-      memberships.push(membership);
-    });
+      if (search) {
+        const searchLower = search.toLowerCase();
+        memberships = memberships.filter(membership => 
+          membership.name?.toLowerCase().includes(searchLower) ||
+          membership.description?.toLowerCase().includes(searchLower)
+        );
+      }
 
-    // Apply client-side filters for complex filtering
-    if (search) {
-      const searchLower = search.toLowerCase();
-      memberships = memberships.filter(membership =>
-        membership.name.toLowerCase().includes(searchLower) ||
-        (membership.description && membership.description.toLowerCase().includes(searchLower))
+      const total = memberships.length;
+      memberships = memberships.slice(offset, offset + limit);
+
+      const sanitizedMemberships = sanitizeOutput(memberships);
+
+      const response = NextResponse.json({
+        success: true,
+        data: sanitizedMemberships,
+        pagination: {
+          page,
+          limit,
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      });
+
+      return addSecurityHeaders(response);
+
+    } catch (dbError: any) {
+      const response = NextResponse.json(
+        { success: false, error: 'Failed to fetch memberships' },
+        { status: 500 }
       );
+      return addSecurityHeaders(response);
     }
-
-    if (classTypes) {
-      const classTypesArray = classTypes.split(',').filter(type => type.trim());
-      if (classTypesArray.length > 0) {
-        memberships = memberships.filter(membership =>
-          classTypesArray.some(type => membership.classTypes.includes(type as any))
-        );
-      }
-    }
-
-    if (duration) {
-      const durationArray = duration.split(',').filter(d => d.trim());
-      if (durationArray.length > 0) {
-        memberships = memberships.filter(membership =>
-          durationArray.includes(membership.duration)
-        );
-      }
-    }
-
-    if (minPrice) {
-      const minPriceNum = parseFloat(minPrice);
-      if (!isNaN(minPriceNum)) {
-        memberships = memberships.filter(membership => membership.price >= minPriceNum);
-      }
-    }
-
-    if (maxPrice) {
-      const maxPriceNum = parseFloat(maxPrice);
-      if (!isNaN(maxPriceNum)) {
-        memberships = memberships.filter(membership => membership.price <= maxPriceNum);
-      }
-    }
-
-    const response: ApiResponse<MembershipPlan[]> = {
-      success: true,
-      data: memberships,
-      meta: {
-        total: memberships.length,
-        filters: {
-          search,
-          status,
-          classTypes,
-          duration,
-          minPrice,
-          maxPrice,
-        },
-      },
-    };
-
-    return NextResponse.json(response);
 
   } catch (error: any) {
-    console.error('Error fetching membership plans:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch membership plans' },
+    const response = NextResponse.json(
+      { 
+        success: false, 
+        error: process.env.NODE_ENV === 'development' 
+          ? error.message 
+          : 'Internal server error' 
+      },
       { status: 500 }
     );
+    return addSecurityHeaders(response);
   }
 }
 
-// POST /api/memberships - Create new membership plan
+// POST /api/memberships
 export async function POST(request: NextRequest) {
+  const clientIP = getClientIP(request);
+
   try {
-    const session = await getSession(request);
-    if (!session) {
-      return NextResponse.json(
+    if (!checkRateLimit(clientIP, 20, 15 * 60 * 1000)) {
+      const response = NextResponse.json(
+        { success: false, error: 'Rate limit exceeded' },
+        { status: 429 }
+      );
+      return addSecurityHeaders(response);
+    }
+
+    const user = await verifyAdminPermission(request);
+    if (!user) {
+      const response = NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 401 }
       );
+      return addSecurityHeaders(response);
     }
 
-    // Only admins can create membership plans
-    if (session.role !== 'admin') {
-      return NextResponse.json(
-        { success: false, error: 'Only administrators can create membership plans' },
-        { status: 403 }
-      );
-    }
-
-    // Parse request body
-    let body: CreateMembershipPlanRequest;
+    let body;
     try {
       body = await request.json();
     } catch (parseError) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid request body' },
+      const response = NextResponse.json(
+        { success: false, error: 'Invalid JSON format' },
         { status: 400 }
       );
+      return addSecurityHeaders(response);
     }
 
-    // Validate the membership plan data
-    const validation = validateMembershipPlan(body);
+    const validation = validateMembershipInput(body);
     if (!validation.isValid) {
-      return NextResponse.json(
-        { success: false, error: validation.errors[0] },
+      const response = NextResponse.json(
+        { 
+          success: false, 
+          error: 'Validation failed', 
+          details: validation.errors 
+        },
         { status: 400 }
       );
+      return addSecurityHeaders(response);
     }
 
-    // Check for duplicate name
-    const existingPlan = await adminDb.collection('membershipPlans')
-      .where('name', '==', body.name.trim())
-      .get();
-    
-    if (!existingPlan.empty) {
-      return NextResponse.json(
-        { success: false, error: 'A membership plan with this name already exists' },
-        { status: 409 }
+    try {
+      const membershipData = {
+        ...validation.sanitizedData,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        createdBy: user.uid,
+        memberCount: 0
+      };
+
+      const docRef = await adminDb.collection('memberships').add(membershipData);
+
+      const newMembership = {
+        id: docRef.id,
+        ...membershipData
+      };
+
+      const response = NextResponse.json({
+        success: true,
+        data: sanitizeOutput(newMembership),
+        message: 'Membership plan created successfully'
+      }, { status: 201 });
+
+      return addSecurityHeaders(response);
+
+    } catch (dbError: any) {
+      const response = NextResponse.json(
+        { success: false, error: 'Failed to create membership plan' },
+        { status: 500 }
       );
+      return addSecurityHeaders(response);
     }
-
-    // Get next display order
-    const allPlansSnapshot = await adminDb.collection('membershipPlans').get();
-    const nextDisplayOrder = allPlansSnapshot.size + 1;
-
-    // Calculate duration in days
-    const durationInDays = getDurationInDays(body.duration);
-
-    // Create membership plan data for Firestore
-    const membershipData = {
-      name: body.name.trim(),
-      description: body.description?.trim() || '',
-      duration: body.duration,
-      durationInDays,
-      price: body.price,
-      currency: 'USD', // Default currency - could be made configurable
-      classTypes: body.classTypes,
-      status: body.status || 'active',
-      displayOrder: nextDisplayOrder,
-      memberCount: 0, // Initial member count
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      createdBy: session.uid,
-    };
-
-    // Add to Firestore using Admin SDK
-    const docRef = await adminDb.collection('membershipPlans').add(membershipData);
-
-    // Create response object with proper type conversion
-    const createdMembership: MembershipPlan = {
-      id: docRef.id,
-      name: membershipData.name,
-      description: membershipData.description,
-      duration: membershipData.duration,
-      durationInDays: membershipData.durationInDays,
-      price: membershipData.price,
-      currency: membershipData.currency,
-      classTypes: membershipData.classTypes,
-      status: membershipData.status,
-      displayOrder: membershipData.displayOrder,
-      memberCount: membershipData.memberCount,
-      createdBy: membershipData.createdBy,
-      createdAt: membershipData.createdAt.toISOString(),
-      updatedAt: membershipData.updatedAt.toISOString(),
-    };
-
-    const response: ApiResponse<MembershipPlan> = {
-      success: true,
-      data: createdMembership,
-      message: 'Membership plan created successfully',
-    };
-
-    return NextResponse.json(response, { status: 201 });
 
   } catch (error: any) {
-    console.error('Error creating membership plan:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to create membership plan' },
+    const response = NextResponse.json(
+      { 
+        success: false, 
+        error: process.env.NODE_ENV === 'development' 
+          ? error.message 
+          : 'Internal server error' 
+      },
       { status: 500 }
     );
+    return addSecurityHeaders(response);
   }
+}
+
+// Handle OPTIONS for CORS
+export async function OPTIONS() {
+  const origin = process.env.NODE_ENV === 'production' 
+    ? process.env.NEXT_PUBLIC_APP_URL || 'https://your-domain.com'
+    : 'http://localhost:3000';
+
+  const response = new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Credentials': 'true',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Max-Age': '86400',
+    },
+  });
+
+  return addSecurityHeaders(response);
 }
