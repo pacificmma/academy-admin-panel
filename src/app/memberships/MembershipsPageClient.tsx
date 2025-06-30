@@ -1,4 +1,4 @@
-// src/app/memberships/MembershipsPageClient.tsx - Fixed version with better error handling
+// src/app/memberships/MembershipsPageClient.tsx - Fixed with correct TypeScript types
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -39,16 +39,13 @@ import {
   MoreVert as MoreVertIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
-  Visibility as ViewIcon,
-  FilterList as FilterIcon,
 } from '@mui/icons-material';
-import { useAuth } from '../hooks/useAuth';
+import { useAuth } from '../contexts/AuthContext';
 import MembershipFormDialog from '../components/forms/MembershipFormDialog';
 import {
   MembershipPlan,
   MembershipPlanFormData,
-  CLASS_TYPES,
-  MEMBERSHIP_STATUSES,
+  ClassType,
 } from '../types/membership';
 
 interface MembershipStats {
@@ -58,7 +55,7 @@ interface MembershipStats {
 
 export default function MembershipsPageClient(): React.JSX.Element {
   // Auth and user info
-  const { user, isLoading: authLoading, getAuthHeaders } = useAuth();
+  const { user, sessionData, loading: authLoading } = useAuth();
 
   // Data state
   const [memberships, setMemberships] = useState<MembershipPlan[]>([]);
@@ -82,6 +79,16 @@ export default function MembershipsPageClient(): React.JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  // Helper function to get auth headers
+  const getAuthHeaders = useCallback(async () => {
+    if (!user) throw new Error('Not authenticated');
+    const token = await user.getIdToken();
+    return {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    };
+  }, [user]);
+
   // Load memberships with better error handling
   const loadMemberships = useCallback(async (): Promise<void> => {
     if (!user || authLoading) return;
@@ -98,61 +105,31 @@ export default function MembershipsPageClient(): React.JSX.Element {
       }
 
       const url = `/api/memberships${params.toString() ? `?${params.toString()}` : ''}`;
-      const response = await fetch(url, { headers });
       
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `HTTP ${response.status}: Failed to load memberships`);
-      }
-
+      const response = await fetch(url, { headers });
       const result = await response.json();
 
-      if (result.success && result.data) {
-        setMemberships(result.data);
-      } else {
-        // Handle API response without success field (backward compatibility)
+      if (response.ok) {
         setMemberships(result.data || []);
+        // Update stats
+        const totalPlans = result.data?.length || 0;
+        const activePlans = result.data?.filter((plan: MembershipPlan) => plan.status === 'active').length || 0;
+        setStats({ totalPlans, activePlans });
+      } else {
+        throw new Error(result.error || 'Failed to load memberships');
       }
-
     } catch (err) {
-      console.error('Failed to load memberships:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load memberships');
-      setMemberships([]); // Reset to empty array on error
+      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
-  }, [getAuthHeaders, searchTerm, user, authLoading]);
+  }, [user, authLoading, getAuthHeaders, searchTerm]);
 
-  const loadStats = useCallback(async (): Promise<void> => {
-    if (!user || authLoading) return;
+  // Create membership
+  const handleCreateMembership = async (data: MembershipPlanFormData): Promise<void> => {
+    if (!user) return;
 
-    try {
-      const headers = await getAuthHeaders();
-      const response = await fetch('/api/memberships/stats', { headers });
-      
-      if (response.ok) {
-        const result = await response.json();
-        setStats(result.data || { totalPlans: 0, activePlans: 0 });
-      }
-    } catch (err) {
-      // Stats are optional, don't show error for this
-      console.warn('Failed to load stats:', err);
-    }
-  }, [getAuthHeaders, user, authLoading]);
-
-  // Filter memberships based on search term
-  const filteredMemberships = memberships.filter(membership =>
-    membership.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    membership.description?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const paginatedMemberships = filteredMemberships.slice(
-    page * rowsPerPage,
-    page * rowsPerPage + rowsPerPage
-  );
-
-  // Event handlers with proper authentication
-  const handleCreateMembership = useCallback(async (formData: MembershipPlanFormData): Promise<void> => {
     try {
       setSubmitLoading(true);
       setError(null);
@@ -161,28 +138,29 @@ export default function MembershipsPageClient(): React.JSX.Element {
       const response = await fetch('/api/memberships', {
         method: 'POST',
         headers,
-        body: JSON.stringify(formData),
+        body: JSON.stringify(data),
       });
 
       const result = await response.json();
 
       if (response.ok) {
-        setSuccessMessage('Membership plan created successfully');
+        setSuccessMessage('Membership plan created successfully!');
         setCreateDialogOpen(false);
-        // Refresh the list
-        await Promise.all([loadMemberships(), loadStats()]);
+        await loadMemberships(); // Reload data
       } else {
         throw new Error(result.error || 'Failed to create membership plan');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create membership plan');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create membership plan';
+      setError(errorMessage);
     } finally {
       setSubmitLoading(false);
     }
-  }, [getAuthHeaders, loadMemberships, loadStats]);
+  };
 
-  const handleEditMembership = useCallback(async (formData: MembershipPlanFormData): Promise<void> => {
-    if (!selectedMembership) return;
+  // Update membership
+  const handleUpdateMembership = async (data: MembershipPlanFormData): Promise<void> => {
+    if (!user || !selectedMembership) return;
 
     try {
       setSubmitLoading(true);
@@ -192,29 +170,30 @@ export default function MembershipsPageClient(): React.JSX.Element {
       const response = await fetch(`/api/memberships/${selectedMembership.id}`, {
         method: 'PUT',
         headers,
-        body: JSON.stringify(formData),
+        body: JSON.stringify(data),
       });
 
       const result = await response.json();
 
       if (response.ok) {
-        setSuccessMessage('Membership plan updated successfully');
+        setSuccessMessage('Membership plan updated successfully!');
         setEditDialogOpen(false);
         setSelectedMembership(null);
-        // Refresh the list
-        await Promise.all([loadMemberships(), loadStats()]);
+        await loadMemberships(); // Reload data
       } else {
         throw new Error(result.error || 'Failed to update membership plan');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update membership plan');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update membership plan';
+      setError(errorMessage);
     } finally {
       setSubmitLoading(false);
     }
-  }, [selectedMembership, getAuthHeaders, loadMemberships, loadStats]);
+  };
 
-  const handleDeleteMembership = useCallback(async (): Promise<void> => {
-    if (!selectedMembership) return;
+  // Delete membership
+  const handleDeleteMembership = async (): Promise<void> => {
+    if (!user || !selectedMembership) return;
 
     try {
       setSubmitLoading(true);
@@ -229,164 +208,187 @@ export default function MembershipsPageClient(): React.JSX.Element {
       const result = await response.json();
 
       if (response.ok) {
-        setSuccessMessage('Membership plan deleted successfully');
+        setSuccessMessage('Membership plan deleted successfully!');
         setDeleteDialogOpen(false);
         setSelectedMembership(null);
-        // Refresh the list
-        await Promise.all([loadMemberships(), loadStats()]);
+        await loadMemberships(); // Reload data
       } else {
         throw new Error(result.error || 'Failed to delete membership plan');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete membership plan');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete membership plan';
+      setError(errorMessage);
     } finally {
       setSubmitLoading(false);
     }
-  }, [selectedMembership, getAuthHeaders, loadMemberships, loadStats]);
-
-  // Load data on component mount and when dependencies change
-  useEffect(() => {
-    if (user && !authLoading) {
-      loadMemberships();
-      loadStats();
-    }
-  }, [loadMemberships, loadStats, user, authLoading]);
-
-  // Handle search with debouncing
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      if (user && !authLoading) {
-        setPage(0); // Reset to first page when searching
-        loadMemberships();
-      }
-    }, 300);
-
-    return () => clearTimeout(timeoutId);
-  }, [searchTerm, loadMemberships, user, authLoading]);
+  };
 
   // Menu handlers
-  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>, membership: MembershipPlan) => {
+  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>, membership: MembershipPlan): void => {
     setMenuAnchor(event.currentTarget);
     setSelectedMembership(membership);
   };
 
-  const handleMenuClose = () => {
+  const handleMenuClose = (): void => {
     setMenuAnchor(null);
   };
 
-  const handleEdit = () => {
+  const handleEditClick = (): void => {
     setEditDialogOpen(true);
     handleMenuClose();
   };
 
-  const handleDelete = () => {
+  const handleDeleteClick = (): void => {
     setDeleteDialogOpen(true);
     handleMenuClose();
   };
 
-  // Get class type display
-  const getClassTypeDisplay = (classTypes: string[]) => {
-    return classTypes.map(type => {
-      const classConfig = CLASS_TYPES.find(ct => ct.value === type);
-      return classConfig ? classConfig.label : type;
-    });
+  // Search handler with debounce
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (user && !authLoading) {
+        loadMemberships();
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm, user, authLoading, loadMemberships]);
+
+  // Initial load
+  useEffect(() => {
+    if (user && !authLoading) {
+      loadMemberships();
+    }
+  }, [user, authLoading, loadMemberships]);
+
+  // Filter memberships for display - FIXED with correct property names
+  const filteredMemberships = memberships.filter(membership =>
+    membership.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    membership.classTypes.some(type => type.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    membership.description?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Paginated memberships
+  const paginatedMemberships = filteredMemberships.slice(
+    page * rowsPerPage,
+    page * rowsPerPage + rowsPerPage
+  );
+
+  // Handle pagination
+  const handleChangePage = (event: unknown, newPage: number): void => {
+    setPage(newPage);
   };
 
-  // Get status display
-  const getStatusDisplay = (status: string) => {
-    const statusConfig = MEMBERSHIP_STATUSES.find(s => s.value === status);
-    return statusConfig || { label: status, color: '#666' };
+  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>): void => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
   };
 
   // Format price
-  const formatPrice = (price: number, currency: string = 'USD') => {
+  const formatPrice = (price: number): string => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: currency,
+      currency: 'USD',
     }).format(price);
   };
 
-  // Loading skeleton
-  const renderSkeleton = () => (
-    <TableContainer component={Paper}>
-      <Table>
-        <TableHead>
-          <TableRow>
-            <TableCell>Plan Name</TableCell>
-            <TableCell>Duration</TableCell>
-            <TableCell>Price</TableCell>
-            <TableCell>Class Types</TableCell>
-            <TableCell>Status</TableCell>
-            <TableCell>Actions</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {[...Array(5)].map((_, index) => (
-            <TableRow key={index}>
-              <TableCell><Skeleton width="60%" /></TableCell>
-              <TableCell><Skeleton width="40%" /></TableCell>
-              <TableCell><Skeleton width="50%" /></TableCell>
-              <TableCell><Skeleton width="80%" /></TableCell>
-              <TableCell><Skeleton width="30%" /></TableCell>
-              <TableCell><Skeleton width="20%" /></TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </TableContainer>
-  );
+  // Format duration - FIXED
+  const formatDuration = (duration: string): string => {
+    const durationMap: Record<string, string> = {
+      '1_week': '1 Week',
+      '2_weeks': '2 Weeks', 
+      '3_weeks': '3 Weeks',
+      '4_weeks': '4 Weeks',
+      '1_month': '1 Month',
+      '3_months': '3 Months',
+      '6_months': '6 Months',
+      '12_months': '12 Months',
+      'unlimited': 'Unlimited'
+    };
+    return durationMap[duration] || duration;
+  };
 
-  if (authLoading) {
+  // Format class types - FIXED with correct property names
+  const formatClassTypes = (classTypes: ClassType[]): React.ReactNode => {
+    if (!classTypes || classTypes.length === 0) return 'All Classes';
+    
+    if (classTypes.length <= 3) {
+      return classTypes.map(type => (
+        <Chip key={type} label={type.toUpperCase()} size="small" sx={{ mr: 0.5, mb: 0.5 }} />
+      ));
+    }
+    
     return (
-      <Container maxWidth="lg" sx={{ py: 4 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-          <Typography>Loading...</Typography>
+      <>
+        {classTypes.slice(0, 2).map(type => (
+          <Chip key={type} label={type.toUpperCase()} size="small" sx={{ mr: 0.5, mb: 0.5 }} />
+        ))}
+        <Tooltip title={classTypes.slice(2).map(t => t.toUpperCase()).join(', ')}>
+          <Chip label={`+${classTypes.length - 2} more`} size="small" />
+        </Tooltip>
+      </>
+    );
+  };
+
+  // Loading state
+  if (authLoading || (loading && memberships.length === 0)) {
+    return (
+      <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+          <Skeleton variant="text" width={200} height={40} />
+          <Skeleton variant="rectangular" width={120} height={40} />
         </Box>
+        
+        <Grid container spacing={3} sx={{ mb: 3 }}>
+          <Grid item xs={12} sm={6} md={3}>
+            <Skeleton variant="rectangular" height={100} />
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <Skeleton variant="rectangular" height={100} />
+          </Grid>
+        </Grid>
+
+        <Skeleton variant="rectangular" height={400} />
       </Container>
     );
   }
 
-  if (authLoading) {
+  // Check admin access
+  if (!sessionData || sessionData.role !== 'admin') {
     return (
-      <Container maxWidth="lg" sx={{ py: 4 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-          <Typography>Loading...</Typography>
-        </Box>
-      </Container>
-    );
-  }
-
-  if (!user) {
-    return (
-      <Container maxWidth="lg" sx={{ py: 4 }}>
+      <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
         <Alert severity="error">
-          Please log in to access the membership management system.
+          You don't have permission to access this page. Admin access required.
         </Alert>
       </Container>
     );
   }
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
+    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       {/* Header */}
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" component="h1" gutterBottom>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+        <Typography variant="h4" component="h1" fontWeight="bold">
           Membership Plans
         </Typography>
-        <Typography variant="body1" color="text.secondary">
-          Manage gym membership plans and packages
-        </Typography>
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={() => setCreateDialogOpen(true)}
+        >
+          Create Plan
+        </Button>
       </Box>
 
       {/* Stats Cards */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
+      <Grid container spacing={3} sx={{ mb: 3 }}>
         <Grid item xs={12} sm={6} md={3}>
           <Card>
             <CardContent>
-              <Typography color="text.secondary" gutterBottom>
+              <Typography color="textSecondary" gutterBottom variant="body2">
                 Total Plans
               </Typography>
-              <Typography variant="h4">
+              <Typography variant="h4" component="div">
                 {stats.totalPlans}
               </Typography>
             </CardContent>
@@ -395,10 +397,10 @@ export default function MembershipsPageClient(): React.JSX.Element {
         <Grid item xs={12} sm={6} md={3}>
           <Card>
             <CardContent>
-              <Typography color="text.secondary" gutterBottom>
+              <Typography color="textSecondary" gutterBottom variant="body2">
                 Active Plans
               </Typography>
-              <Typography variant="h4">
+              <Typography variant="h4" component="div">
                 {stats.activePlans}
               </Typography>
             </CardContent>
@@ -406,22 +408,10 @@ export default function MembershipsPageClient(): React.JSX.Element {
         </Grid>
       </Grid>
 
-      {/* Error Alert */}
-      {error && (
-        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
-
-      {/* Search and Actions */}
-      <Box sx={{ 
-        display: 'flex', 
-        gap: 2, 
-        mb: 3,
-        flexDirection: { xs: 'column', sm: 'row' },
-        alignItems: { xs: 'stretch', sm: 'center' }
-      }}>
+      {/* Search */}
+      <Box sx={{ mb: 3 }}>
         <TextField
+          fullWidth
           placeholder="Search membership plans..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
@@ -432,140 +422,143 @@ export default function MembershipsPageClient(): React.JSX.Element {
               </InputAdornment>
             ),
           }}
-          />
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => setCreateDialogOpen(true)}
-          disabled={loading || submitLoading}
-        >
-          Add Plan
-        </Button>
+        />
       </Box>
 
-      {/* Memberships Table */}
-      {loading ? renderSkeleton() : (
-        <Card>
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Plan Name</TableCell>
-                  <TableCell>Duration</TableCell>
-                  <TableCell>Price</TableCell>
-                  <TableCell>Class Types</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell width="60">Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {paginatedMemberships.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
-                      <Typography color="text.secondary">
-                        {searchTerm ? 'No membership plans found matching your search.' : 'No membership plans yet. Create your first plan!'}
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  paginatedMemberships.map((membership) => {
-                    const statusInfo = getStatusDisplay(membership.status);
-                    return (
-                      <TableRow key={membership.id} hover>
-                        <TableCell>
-                          <Box>
-                            <Typography variant="subtitle2">
-                              {membership.name}
-                            </Typography>
-                            {membership.description && (
-                              <Typography variant="body2" color="text.secondary">
-                                {membership.description.length > 50 
-                                  ? `${membership.description.substring(0, 50)}...` 
-                                  : membership.description}
-                              </Typography>
-                            )}
-                          </Box>
-                        </TableCell>
-                        <TableCell>
-                          {membership.duration.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                        </TableCell>
-                        <TableCell>
-                          {formatPrice(membership.price, membership.currency)}
-                        </TableCell>
-                        <TableCell>
-                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                            {getClassTypeDisplay(membership.classTypes).map((classType, index) => (
-                              <Chip
-                                key={index}
-                                label={classType}
-                                size="small"
-                                variant="outlined"
-                              />
-                            ))}
-                          </Box>
-                        </TableCell>
-                        <TableCell>
-                          <Chip
-                            label={statusInfo.label}
-                            size="small"
-                            sx={{
-                              bgcolor: statusInfo.color + '20',
-                              color: statusInfo.color,
-                              borderColor: statusInfo.color,
-                            }}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Tooltip title="More actions">
-                            <IconButton
-                              onClick={(e) => handleMenuOpen(e, membership)}
-                              size="small"
-                            >
-                              <MoreVertIcon />
-                            </IconButton>
-                          </Tooltip>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-
-          {/* Pagination */}
-          <TablePagination
-            component="div"
-            count={filteredMemberships.length}
-            page={page}
-            onPageChange={(_, newPage) => setPage(newPage)}
-            rowsPerPage={rowsPerPage}
-            onRowsPerPageChange={(e) => {
-              setRowsPerPage(parseInt(e.target.value, 10));
-              setPage(0);
-            }}
-            rowsPerPageOptions={[5, 10, 25, 50]}
-          />
-        </Card>
+      {/* Error Alert */}
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
       )}
 
-      {/* Action Menu */}
+      {/* Memberships Table */}
+      <Card>
+        <TableContainer component={Paper}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>Name</TableCell>
+                <TableCell>Duration</TableCell>
+                <TableCell>Price</TableCell>
+                <TableCell>Class Types</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell align="right">Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {loading ? (
+                // Loading skeletons
+                Array.from({ length: rowsPerPage }).map((_, index) => (
+                  <TableRow key={index}>
+                    <TableCell><Skeleton /></TableCell>
+                    <TableCell><Skeleton /></TableCell>
+                    <TableCell><Skeleton /></TableCell>
+                    <TableCell><Skeleton /></TableCell>
+                    <TableCell><Skeleton /></TableCell>
+                    <TableCell><Skeleton /></TableCell>
+                  </TableRow>
+                ))
+              ) : paginatedMemberships.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
+                    <Typography variant="body1" color="textSecondary">
+                      {searchTerm ? 'No membership plans found matching your search.' : 'No membership plans created yet.'}
+                    </Typography>
+                    {!searchTerm && (
+                      <Button
+                        variant="contained"
+                        startIcon={<AddIcon />}
+                        onClick={() => setCreateDialogOpen(true)}
+                        sx={{ mt: 2 }}
+                      >
+                        Create Your First Plan
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                paginatedMemberships.map((membership) => (
+                  <TableRow key={membership.id} hover>
+                    <TableCell>
+                      <Box>
+                        <Typography variant="subtitle2" fontWeight="medium">
+                          {membership.name}
+                        </Typography>
+                        {membership.description && (
+                          <Typography variant="body2" color="textSecondary" noWrap>
+                            {membership.description}
+                          </Typography>
+                        )}
+                      </Box>
+                    </TableCell>
+                    <TableCell>
+                      {formatDuration(membership.duration)}
+                    </TableCell>
+                    <TableCell>
+                      {formatPrice(membership.price)}
+                    </TableCell>
+                    <TableCell>
+                      <Box sx={{ maxWidth: 200 }}>
+                        {formatClassTypes(membership.classTypes)}
+                      </Box>
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={membership.status === 'active' ? 'Active' : 'Inactive'}
+                        size="small"
+                        color={membership.status === 'active' ? 'success' : 'default'}
+                      />
+                    </TableCell>
+                    <TableCell align="right">
+                      <IconButton
+                        onClick={(e) => handleMenuOpen(e, membership)}
+                        size="small"
+                      >
+                        <MoreVertIcon />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+
+        {/* Pagination */}
+        {!loading && filteredMemberships.length > 0 && (
+          <TablePagination
+            rowsPerPageOptions={[5, 10, 25]}
+            component="div"
+            count={filteredMemberships.length}
+            rowsPerPage={rowsPerPage}
+            page={page}
+            onPageChange={handleChangePage}
+            onRowsPerPageChange={handleChangeRowsPerPage}
+          />
+        )}
+      </Card>
+
+      {/* Actions Menu */}
       <Menu
         anchorEl={menuAnchor}
         open={Boolean(menuAnchor)}
         onClose={handleMenuClose}
+        PaperProps={{
+          elevation: 3,
+        }}
       >
-        <MenuItem onClick={handleEdit}>
+        <MenuItem onClick={handleEditClick}>
           <EditIcon sx={{ mr: 1 }} fontSize="small" />
           Edit
         </MenuItem>
-        <MenuItem onClick={handleDelete} sx={{ color: 'error.main' }}>
+        <MenuItem onClick={handleDeleteClick} sx={{ color: 'error.main' }}>
           <DeleteIcon sx={{ mr: 1 }} fontSize="small" />
           Delete
         </MenuItem>
       </Menu>
 
-      {/* Create Dialog */}
+      {/* Create Dialog - FIXED props */}
       <MembershipFormDialog
         open={createDialogOpen}
         onClose={() => setCreateDialogOpen(false)}
@@ -573,39 +566,48 @@ export default function MembershipsPageClient(): React.JSX.Element {
         mode="create"
       />
 
-      {/* Edit Dialog */}
+      {/* Edit Dialog - FIXED props */}
       <MembershipFormDialog
         open={editDialogOpen}
         onClose={() => {
           setEditDialogOpen(false);
           setSelectedMembership(null);
         }}
-        onSubmit={handleEditMembership}
-        membership={selectedMembership}
+        onSubmit={handleUpdateMembership}
         mode="edit"
+        membership={selectedMembership}
       />
 
       {/* Delete Confirmation Dialog */}
       <Dialog
         open={deleteDialogOpen}
-        onClose={() => setDeleteDialogOpen(false)}
+        onClose={() => {
+          setDeleteDialogOpen(false);
+          setSelectedMembership(null);
+        }}
         maxWidth="sm"
         fullWidth
       >
         <DialogTitle>Delete Membership Plan</DialogTitle>
         <DialogContent>
           <Typography>
-            Are you sure you want to delete "{selectedMembership?.name}"? 
-            This action cannot be undone.
+            Are you sure you want to delete "{selectedMembership?.name}"? This action cannot be undone.
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)}>
+          <Button
+            onClick={() => {
+              setDeleteDialogOpen(false);
+              setSelectedMembership(null);
+            }}
+            disabled={submitLoading}
+          >
             Cancel
           </Button>
-          <Button 
-            onClick={handleDeleteMembership} 
-            color="error" 
+          <Button
+            onClick={handleDeleteMembership}
+            color="error"
+            variant="contained"
             disabled={submitLoading}
           >
             {submitLoading ? 'Deleting...' : 'Delete'}
@@ -615,12 +617,16 @@ export default function MembershipsPageClient(): React.JSX.Element {
 
       {/* Success Snackbar */}
       <Snackbar
-        open={!!successMessage}
+        open={Boolean(successMessage)}
         autoHideDuration={6000}
         onClose={() => setSuccessMessage(null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
-        <Alert severity="success" onClose={() => setSuccessMessage(null)}>
+        <Alert
+          onClose={() => setSuccessMessage(null)}
+          severity="success"
+          variant="filled"
+        >
           {successMessage}
         </Alert>
       </Snackbar>
