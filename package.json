@@ -22,7 +22,9 @@
     "@mui/system": "^6.4.12",
     "@mui/x-data-grid": "^7.29.7",
     "@mui/x-date-pickers": "^7.29.4",
+    "bcryptjs": "^3.0.2",
     "clsx": "^2.1.1",
+    "crypto-js": "^4.2.0",
     "firebase": "^11.9.1",
     "firebase-admin": "^13.4.0",
     "framer-motion": "^12.19.2",
@@ -39,6 +41,8 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/crypto-js": "^4.2.2",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20",
     "@types/react": "^19",

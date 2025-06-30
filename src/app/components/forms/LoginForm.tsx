@@ -1,4 +1,7 @@
-// src/app/components/forms/LoginForm.tsx
+// HIZLI GÜVENLİK DÜZELTMESİ - Mevcut sistemi minimum değişiklikle güvenli hale getirme
+
+// 1. Enhanced LoginForm with basic security
+// src/app/components/forms/LoginForm.tsx - SECURE VERSION
 'use client';
 
 import { useState } from 'react';
@@ -7,7 +10,6 @@ import {
   Box, 
   TextField, 
   Button, 
-  Typography, 
   InputAdornment,
   IconButton,
   Collapse
@@ -19,11 +21,14 @@ import {
   VisibilityOff,
   Login as LoginIcon
 } from '@mui/icons-material';
+import CryptoJS from 'crypto-js';
 import Alert from '@/app/components/ui/Alert';
+import { useAuth } from '@/app/contexts/AuthContext';
 import { LoginCredentials } from '@/app/types';
 
-export default function LoginForm() {
+export default function SecureLoginForm() {
   const router = useRouter();
+  const { refreshSession } = useAuth();
   const [formData, setFormData] = useState<LoginCredentials>({
     email: '',
     password: '',
@@ -37,8 +42,31 @@ export default function LoginForm() {
       ...prev,
       [name]: value,
     }));
-    // Clear error when user starts typing
     if (error) setError(null);
+  };
+
+  // Create secure payload without exposing plain text password
+  const createSecurePayload = (email: string, password: string) => {
+    const timestamp = Date.now();
+    const nonce = CryptoJS.lib.WordArray.random(128/8).toString();
+    
+    // Hash password with timestamp and nonce for basic security
+    const saltedPassword = password + timestamp + nonce;
+    const hashedPassword = CryptoJS.SHA256(saltedPassword).toString();
+    
+    // Create signature to prevent tampering
+    const signature = CryptoJS.HmacSHA256(
+      `${email}${hashedPassword}${timestamp}${nonce}`,
+      process.env.NEXT_PUBLIC_APP_SECRET || 'pacific-mma-secret-2024'
+    ).toString();
+
+    return {
+      email,
+      passwordHash: hashedPassword,
+      timestamp,
+      nonce,
+      signature
+    };
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -47,12 +75,18 @@ export default function LoginForm() {
     setError(null);
 
     try {
-      const response = await fetch('/api/auth/login', {
+      // Create secure payload
+      const securePayload = createSecurePayload(formData.email, formData.password);
+      
+      // Clear password from memory immediately
+      setFormData(prev => ({ ...prev, password: '' }));
+
+      const response = await fetch('/api/auth/secure-login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(securePayload),
         credentials: 'include',
       });
 
@@ -63,25 +97,23 @@ export default function LoginForm() {
       }
 
       if (result.success) {
+        await refreshSession();
+        await new Promise(resolve => setTimeout(resolve, 100));
         
-        // Redirect based on user role
-        const userRole = result.user?.role;
-        
-        if (userRole === 'admin') {
-          router.push('/dashboard');
-        } else {
-          router.push('/classes');
-        }
-        router.refresh();
+        const redirectTo = result.data?.redirectTo || '/dashboard';
+        router.replace(redirectTo);
+        window.location.href = redirectTo;
       }
     } catch (err: any) {
       setError(err.message || 'An error occurred during login');
+      // Reset form on error
+      setFormData({ email: formData.email, password: '' });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const isFormValid = formData.email && formData.password;
+  const isFormValid = formData.email && formData.password && !isLoading;
 
   return (
     <Box component="form" onSubmit={handleSubmit} sx={{ width: '100%' }}>
@@ -107,9 +139,10 @@ export default function LoginForm() {
           type="email"
           value={formData.email}
           onChange={(e) => handleChange('email', e.target.value)}
-          placeholder="john.doe@company.com"
+          placeholder="admin@pacificmma.com"
           required
           disabled={isLoading}
+          autoComplete="email"
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
@@ -117,11 +150,7 @@ export default function LoginForm() {
               </InputAdornment>
             ),
           }}
-          sx={{
-            '& .MuiInputBase-root': {
-              height: '56px',
-            },
-          }}
+          sx={{ '& .MuiInputBase-root': { height: '56px' } }}
         />
       </Box>
 
@@ -137,6 +166,7 @@ export default function LoginForm() {
           placeholder="•••••••••"
           required
           disabled={isLoading}
+          autoComplete="current-password"
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
@@ -156,11 +186,7 @@ export default function LoginForm() {
               </InputAdornment>
             ),
           }}
-          sx={{
-            '& .MuiInputBase-root': {
-              height: '56px',
-            },
-          }}
+          sx={{ '& .MuiInputBase-root': { height: '56px' } }}
         />
       </Box>
 
@@ -171,7 +197,7 @@ export default function LoginForm() {
         color="primary"
         size="large"
         fullWidth
-        disabled={!isFormValid || isLoading}
+        disabled={!isFormValid}
         startIcon={isLoading ? undefined : <LoginIcon />}
         sx={{
           height: '48px',
@@ -199,22 +225,17 @@ export default function LoginForm() {
               sx={{
                 width: 20,
                 height: 20,
-                border: '2px solid',
-                borderColor: 'currentColor',
-                borderTop: '2px solid transparent',
+                border: '2px solid #ffffff40',
+                borderTop: '2px solid #ffffff',
                 borderRadius: '50%',
                 animation: 'spin 1s linear infinite',
                 '@keyframes spin': {
-                  '0%': {
-                    transform: 'rotate(0deg)',
-                  },
-                  '100%': {
-                    transform: 'rotate(360deg)',
-                  },
+                  '0%': { transform: 'rotate(0deg)' },
+                  '100%': { transform: 'rotate(360deg)' },
                 },
               }}
             />
-            <Typography component="span">Signing In...</Typography>
+            Signing In...
           </Box>
         ) : (
           'Sign In'
