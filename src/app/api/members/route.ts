@@ -1,321 +1,141 @@
-// src/app/api/members/route.ts - Secure Members API
+// src/app/api/memberships/route.ts - Session-based Authentication Fixed
 import { NextRequest, NextResponse } from 'next/server';
-import { adminDb, adminAuth } from '@/app/lib/firebase/admin';
-import { validateAPIAccess } from '@/app/lib/auth/session';
-import { UserRole } from '@/app/types';
+import { getSession } from '@/app/lib/auth/session';
+import { adminDb } from '@/app/lib/firebase/admin';
+import { z } from 'zod';
 
-// ============================================
-// UTILITY FUNCTIONS
-// ============================================
+// Clean validation schema - esnek süre sistemi
+const membershipPlanSchema = z.object({
+  name: z.string().min(2).max(100),
+  description: z.string().optional(),
+  durationValue: z.number().min(1), // 1, 2, 3, 6, 12 vb.
+  durationType: z.enum(['days', 'weeks', 'months', 'years']), // esnek süre türü
+  price: z.number().min(0),
+  currency: z.string().length(3).default('USD'),
+  classTypes: z.array(z.string()).min(1),
+  status: z.enum(['active', 'inactive']).default('active'),
+});
 
-function getClientIP(request: NextRequest): string {
-  const xForwardedFor = request.headers.get('x-forwarded-for');
-  return xForwardedFor?.split(',')[0].trim() || 'unknown';
-}
-
-const requestCounts = new Map<string, { count: number; resetTime: number }>();
-
-function checkRateLimit(ip: string, maxRequests = 100, windowMs = 15 * 60 * 1000): boolean {
-  const now = Date.now();
-  const windowStart = now - windowMs;
-  
-  let requestInfo = requestCounts.get(ip);
-  
-  if (!requestInfo || requestInfo.resetTime <= windowStart) {
-    requestInfo = { count: 1, resetTime: now + windowMs };
-    requestCounts.set(ip, requestInfo);
-    return true;
-  }
-  
-  if (requestInfo.count >= maxRequests) {
-    return false;
-  }
-  
-  requestInfo.count++;
-  return true;
-}
-
-function sanitizeOutput(data: any): any {
-  if (Array.isArray(data)) {
-    return data.map(item => sanitizeOutput(item));
-  }
-  
-  if (data && typeof data === 'object') {
-    const sanitized = { ...data };
-    delete sanitized._internal;
-    delete sanitized.secrets;
-    delete sanitized.privateData;
-    delete sanitized.password;
-    return sanitized;
-  }
-  
-  return data;
-}
-
-function validatePagination(request: NextRequest) {
-  const url = new URL(request.url);
-  const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
-  const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || '20')));
-  const offset = (page - 1) * limit;
-  
-  return { page, limit, offset };
-}
-
-function validateMemberInput(data: any): { isValid: boolean; errors: string[]; sanitizedData?: any } {
-  const errors: string[] = [];
-  
-  if (!data || typeof data !== 'object') {
-    return { isValid: false, errors: ['Invalid request body'] };
-  }
-
-  const { 
-    email, firstName, lastName, phone, dateOfBirth, 
-    emergencyContact, martialArtsLevel, parentId 
-  } = data;
-
-  // Email validation
-  if (!email || typeof email !== 'string') {
-    errors.push('Valid email is required');
-  } else {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      errors.push('Please enter a valid email address');
-    }
-  }
-
-  // Name validation
-  if (!firstName || typeof firstName !== 'string' || firstName.trim().length < 1) {
-    errors.push('First name is required');
-  }
-  if (!lastName || typeof lastName !== 'string' || lastName.trim().length < 1) {
-    errors.push('Last name is required');
-  }
-
-  // Phone validation (optional)
-  if (phone && typeof phone === 'string') {
-    const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
-    if (!phoneRegex.test(phone.replace(/[\s\-\(\)]/g, ''))) {
-      errors.push('Please enter a valid phone number');
-    }
-  }
-
-  if (errors.length > 0) {
-    return { isValid: false, errors };
-  }
-
-  // Sanitize data
-  const sanitizedData = {
-    email: email.toLowerCase().trim(),
-    firstName: firstName.trim(),
-    lastName: lastName.trim(),
-    phone: phone?.trim() || '',
-    dateOfBirth: dateOfBirth || '',
-    emergencyContact: emergencyContact || {},
-    martialArtsLevel: martialArtsLevel || {},
-    parentId: parentId?.trim() || null,
-    isActive: true,
-  };
-
-  return { isValid: true, errors: [], sanitizedData };
-}
-
-function handleError(error: any): NextResponse {
-  const isDevelopment = process.env.NODE_ENV === 'development';
-  
-  const errorResponse = {
-    success: false,
-    error: isDevelopment ? error.message : 'An error occurred',
-    timestamp: new Date().toISOString(),
-  };
-  
-  return NextResponse.json(errorResponse, { status: 500 });
-}
-
-// ============================================
-// API ENDPOINTS
-// ============================================
-
-// GET /api/members - List all members with pagination and filtering
+// GET /api/memberships
 export async function GET(request: NextRequest) {
   try {
-    const clientIP = getClientIP(request);
-    
-    // Rate limiting
-    if (!checkRateLimit(clientIP, 100, 15 * 60 * 1000)) {
+    // Session-based authentication
+    const session = await getSession(request);
+    if (!session || session.role !== 'admin' || !session.isActive) {
       return NextResponse.json(
-        { success: false, error: 'Rate limit exceeded' },
-        { status: 429 }
-      );
-    }
-
-    // Security check
-    const { success, session, error } = await validateAPIAccess(request, ['admin', 'staff']);
-    if (!success) {
-      return NextResponse.json(
-        { success: false, error: error || 'Unauthorized' },
+        { success: false, error: 'Unauthorized - Admin access required' },
         { status: 401 }
       );
     }
 
-    // Validate pagination
-    const { page, limit, offset } = validatePagination(request);
-
-    // Extract query parameters
     const url = new URL(request.url);
-    const search = url.searchParams.get('search')?.trim();
-    const membershipStatus = url.searchParams.get('membershipStatus');
-    const parentId = url.searchParams.get('parentId');
+    const search = url.searchParams.get('search');
 
-    try {
-      // Build query - FIXED: Proper type handling
-      let query: any = adminDb.collection('members');
-
-      // Apply filters
-      if (membershipStatus && ['active', 'inactive', 'expired'].includes(membershipStatus)) {
-        query = query.where('membershipStatus', '==', membershipStatus);
-      }
-
-      if (parentId) {
-        query = query.where('parentId', '==', parentId);
-      }
-
-      // Apply ordering and pagination
-      query = query.orderBy('createdAt', 'desc').limit(limit).offset(offset);
-
-      const snapshot = await query.get();
-      let members = snapshot.docs.map((doc: { id: any; data: () => any; }) => ({
+    let query = adminDb.collection('membershipPlans').orderBy('createdAt', 'desc');
+    const snapshot = await query.get();
+    
+    let plans: any[] = [];
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      plans.push({
         id: doc.id,
-        ...doc.data()
-      }));
-
-      // Apply text search filter (client-side filtering for Firestore)
-      if (search) {
-        const searchLower = search.toLowerCase();
-        members = members.filter((member: { firstName: string; lastName: string; email: string; }) => 
-          member.firstName?.toLowerCase().includes(searchLower) ||
-          member.lastName?.toLowerCase().includes(searchLower) ||
-          member.email?.toLowerCase().includes(searchLower)
-        );
-      }
-
-      // Get total count for pagination
-      const totalSnapshot = await adminDb.collection('members').get();
-      const total = totalSnapshot.size;
-
-      // Sanitize output
-      const sanitizedMembers = sanitizeOutput(members);
-
-      return NextResponse.json({
-        success: true,
-        data: sanitizedMembers,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit)
-        }
+        ...data,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+        updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
       });
+    });
 
-    } catch (dbError: any) {
-      throw new Error('Failed to fetch members');
+    // Search filtering
+    if (search) {
+      const searchLower = search.toLowerCase();
+      plans = plans.filter(plan => 
+        plan.name.toLowerCase().includes(searchLower) ||
+        plan.description?.toLowerCase().includes(searchLower) ||
+        plan.classTypes.some((type: string) => type.toLowerCase().includes(searchLower))
+      );
     }
 
-  } catch (error: any) {
-    return handleError(error);
+    return NextResponse.json({
+      success: true,
+      data: plans,
+      total: plans.length
+    });
+
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, error: 'Failed to fetch membership plans' },
+      { status: 500 }
+    );
   }
 }
 
-// POST /api/members - Create new member
+// POST /api/memberships
 export async function POST(request: NextRequest) {
   try {
-    const clientIP = getClientIP(request);
-    
-    // Rate limiting
-    if (!checkRateLimit(clientIP, 30, 15 * 60 * 1000)) {
+    const session = await getSession(request);
+    if (!session || session.role !== 'admin' || !session.isActive) {
       return NextResponse.json(
-        { success: false, error: 'Rate limit exceeded' },
-        { status: 429 }
-      );
-    }
-
-    // Security check - only admins can create members
-    const { success, session, error } = await validateAPIAccess(request, ['admin']);
-    if (!success) {
-      return NextResponse.json(
-        { success: false, error: error || 'Unauthorized' },
+        { success: false, error: 'Unauthorized - Admin access required' },
         { status: 401 }
       );
     }
 
-    // Parse and validate request body
-    let body;
-    try {
-      body = await request.json();
-    } catch (parseError) {
+    const body = await request.json();
+    const validation = membershipPlanSchema.safeParse(body);
+
+    if (!validation.success) {
       return NextResponse.json(
-        { success: false, error: 'Invalid JSON format' },
+        { 
+          success: false,
+          error: 'Validation failed', 
+          details: validation.error.issues 
+        },
         { status: 400 }
       );
     }
 
-    const validation = validateMemberInput(body);
-    if (!validation.isValid) {
+    const planData = validation.data;
+
+    // Check duplicate name
+    const existingPlan = await adminDb
+      .collection('membershipPlans')
+      .where('name', '==', planData.name)
+      .get();
+
+    if (!existingPlan.empty) {
       return NextResponse.json(
-        { success: false, error: validation.errors[0] },
-        { status: 400 }
+        { success: false, error: 'A membership plan with this name already exists' },
+        { status: 409 }
       );
     }
 
-    const { sanitizedData } = validation;
+    const newPlan = {
+      ...planData,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      createdBy: session.uid,
+    };
 
-    try {
-      // Check if email already exists
-      const existingMember = await adminDb.collection('members')
-        .where('email', '==', sanitizedData.email)
-        .get();
+    const docRef = await adminDb.collection('membershipPlans').add(newPlan);
+    
+    const createdDoc = await docRef.get();
+    const createdPlan = {
+      id: createdDoc.id,
+      ...createdDoc.data(),
+      createdAt: createdDoc.data()?.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+      updatedAt: createdDoc.data()?.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+    };
 
-      if (!existingMember.empty) {
-        return NextResponse.json(
-          { success: false, error: 'Email already exists' },
-          { status: 409 }
-        );
-      }
+    return NextResponse.json({
+      success: true,
+      data: createdPlan,
+      message: 'Membership plan created successfully'
+    }, { status: 201 });
 
-      // If parentId is provided, verify parent exists
-      if (sanitizedData.parentId) {
-        const parentDoc = await adminDb.collection('members').doc(sanitizedData.parentId).get();
-        if (!parentDoc.exists) {
-          return NextResponse.json(
-            { success: false, error: 'Parent member not found' },
-            { status: 400 }
-          );
-        }
-      }
-
-      // Add audit fields
-      const memberData = {
-        ...sanitizedData,
-        membershipStatus: 'inactive', // Default status
-        createdBy: session!.uid,
-        createdAt: new Date(),
-        updatedBy: session!.uid,
-        updatedAt: new Date(),
-      };
-
-      // Create member document
-      const docRef = await adminDb.collection('members').add(memberData);
-      const result = { id: docRef.id, ...memberData };
-
-      return NextResponse.json({
-        success: true,
-        data: sanitizeOutput(result)
-      }, { status: 201 });
-
-    } catch (dbError: any) {
-      throw new Error('Failed to create member');
-    }
-
-  } catch (error: any) {
-    return handleError(error);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, error: 'Failed to create membership plan' },
+      { status: 500 }
+    );
   }
 }

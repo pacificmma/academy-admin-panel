@@ -1,10 +1,10 @@
+// src/app/contexts/AuthContext.tsx - FIXED VERSION
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { User, onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from '@/app/lib/firebase/config';
 import { SessionData } from '../types';
-
 
 interface AuthContextType {
   user: User | null;
@@ -26,23 +26,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const protectedUserRef = useRef<User | null>(null);
   const protectedSessionRef = useRef<SessionData | null>(null);
 
-  // Fetch session data from server
+  // FIXED: Fetch session data from server with better error handling
   const fetchSessionData = async () => {
     try {
+      console.log('🔍 fetchSessionData çağrıldı'); // EKLE
+      
       const response = await fetch('/api/auth/session', {
         method: 'GET',
         credentials: 'include',
       });
       
+      console.log('📡 Response status:', response.status); // EKLE
+      
       if (response.ok) {
         const data = await response.json();
+        console.log('📦 Response data:', data); // EKLE
+        
         setSessionData(data.session);
         return data.session;
       } else {
+        console.log('❌ Response not ok'); // EKLE
         setSessionData(null);
         return null;
       }
     } catch (error) {
+      console.log('💥 Fetch error:', error); // EKLE
       setSessionData(null);
       return null;
     }
@@ -50,6 +58,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      console.log('Auth state changed:', { 
+        userExists: !!firebaseUser, 
+        sessionProtected,
+        uid: firebaseUser?.uid 
+      }); // Debug log
+
       // Session protection logic
       if (sessionProtected && protectedUserRef.current) {
         if (!firebaseUser || firebaseUser.uid !== protectedUserRef.current.uid) {        
@@ -58,16 +72,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               await restoreProtectedUser();
             }
           } catch (error) {
+            console.error('Failed to restore protected session:', error);
             setSessionProtected(false);
             protectedUserRef.current = null;
             protectedSessionRef.current = null;
             setUser(firebaseUser);
             if (firebaseUser) {
+              console.log('Fetching session data for user:', firebaseUser.uid);
               await fetchSessionData();
             } else {
-              setSessionData(null);
+              console.log('No Firebase user, but checking session anyway');
+              // Firebase user yoksa da session kontrolü yap
+              await fetchSessionData();
             }
           }
+          setLoading(false);
           return;
         }
       }
@@ -77,9 +96,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(firebaseUser);
         
         if (firebaseUser) {
+          console.log('Fetching session data for user:', firebaseUser.uid);
           await fetchSessionData();
         } else {
-          setSessionData(null);
+          console.log('No Firebase user, but checking session anyway');
+          // Firebase user yoksa da session kontrolü yap
+          await fetchSessionData();
         }
       }
       
@@ -122,6 +144,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const refreshSession = async () => {
+    console.log('Manually refreshing session...');
     await fetchSessionData();
   };
 
@@ -148,6 +171,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('Error during logout:', error);
     }
   };
+
+  // FIXED: Add debug info to context value
+  console.log('AuthContext render:', {
+    userExists: !!user,
+    sessionExists: !!sessionData,
+    loading,
+    sessionRole: sessionData?.role,
+    sessionActive: sessionData?.isActive
+  });
 
   return (
     <AuthContext.Provider value={{ 

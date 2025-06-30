@@ -1,4 +1,4 @@
-// src/app/memberships/page.tsx - Fixed version
+// src/app/memberships/page.tsx - Updated to Pass Session
 import { Metadata } from 'next';
 import { getServerSession } from '@/app/lib/auth/session';
 import { redirect } from 'next/navigation';
@@ -20,6 +20,6 @@ export default async function MembershipsPage() {
     redirect('/classes');
   }
 
-  // Pass session data to client component - this was the main issue
-  return <MembershipsPageClient />;
+  // Pass session to client component - required for Layout
+  return <MembershipsPageClient session={session} />;
 }

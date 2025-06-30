@@ -1,4 +1,4 @@
-// src/app/components/forms/MembershipFormDialog.tsx - Complete Membership Form Dialog Component
+// src/app/components/forms/MembershipFormDialog.tsx - Clean Form
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -20,6 +20,7 @@ import {
   InputAdornment,
   FormHelperText,
   Autocomplete,
+  CircularProgress,
 } from '@mui/material';
 import {
   Save as SaveIcon,
@@ -29,12 +30,14 @@ import {
 import {
   MembershipPlan,
   MembershipPlanFormData,
-  MembershipDuration,
-  ClassType,
+  DurationType,
   MembershipStatus,
-  MEMBERSHIP_DURATIONS,
-  CLASS_TYPES,
+  DURATION_TYPES,
+  DEFAULT_CLASS_TYPES,
+  CURRENCIES,
   MEMBERSHIP_STATUSES,
+  formatDuration,
+  formatCurrency,
 } from '../../types/membership';
 
 interface MembershipFormDialogProps {
@@ -48,7 +51,8 @@ interface MembershipFormDialogProps {
 const DEFAULT_FORM_DATA: MembershipPlanFormData = {
   name: '',
   description: '',
-  duration: '1_month',
+  durationValue: 1,
+  durationType: 'months',
   price: 0,
   classTypes: [],
   status: 'active',
@@ -66,14 +70,14 @@ export default function MembershipFormDialog({
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Initialize form data when dialog opens or membership changes
   useEffect(() => {
     if (open) {
       if (mode === 'edit' && membership) {
         setFormData({
           name: membership.name,
           description: membership.description || '',
-          duration: membership.duration,
+          durationValue: membership.durationValue,
+          durationType: membership.durationType,
           price: membership.price,
           classTypes: membership.classTypes,
           status: membership.status,
@@ -92,7 +96,6 @@ export default function MembershipFormDialog({
       [field]: value,
     }));
 
-    // Clear error for this field
     if (errors[field]) {
       setErrors(prev => ({
         ...prev,
@@ -104,30 +107,22 @@ export default function MembershipFormDialog({
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    // Name validation
     if (!formData.name.trim()) {
       newErrors.name = 'Plan name is required';
-    } else if (formData.name.trim().length < 3) {
-      newErrors.name = 'Plan name must be at least 3 characters';
-    } else if (formData.name.trim().length > 100) {
-      newErrors.name = 'Plan name must be less than 100 characters';
+    } else if (formData.name.trim().length < 2) {
+      newErrors.name = 'Plan name must be at least 2 characters';
     }
 
-    // Price validation
     if (formData.price <= 0) {
       newErrors.price = 'Price must be greater than 0';
-    } else if (formData.price > 10000) {
-      newErrors.price = 'Price must be less than $10,000';
     }
 
-    // Class types validation
+    if (formData.durationValue <= 0) {
+      newErrors.durationValue = 'Duration must be greater than 0';
+    }
+
     if (formData.classTypes.length === 0) {
       newErrors.classTypes = 'At least one class type must be selected';
-    }
-
-    // Description validation (optional but with limits)
-    if (formData.description && formData.description.length > 500) {
-      newErrors.description = 'Description must be less than 500 characters';
     }
 
     setErrors(newErrors);
@@ -158,16 +153,6 @@ export default function MembershipFormDialog({
     }
   };
 
-  const getDurationLabel = (duration: MembershipDuration): string => {
-    const durationConfig = MEMBERSHIP_DURATIONS.find(d => d.value === duration);
-    return durationConfig?.label || duration;
-  };
-
-  const getClassTypeLabel = (classType: ClassType): string => {
-    const classConfig = CLASS_TYPES.find(c => c.value === classType);
-    return classConfig?.label || classType;
-  };
-
   return (
     <Dialog 
       open={open} 
@@ -181,17 +166,17 @@ export default function MembershipFormDialog({
         }
       }}
     >
-      <DialogTitle sx={{ 
-        pb: 1, 
-        fontSize: '1.5rem', 
-        fontWeight: 600,
-        borderBottom: '1px solid',
-        borderColor: 'divider',
-      }}>
-        {mode === 'create' ? 'Create New Membership Plan' : 'Edit Membership Plan'}
-      </DialogTitle>
+      <form onSubmit={handleSubmit}>
+        <DialogTitle sx={{ 
+          pb: 1, 
+          fontSize: '1.5rem', 
+          fontWeight: 600,
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+        }}>
+          {mode === 'create' ? 'Create New Membership Plan' : 'Edit Membership Plan'}
+        </DialogTitle>
 
-      <Box component="form" onSubmit={handleSubmit}>
         <DialogContent sx={{ pt: 3 }}>
           <Grid container spacing={3}>
             {/* Plan Name */}
@@ -202,10 +187,10 @@ export default function MembershipFormDialog({
                 value={formData.name}
                 onChange={(e) => handleInputChange('name', e.target.value)}
                 error={!!errors.name}
-                helperText={errors.name || 'Enter a descriptive name for this membership plan'}
-                placeholder="e.g., 3 Month BJJ Membership"
-                required
+                helperText={errors.name}
+                placeholder="e.g., Premium MMA Membership"
                 disabled={loading}
+                required
               />
             </Grid>
 
@@ -213,109 +198,143 @@ export default function MembershipFormDialog({
             <Grid item xs={12}>
               <TextField
                 fullWidth
+                multiline
+                rows={3}
                 label="Description"
                 value={formData.description}
                 onChange={(e) => handleInputChange('description', e.target.value)}
-                error={!!errors.description}
-                helperText={errors.description || 'Optional description for this plan'}
-                placeholder="Describe what's included in this membership plan..."
-                multiline
-                rows={3}
+                placeholder="Describe what this membership includes..."
                 disabled={loading}
               />
             </Grid>
 
-            {/* Duration and Price */}
-            <Grid item xs={12} sm={6}>
-              <FormControl fullWidth error={!!errors.duration}>
-                <InputLabel>Duration</InputLabel>
-                <Select
-                  value={formData.duration}
-                  onChange={(e) => handleInputChange('duration', e.target.value as MembershipDuration)}
-                  label="Duration"
-                  disabled={loading}
-                >
-                  {MEMBERSHIP_DURATIONS.map((duration) => (
-                    <MenuItem key={duration.value} value={duration.value}>
-                      {duration.label}
-                    </MenuItem>
-                  ))}
-                </Select>
-                {errors.duration && <FormHelperText>{errors.duration}</FormHelperText>}
-              </FormControl>
-            </Grid>
-
+            {/* Duration */}
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
-                label="Price"
                 type="number"
+                label="Duration"
+                value={formData.durationValue}
+                onChange={(e) => handleInputChange('durationValue', parseInt(e.target.value) || 1)}
+                error={!!errors.durationValue}
+                helperText={errors.durationValue}
+                disabled={loading}
+                required
+                InputProps={{
+                  inputProps: { min: 1 }
+                }}
+              />
+            </Grid>
+
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth disabled={loading}>
+                <InputLabel>Duration Type</InputLabel>
+                <Select
+                  value={formData.durationType}
+                  onChange={(e) => handleInputChange('durationType', e.target.value)}
+                  label="Duration Type"
+                >
+                  {DURATION_TYPES.map((type) => (
+                    <MenuItem key={type.value} value={type.value}>
+                      {type.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+
+            {/* Price and Currency */}
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Price"
                 value={formData.price}
                 onChange={(e) => handleInputChange('price', parseFloat(e.target.value) || 0)}
                 error={!!errors.price}
-                helperText={errors.price || 'Monthly price in USD'}
-                placeholder="0.00"
-                required
+                helperText={errors.price}
                 disabled={loading}
+                required
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
                       <MoneyIcon />
                     </InputAdornment>
                   ),
-                  inputProps: {
-                    min: 0,
-                    step: 0.01,
-                  }
+                  inputProps: { min: 0, step: 0.01 }
                 }}
               />
+            </Grid>
+
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth disabled={loading}>
+                <InputLabel>Currency</InputLabel>
+                <Select
+                  value={formData.currency}
+                  onChange={(e) => handleInputChange('currency', e.target.value)}
+                  label="Currency"
+                >
+                  {CURRENCIES.map((currency) => (
+                    <MenuItem key={currency.value} value={currency.value}>
+                      {currency.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
             </Grid>
 
             {/* Class Types */}
             <Grid item xs={12}>
-              <Autocomplete
-                multiple
-                options={CLASS_TYPES}
-                getOptionLabel={(option) => option.label}
-                value={CLASS_TYPES.filter(ct => formData.classTypes.includes(ct.value))}
-                onChange={(_, newValue) => {
-                  handleInputChange('classTypes', newValue.map(option => option.value));
-                }}
-                renderTags={(value, getTagProps) =>
-                  value.map((option, index) => (
-                    <Chip
-                      {...getTagProps({ index })}
-                      key={option.value}
-                      label={option.label}
-                      size="small"
-                      color="primary"
-                      variant="outlined"
+              <FormControl fullWidth error={!!errors.classTypes}>
+                <Autocomplete
+                  multiple
+                  freeSolo
+                  options={DEFAULT_CLASS_TYPES}
+                  value={formData.classTypes}
+                  onChange={(_, newValue) => {
+                    handleInputChange('classTypes', newValue);
+                  }}
+                  disabled={loading}
+                  renderTags={(value, getTagProps) =>
+                    value.map((option, index) => (
+                      <Chip
+                        {...getTagProps({ index })}
+                        key={option}
+                        label={option}
+                        sx={{
+                          bgcolor: 'primary.main',
+                          color: 'white',
+                          '& .MuiChip-deleteIcon': {
+                            color: 'rgba(255, 255, 255, 0.7)',
+                            '&:hover': {
+                              color: 'white',
+                            },
+                          },
+                        }}
+                      />
+                    ))
+                  }
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Included Class Types"
+                      error={!!errors.classTypes}
+                      helperText={errors.classTypes || 'You can select from list or type custom class types'}
+                      placeholder="Select or type class types"
                     />
-                  ))
-                }
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Class Types"
-                    placeholder="Select class types included in this plan"
-                    error={!!errors.classTypes}
-                    helperText={errors.classTypes || 'Choose which class types are included'}
-                    required
-                  />
-                )}
-                disabled={loading}
-              />
+                  )}
+                />
+              </FormControl>
             </Grid>
 
             {/* Status */}
             <Grid item xs={12} sm={6}>
-              <FormControl fullWidth>
+              <FormControl fullWidth disabled={loading}>
                 <InputLabel>Status</InputLabel>
                 <Select
                   value={formData.status}
-                  onChange={(e) => handleInputChange('status', e.target.value as MembershipStatus)}
+                  onChange={(e) => handleInputChange('status', e.target.value)}
                   label="Status"
-                  disabled={loading}
                 >
                   {MEMBERSHIP_STATUSES.map((status) => (
                     <MenuItem key={status.value} value={status.value}>
@@ -325,7 +344,7 @@ export default function MembershipFormDialog({
                             width: 8,
                             height: 8,
                             borderRadius: '50%',
-                            bgcolor: status.color,
+                            bgcolor: status.color === 'success' ? 'success.main' : 'grey.500',
                           }}
                         />
                         {status.label}
@@ -334,19 +353,6 @@ export default function MembershipFormDialog({
                   ))}
                 </Select>
               </FormControl>
-            </Grid>
-
-            {/* Currency */}
-            <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                label="Currency"
-                value={formData.currency}
-                onChange={(e) => handleInputChange('currency', e.target.value)}
-                placeholder="USD"
-                disabled={loading}
-                helperText="Currency code (e.g., USD, EUR, GBP)"
-              />
             </Grid>
           </Grid>
 
@@ -361,15 +367,28 @@ export default function MembershipFormDialog({
                   <strong>Name:</strong> {formData.name}
                 </Typography>
                 <Typography variant="body1">
-                  <strong>Duration:</strong> {getDurationLabel(formData.duration)}
+                  <strong>Duration:</strong> {formatDuration(formData.durationValue, formData.durationType)}
                 </Typography>
                 <Typography variant="body1">
-                  <strong>Price:</strong> ${formData.price.toFixed(2)} {formData.currency}
+                  <strong>Price:</strong> {formatCurrency(formData.price, formData.currency)}
                 </Typography>
                 <Typography variant="body1">
-                  <strong>Class Types:</strong> {formData.classTypes.map(getClassTypeLabel).join(', ') || 'None selected'}
+                  <strong>Class Types:</strong> 
                 </Typography>
-                <Typography variant="body1">
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+                  {formData.classTypes.map(type => (
+                    <Chip
+                      key={type}
+                      label={type}
+                      size="small"
+                      sx={{
+                        bgcolor: 'primary.main',
+                        color: 'white',
+                      }}
+                    />
+                  ))}
+                </Box>
+                <Typography variant="body1" sx={{ mt: 1 }}>
                   <strong>Status:</strong> {MEMBERSHIP_STATUSES.find(s => s.value === formData.status)?.label}
                 </Typography>
               </Box>
@@ -390,37 +409,17 @@ export default function MembershipFormDialog({
             type="submit"
             variant="contained"
             disabled={loading}
-            startIcon={loading ? undefined : <SaveIcon />}
+            startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <SaveIcon />}
             sx={{
               bgcolor: '#0F5C6B',
               '&:hover': { bgcolor: '#0a4a57' },
               minWidth: 120,
             }}
           >
-            {loading ? (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Box
-                  sx={{
-                    width: 16,
-                    height: 16,
-                    border: '2px solid #ffffff40',
-                    borderTop: '2px solid #ffffff',
-                    borderRadius: '50%',
-                    animation: 'spin 1s linear infinite',
-                    '@keyframes spin': {
-                      '0%': { transform: 'rotate(0deg)' },
-                      '100%': { transform: 'rotate(360deg)' },
-                    },
-                  }}
-                />
-                Saving...
-              </Box>
-            ) : (
-              mode === 'create' ? 'Create Plan' : 'Update Plan'
-            )}
+            {loading ? 'Saving...' : mode === 'create' ? 'Create Plan' : 'Update Plan'}
           </Button>
         </DialogActions>
-      </Box>
+      </form>
     </Dialog>
   );
 }

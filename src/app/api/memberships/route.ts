@@ -1,31 +1,51 @@
-// src/app/api/memberships/route.ts - Main memberships API endpoint
+// src/app/api/memberships/route.ts - Complete and Secure API Route
 import { NextRequest, NextResponse } from 'next/server';
-import { adminDb } from '@/app/lib/firebase/admin';
-import { validateApiSession } from '@/app/lib/auth/session';
+import { adminAuth, adminDb } from '@/app/lib/firebase/admin';
 import { MembershipPlan, MembershipPlanFormData } from '@/app/types/membership';
 import { z } from 'zod';
+import { getSession } from '@/app/lib/auth/session';
 
-// Validation schema for membership plan creation/update
+// Validation schema
 const membershipPlanSchema = z.object({
   name: z.string().min(3).max(100),
   description: z.string().optional(),
-  duration: z.enum(['1_week', '2_weeks', '3_weeks', '4_weeks', '1_month', '3_months', '6_months', '12_months', 'unlimited']),
+  duration: z.enum(['1_week', '1_month', '3_months', '6_months', '1_year', '18_months', '2_years']),
   price: z.number().min(0.01).max(10000),
-  classTypes: z.array(z.enum(['bjj', 'mma', 'boxing', 'muay_thai', 'wrestling', 'fitness', 'yoga', 'kickboxing'])).min(1),
-  status: z.enum(['active', 'inactive']).default('active'),
-  currency: z.string().default('USD'),
+  currency: z.string().length(3).default('USD'),
+  classTypes: z.array(z.enum(['mma', 'bjj', 'boxing', 'muay_thai', 'kickboxing', 'wrestling', 'judo', 'fitness', 'yoga', 'all_access'])).min(1),
+  status: z.enum(['active', 'inactive', 'draft']).default('active'),
+  maxClasses: z.number().optional(),
+  isUnlimited: z.boolean().default(false),
 });
 
-// Verify admin permissions
+// Authentication helper
 async function verifyAdminPermission(request: NextRequest) {
   try {
-    const session = await validateApiSession(request);
-    
-    if (!session || session.role !== 'admin') {
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
       return null;
     }
 
-    return session;
+    const token = authHeader.substring(7);
+    const decodedToken = await adminAuth.verifyIdToken(token);
+    
+    const userDoc = await adminDb.collection('staff').doc(decodedToken.uid).get();
+    
+    if (!userDoc.exists) {
+      return null;
+    }
+
+    const userData = userDoc.data();
+    if (!userData || userData.role !== 'admin' || !userData.isActive) {
+      return null;
+    }
+
+    return {
+      uid: decodedToken.uid,
+      role: userData.role,
+      email: userData.email,
+      fullName: userData.fullName,
+    };
   } catch (error) {
     return null;
   }
@@ -34,52 +54,34 @@ async function verifyAdminPermission(request: NextRequest) {
 // GET /api/memberships - Get all membership plans
 export async function GET(request: NextRequest) {
   try {
-    const session = await verifyAdminPermission(request);
-    if (!session) {
+    const session = await getSession(request);
+    if (!session || session.role !== 'admin' || !session.isActive) {
       return NextResponse.json(
         { error: 'Unauthorized - Admin access required' },
         { status: 401 }
       );
     }
 
-    const url = new URL(request.url);
-    const search = url.searchParams.get('search') || '';
-
-    // Get membership plans from Firestore
-    let plansQuery = adminDb.collection('membershipPlans').orderBy('createdAt', 'desc');
-    
+    // Direkt Firestore'dan data çek
+    const plansQuery = adminDb.collection('membershipPlans').orderBy('createdAt', 'desc')
     const plansSnapshot = await plansQuery.get();
-    let plans: MembershipPlan[] = [];
+    let plans: { id: string; }[] = [];
 
     plansSnapshot.forEach(doc => {
       plans.push({
         id: doc.id,
         ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-        updatedAt: doc.data().updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-      } as MembershipPlan);
+      });
     });
-
-    // Apply search filter if provided
-    if (search) {
-      const searchLower = search.toLowerCase();
-      plans = plans.filter(plan => 
-        plan.name.toLowerCase().includes(searchLower) ||
-        plan.description?.toLowerCase().includes(searchLower) ||
-        plan.classTypes.some(type => type.toLowerCase().includes(searchLower))
-      );
-    }
 
     return NextResponse.json({
       success: true,
       data: plans,
       total: plans.length
     });
-
-  } catch (error) {
-    console.error('Failed to fetch membership plans:', error);
+  } catch (error: any) {
     return NextResponse.json(
-      { error: 'Failed to fetch membership plans' },
+      { error: 'Failed to fetch memberships', details: error.message },
       { status: 500 }
     );
   }
@@ -91,7 +93,7 @@ export async function POST(request: NextRequest) {
     const session = await verifyAdminPermission(request);
     if (!session) {
       return NextResponse.json(
-        { error: 'Unauthorized - Admin access required' },
+        { success: false, error: 'Unauthorized - Admin access required' },
         { status: 401 }
       );
     }
@@ -102,6 +104,7 @@ export async function POST(request: NextRequest) {
     if (!validation.success) {
       return NextResponse.json(
         { 
+          success: false,
           error: 'Validation failed', 
           details: validation.error.issues 
         },
@@ -119,7 +122,7 @@ export async function POST(request: NextRequest) {
 
     if (!existingPlan.empty) {
       return NextResponse.json(
-        { error: 'A membership plan with this name already exists' },
+        { success: false, error: 'A membership plan with this name already exists' },
         { status: 409 }
       );
     }
@@ -150,9 +153,8 @@ export async function POST(request: NextRequest) {
     }, { status: 201 });
 
   } catch (error) {
-    console.error('Failed to create membership plan:', error);
     return NextResponse.json(
-      { error: 'Failed to create membership plan' },
+      { success: false, error: 'Failed to create membership plan' },
       { status: 500 }
     );
   }
