@@ -1,4 +1,4 @@
-// src/app/api/auth/logout/route.ts
+// src/app/api/auth/logout/route.ts - SECURE LOGOUT API (FIXED)
 import { NextRequest, NextResponse } from 'next/server';
 import { clearSessionCookie } from '@/app/lib/auth/session';
 
@@ -10,8 +10,8 @@ export async function POST(request: NextRequest) {
       message: 'Logged out successfully',
     });
 
-    // Clear the session cookie
-    response.headers.set('Set-Cookie', clearSessionCookie());
+    // Clear the session cookie - FIXED: Pass response object
+    clearSessionCookie(response);
     return response;
 
   } catch (error: unknown) {    
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
       { success: true, message: 'Logged out' },
       { status: 200 }
     );
-    response.headers.set('Set-Cookie', clearSessionCookie());
+    clearSessionCookie(response);
     
     return response;
   }
@@ -31,11 +31,11 @@ export async function GET(request: NextRequest) {
   try {
     // Clear session cookie and redirect
     const response = NextResponse.redirect(new URL('/login', request.url));
-    response.headers.set('Set-Cookie', clearSessionCookie());
+    clearSessionCookie(response);
     return response;
   } catch (error: unknown) {
     const response = NextResponse.redirect(new URL('/login', request.url));
-    response.headers.set('Set-Cookie', clearSessionCookie());
+    clearSessionCookie(response);
     return response;
   }
 }

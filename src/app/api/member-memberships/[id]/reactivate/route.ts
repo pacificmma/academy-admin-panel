@@ -1,4 +1,3 @@
-/ src/app/api/member-memberships/[id]/reactivate/route.ts - Reactivate membership endpoint
 
 // POST /api/member-memberships/[id]/reactivate - Reactivate suspended membership
 export async function POST(
@@ -61,26 +60,4 @@ export async function POST(
       { status: 500 }
     );
   }
-}
-
-// src/app/memberships/page.tsx - Main membership management page
-
-import { redirect } from 'next/navigation';
-import { getServerSession } from '@/app/lib/auth/session';
-import { PERMISSIONS } from '@/app/lib/api/permissions';
-import MembershipsPageClient from './MembershipsPageClient';
-
-export default async function MembershipsPage() {
-  const session = await getServerSession();
-
-  if (!session) {
-    redirect('/login');
-  }
-
-  // Check permissions
-  if (!PERMISSIONS.memberships.read.includes(session.role)) {
-    redirect('/dashboard');
-  }
-
-  return <MembershipsPageClient session={session} />;
 }
