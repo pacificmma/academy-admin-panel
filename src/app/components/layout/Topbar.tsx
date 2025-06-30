@@ -193,35 +193,6 @@ const Topbar: React.FC<TopbarProps> = ({
 
         {/* Right Side Actions */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          {/* Notifications - Admin only */}
-          {session.role === 'admin' && (
-            <IconButton
-              color="inherit"
-              sx={{
-                '&:hover': {
-                  backgroundColor: 'action.hover',
-                },
-              }}
-            >
-              <NotificationsIcon />
-            </IconButton>
-          )}
-
-          {/* Settings - Admin only */}
-          {session.role === 'admin' && (
-            <IconButton
-              color="inherit"
-              href="/settings"
-              sx={{
-                '&:hover': {
-                  backgroundColor: 'action.hover',
-                },
-              }}
-            >
-              <SettingsIcon />
-            </IconButton>
-          )}
-
           {/* User Info - Desktop */}
           <Box sx={{ 
             display: { xs: 'none', sm: 'flex' },

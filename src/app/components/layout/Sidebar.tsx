@@ -85,7 +85,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         text: 'My Schedule',
         icon: <ScheduleIcon />,
         path: '/my-schedule',
-        roles: ['trainer', 'staff'],
+        roles: ['trainer', 'staff', 'admin'],
       },
       
       // Divider sonrası admin-only sections
@@ -199,21 +199,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             if (item.text === 'divider') {
               return (
                 <Box key={index} sx={{ my: 2 }}>
-                  <Divider />
-                  <Typography
-                    variant="overline"
-                    sx={{
-                      px: 2,
-                      py: 1,
-                      fontSize: '0.7rem',
-                      fontWeight: 700,
-                      color: 'text.secondary',
-                      letterSpacing: '0.5px',
-                      display: 'block',
-                    }}
-                  >
-                    Management
-                  </Typography>
+        
                 </Box>
               );
             }

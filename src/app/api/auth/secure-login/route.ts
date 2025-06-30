@@ -294,7 +294,7 @@ export async function POST(request: NextRequest) {
     // Get user document from Firestore
     let userDoc: UserDocument;
     try {
-      const userDocRef = adminDb.collection('users').doc(firebaseUser.uid);
+      const userDocRef = adminDb.collection('staff').doc(firebaseUser.uid);
       const userSnapshot = await userDocRef.get();
       
       if (!userSnapshot.exists) {

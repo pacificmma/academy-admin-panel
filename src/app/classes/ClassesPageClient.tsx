@@ -131,10 +131,10 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
           }}
         >
           <CardContent sx={{ p: 4, color: 'white' }}>
-            <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 700 }}>
+            <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 700, color: 'white' }}>
               Class Management
             </Typography>
-            <Typography variant="h6" sx={{ opacity: 0.9, mb: 2 }}>
+            <Typography variant="h6" sx={{ opacity: 0.9, mb: 2, color: 'white' }}>
               {session.role === 'admin'
                 ? 'Manage all classes, schedules, and instructors across your academy.'
                 : session.role === 'trainer'
@@ -142,38 +142,6 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
                   : 'Access class schedules and training information.'
               }
             </Typography>
-            
-            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mt: 3 }}>
-              <Chip
-                icon={<CalendarIcon />}
-                label={`Today's Classes`}
-                sx={{
-                  backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                  color: 'white',
-                  fontWeight: 600,
-                }}
-              />
-              <Chip
-                icon={<ScheduleIcon />}
-                label="Weekly Schedule"
-                sx={{
-                  backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                  color: 'white',
-                  fontWeight: 600,
-                }}
-              />
-              {session.role === 'admin' && (
-                <Chip
-                  icon={<SettingsIcon />}
-                  label="Admin Controls"
-                  sx={{
-                    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                    color: 'white',
-                    fontWeight: 600,
-                  }}
-                />
-              )}
-            </Box>
           </CardContent>
         </Paper>
 
