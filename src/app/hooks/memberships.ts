@@ -1,11 +1,11 @@
-// src/app/hooks/useMemberships.ts - Secure Membership Management Hook
+// src/app/hooks/useMemberships.ts - Streamlined Membership Management Hook
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/app/contexts/AuthContext';
-import { 
-  MembershipPlan, 
+import {
+  MembershipPlan,
   MembershipPlanFormData,
   MembershipPlanFilters,
-  MembershipStats 
+  MembershipStats
 } from '@/app/types/membership';
 
 interface UseMembershipsReturn {
@@ -23,20 +23,11 @@ interface UseMembershipsReturn {
 }
 
 export const useMemberships = (autoLoad: boolean = true): UseMembershipsReturn => {
-  const { user, sessionData } = useAuth();
+  const { sessionData } = useAuth();
   const [memberships, setMemberships] = useState<MembershipPlan[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<MembershipStats | null>(null);
-
-  const getAuthHeaders = useCallback(async () => {
-    if (!user) throw new Error('Not authenticated');
-    const token = await user.getIdToken();
-    return {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    };
-  }, [user]);
 
   const handleApiError = useCallback((error: any, defaultMessage: string) => {
     if (error instanceof Error) {
@@ -46,14 +37,12 @@ export const useMemberships = (autoLoad: boolean = true): UseMembershipsReturn =
   }, []);
 
   const loadMemberships = useCallback(async (filters?: MembershipPlanFilters) => {
-    if (!user) return;
+    if (!sessionData) return;
 
     try {
       setLoading(true);
       setError(null);
-      
-      const headers = await getAuthHeaders();
-      
+
       // Build query parameters
       const params = new URLSearchParams();
       if (filters?.type) params.append('type', filters.type);
@@ -64,8 +53,9 @@ export const useMemberships = (autoLoad: boolean = true): UseMembershipsReturn =
       if (filters?.searchTerm) params.append('search', filters.searchTerm);
 
       const url = `/api/memberships${params.toString() ? `?${params.toString()}` : ''}`;
-      
-      const response = await fetch(url, { headers });
+
+      // Rely on session cookie for authentication
+      const response = await fetch(url, { credentials: 'include' });
       const result = await response.json();
 
       if (response.ok && result.success) {
@@ -78,14 +68,13 @@ export const useMemberships = (autoLoad: boolean = true): UseMembershipsReturn =
     } finally {
       setLoading(false);
     }
-  }, [user, getAuthHeaders, handleApiError]);
+  }, [sessionData, handleApiError]);
 
   const loadStats = useCallback(async () => {
-    if (!user) return;
+    if (!sessionData) return;
 
     try {
-      const headers = await getAuthHeaders();
-      const response = await fetch('/api/memberships/stats', { headers });
+      const response = await fetch('/api/memberships/stats', { credentials: 'include' });
       const result = await response.json();
 
       if (response.ok && result.success) {
@@ -98,19 +87,19 @@ export const useMemberships = (autoLoad: boolean = true): UseMembershipsReturn =
       // Stats are optional, don't throw error
       setStats(null);
     }
-  }, [user, getAuthHeaders]);
+  }, [sessionData]);
 
   const createMembership = useCallback(async (data: MembershipPlanFormData) => {
-    if (!user) {
+    if (!sessionData) {
       return { success: false, error: 'Not authenticated' };
     }
 
     try {
-      const headers = await getAuthHeaders();
       const response = await fetch('/api/memberships', {
         method: 'POST',
-        headers,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
+        credentials: 'include',
       });
 
       const result = await response.json();
@@ -123,31 +112,31 @@ export const useMemberships = (autoLoad: boolean = true): UseMembershipsReturn =
         return { success: false, error: result.error || 'Failed to create membership plan' };
       }
     } catch (err) {
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: handleApiError(err, 'Failed to create membership plan')
       };
     }
-  }, [user, getAuthHeaders, handleApiError]);
+  }, [sessionData, handleApiError]);
 
   const updateMembership = useCallback(async (id: string, data: MembershipPlanFormData) => {
-    if (!user) {
+    if (!sessionData) {
       return { success: false, error: 'Not authenticated' };
     }
 
     try {
-      const headers = await getAuthHeaders();
       const response = await fetch(`/api/memberships/${id}`, {
         method: 'PUT',
-        headers,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
+        credentials: 'include',
       });
 
       const result = await response.json();
 
       if (response.ok && result.success) {
         // Update local state
-        setMemberships(prev => prev.map(membership => 
+        setMemberships(prev => prev.map(membership =>
           membership.id === id ? result.data : membership
         ));
         return { success: true, data: result.data };
@@ -155,23 +144,22 @@ export const useMemberships = (autoLoad: boolean = true): UseMembershipsReturn =
         return { success: false, error: result.error || 'Failed to update membership plan' };
       }
     } catch (err) {
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: handleApiError(err, 'Failed to update membership plan')
       };
     }
-  }, [user, getAuthHeaders, handleApiError]);
+  }, [sessionData, handleApiError]);
 
   const deleteMembership = useCallback(async (id: string) => {
-    if (!user) {
+    if (!sessionData) {
       return { success: false, error: 'Not authenticated' };
     }
 
     try {
-      const headers = await getAuthHeaders();
       const response = await fetch(`/api/memberships/${id}`, {
         method: 'DELETE',
-        headers,
+        credentials: 'include',
       });
 
       const result = await response.json();
@@ -184,12 +172,12 @@ export const useMemberships = (autoLoad: boolean = true): UseMembershipsReturn =
         return { success: false, error: result.error || 'Failed to delete membership plan' };
       }
     } catch (err) {
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: handleApiError(err, 'Failed to delete membership plan')
       };
     }
-  }, [user, getAuthHeaders, handleApiError]);
+  }, [sessionData, handleApiError]);
 
   const refreshData = useCallback(async () => {
     await Promise.all([
@@ -204,10 +192,10 @@ export const useMemberships = (autoLoad: boolean = true): UseMembershipsReturn =
 
   // Auto-load on mount if user is authenticated and is admin
   useEffect(() => {
-    if (autoLoad && user && sessionData?.role === 'admin') {
+    if (autoLoad && sessionData?.role === 'admin') {
       refreshData();
     }
-  }, [autoLoad, user, sessionData?.role, refreshData]);
+  }, [autoLoad, sessionData?.role, refreshData]);
 
   return {
     memberships,
@@ -226,29 +214,19 @@ export const useMemberships = (autoLoad: boolean = true): UseMembershipsReturn =
 
 // Additional hook for membership statistics
 export const useMembershipStats = () => {
-  const { user } = useAuth();
+  const { sessionData } = useAuth();
   const [stats, setStats] = useState<MembershipStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const getAuthHeaders = useCallback(async () => {
-    if (!user) throw new Error('Not authenticated');
-    const token = await user.getIdToken();
-    return {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    };
-  }, [user]);
-
   const loadStats = useCallback(async () => {
-    if (!user) return;
+    if (!sessionData) return;
 
     try {
       setLoading(true);
       setError(null);
-      
-      const headers = await getAuthHeaders();
-      const response = await fetch('/api/memberships/stats', { headers });
+
+      const response = await fetch('/api/memberships/stats', { credentials: 'include' });
       const result = await response.json();
 
       if (response.ok && result.success) {
@@ -261,13 +239,13 @@ export const useMembershipStats = () => {
     } finally {
       setLoading(false);
     }
-  }, [user, getAuthHeaders]);
+  }, [sessionData]);
 
   useEffect(() => {
-    if (user) {
+    if (sessionData) {
       loadStats();
     }
-  }, [user, loadStats]);
+  }, [sessionData, loadStats]);
 
   return {
     stats,

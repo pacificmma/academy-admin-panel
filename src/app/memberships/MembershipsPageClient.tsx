@@ -1,4 +1,4 @@
-// src/app/memberships/MembershipsPageClient.tsx - Final Professional Version
+// src/app/memberships/MembershipsPageClient.tsx - Final Professional Version (without refresh button)
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -39,7 +39,6 @@ import {
   MoreVert as MoreVertIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
-  Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import Layout from '../components/layout/Layout';
 import MembershipFormDialog from '../components/forms/MembershipFormDialog';
@@ -50,6 +49,8 @@ import {
   formatCurrency,
 } from '../types/membership';
 import { SessionData } from '../types';
+import DeleteConfirmationDialog from '../components/ui/DeleteConfirmationDialog'; // Corrected import
+
 
 interface MembershipStats {
   totalPlans: number;
@@ -91,24 +92,27 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
       }
 
       const url = `/api/memberships${params.toString() ? `?${params.toString()}` : ''}`;
-      const response = await fetch(url, { 
+      const response = await fetch(url, {
         credentials: 'include'
       });
-      
+
       if (!response.ok) {
         throw new Error(`Failed to load memberships: ${response.status}`);
       }
 
       const result = await response.json();
-
+      
+      // FIXED: Ensure result.data is an array before setting state
+      const fetchedData = Array.isArray(result.data) ? result.data : [];
+      
       if (result.success) {
-        setMemberships(result.data || []);
-        const totalPlans = result.data?.length || 0;
-        const activePlans = result.data?.filter((plan: MembershipPlan) => plan.status === 'active').length || 0;
-        const inactivePlans = result.data?.filter((plan: MembershipPlan) => plan.status === 'inactive').length || 0;
+        setMemberships(fetchedData);
+        const totalPlans = fetchedData.length || 0;
+        const activePlans = fetchedData.filter((plan: MembershipPlan) => plan.status === 'active').length || 0;
+        const inactivePlans = fetchedData.filter((plan: MembershipPlan) => plan.status === 'inactive').length || 0;
         setStats({ totalPlans, activePlans, inactivePlans });
       } else {
-        throw new Error(result.error || 'Failed to load memberships');
+        throw new Error(result.error || result.details?.[0]?.message || 'Failed to load memberships');
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
@@ -139,7 +143,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
         setCreateDialogOpen(false);
         await loadMemberships();
       } else {
-        throw new Error(result.error || 'Failed to create membership plan');
+        throw new Error(result.error || result.details?.[0]?.message || 'Failed to create membership plan');
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to create membership plan';
@@ -273,14 +277,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
             Membership Plans
           </Typography>
           <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button
-              variant="outlined"
-              startIcon={<RefreshIcon />}
-              onClick={loadMemberships}
-              disabled={loading}
-            >
-              Refresh
-            </Button>
+            {/* Removed the Refresh Button as per your request */}
             <Button
               variant="contained"
               startIcon={<AddIcon />}
@@ -404,7 +401,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
                         </Typography>
                         {membership.description && (
                           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                            {membership.description.length > 50 
+                            {membership.description.length > 50
                               ? `${membership.description.substring(0, 50)}...`
                               : membership.description
                             }
@@ -517,43 +514,24 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
           membership={selectedMembership}
         />
 
-        {/* Delete Confirmation Dialog */}
-        <Dialog
+        {/* Delete Confirmation Dialog - using custom component */}
+        <DeleteConfirmationDialog
           open={deleteDialogOpen}
           onClose={() => {
             setDeleteDialogOpen(false);
             setSelectedMembership(null);
           }}
-          maxWidth="sm"
-          fullWidth
-        >
-          <DialogTitle>Delete Membership Plan</DialogTitle>
-          <DialogContent>
-            <Typography>
-              Are you sure you want to delete "{selectedMembership?.name}"? This action cannot be undone.
-            </Typography>
-          </DialogContent>
-          <DialogActions>
-            <Button
-              onClick={() => {
-                setDeleteDialogOpen(false);
-                setSelectedMembership(null);
-              }}
-              disabled={submitLoading}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleDeleteMembership}
-              color="error"
-              variant="contained"
-              disabled={submitLoading}
-              startIcon={submitLoading ? <CircularProgress size={20} color="inherit" /> : <DeleteIcon />}
-            >
-              {submitLoading ? 'Deleting...' : 'Delete'}
-            </Button>
-          </DialogActions>
-        </Dialog>
+          onConfirm={handleDeleteMembership}
+          title="Confirm Deletion"
+          itemName={selectedMembership?.name || ''}
+          itemType="membership plan"
+          loading={submitLoading}
+          warningMessage="This action will permanently delete the membership plan."
+          additionalInfo={[
+            { label: 'Price', value: formatCurrency(selectedMembership?.price || 0, selectedMembership?.currency || 'USD') },
+            { label: 'Duration', value: formatDuration(selectedMembership?.durationValue || 0, selectedMembership?.durationType || 'months') },
+          ]}
+        />
 
         {/* Success Snackbar */}
         <Snackbar
@@ -562,9 +540,9 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
           onClose={() => setSuccessMessage(null)}
           anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         >
-          <Alert 
-            onClose={() => setSuccessMessage(null)} 
-            severity="success" 
+          <Alert
+            onClose={() => setSuccessMessage(null)}
+            severity="success"
             sx={{ width: '100%' }}
           >
             {successMessage}

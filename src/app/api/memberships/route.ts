@@ -1,15 +1,18 @@
-// src/app/api/memberships/route.ts - Complete and Secure API Route
+// src/app/api/memberships/route.ts - Secure and Unified API Route
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth, adminDb } from '@/app/lib/firebase/admin';
-import { MembershipPlan, MembershipPlanFormData } from '@/app/types/membership';
+import { adminDb } from '@/app/lib/firebase/admin';
+import { MembershipPlan } from '@/app/types/membership';
 import { z } from 'zod';
-import { getSession } from '@/app/lib/auth/session';
+import { requireAdmin, RequestContext } from '@/app/lib/api/middleware';
+import { createdResponse, successResponse, errorResponse } from '@/app/lib/api/response-utils';
+import { MembershipPlanFormData } from '@/app/types/membership';
 
-// Validation schema
+// Validation schema - NOW ALIGNED WITH FRONTEND
 const membershipPlanSchema = z.object({
   name: z.string().min(3).max(100),
   description: z.string().optional(),
-  duration: z.enum(['1_week', '1_month', '3_months', '6_months', '1_year', '18_months', '2_years']),
+  durationValue: z.number().int().positive(),
+  durationType: z.enum(['days', 'weeks', 'months', 'years']),
   price: z.number().min(0.01).max(10000),
   currency: z.string().length(3).default('USD'),
   classTypes: z.array(z.enum(['mma', 'bjj', 'boxing', 'muay_thai', 'kickboxing', 'wrestling', 'judo', 'fitness', 'yoga', 'all_access'])).min(1),
@@ -18,98 +21,52 @@ const membershipPlanSchema = z.object({
   isUnlimited: z.boolean().default(false),
 });
 
-// Authentication helper
-async function verifyAdminPermission(request: NextRequest) {
-  try {
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      return null;
-    }
-
-    const token = authHeader.substring(7);
-    const decodedToken = await adminAuth.verifyIdToken(token);
-    
-    const userDoc = await adminDb.collection('staff').doc(decodedToken.uid).get();
-    
-    if (!userDoc.exists) {
-      return null;
-    }
-
-    const userData = userDoc.data();
-    if (!userData || userData.role !== 'admin' || !userData.isActive) {
-      return null;
-    }
-
-    return {
-      uid: decodedToken.uid,
-      role: userData.role,
-      email: userData.email,
-      fullName: userData.fullName,
-    };
-  } catch (error) {
-    return null;
-  }
-}
-
 // GET /api/memberships - Get all membership plans
-export async function GET(request: NextRequest) {
+export const GET = requireAdmin(async (request: NextRequest) => {
   try {
-    const session = await getSession(request);
-    if (!session || session.role !== 'admin' || !session.isActive) {
-      return NextResponse.json(
-        { error: 'Unauthorized - Admin access required' },
-        { status: 401 }
-      );
-    }
+    const url = new URL(request.url);
+    const search = url.searchParams.get('search');
 
-    // Direkt Firestore'dan data çek
-    const plansQuery = adminDb.collection('membershipPlans').orderBy('createdAt', 'desc')
-    const plansSnapshot = await plansQuery.get();
-    let plans: { id: string; }[] = [];
+    let query = adminDb.collection('membershipPlans').orderBy('createdAt', 'desc');
+    const snapshot = await query.get();
 
-    plansSnapshot.forEach(doc => {
+    let plans: any[] = [];
+    snapshot.forEach(doc => {
+      const data = doc.data();
       plans.push({
         id: doc.id,
-        ...doc.data(),
+        ...data,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+        updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
       });
     });
 
-    return NextResponse.json({
-      success: true,
-      data: plans,
-      total: plans.length
-    });
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: 'Failed to fetch memberships', details: error.message },
-      { status: 500 }
-    );
-  }
-}
-
-// POST /api/memberships - Create new membership plan
-export async function POST(request: NextRequest) {
-  try {
-    const session = await verifyAdminPermission(request);
-    if (!session) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized - Admin access required' },
-        { status: 401 }
+    // Apply search filtering (client-side for full text)
+    if (search) {
+      const searchLower = search.toLowerCase();
+      plans = plans.filter(plan =>
+        plan.name.toLowerCase().includes(searchLower) ||
+        plan.description?.toLowerCase().includes(searchLower) ||
+        plan.classTypes.some((type: string) => type.toLowerCase().includes(searchLower))
       );
     }
 
+    // FIXED: Return the array directly under the 'data' key, not nested.
+    return successResponse(plans, `Successfully fetched ${plans.length} membership plans.`);
+  } catch (err: any) {
+    console.error('Failed to fetch memberships:', err);
+    return errorResponse('Failed to fetch memberships', 500);
+  }
+});
+
+// POST /api/memberships - Create new membership plan
+export const POST = requireAdmin(async (request: NextRequest, context: RequestContext) => {
+  try {
     const body = await request.json();
     const validation = membershipPlanSchema.safeParse(body);
 
     if (!validation.success) {
-      return NextResponse.json(
-        { 
-          success: false,
-          error: 'Validation failed', 
-          details: validation.error.issues 
-        },
-        { status: 400 }
-      );
+      return errorResponse('Validation failed', 400, { validationErrors: validation.error.issues });
     }
 
     const planData = validation.data;
@@ -121,10 +78,7 @@ export async function POST(request: NextRequest) {
       .get();
 
     if (!existingPlan.empty) {
-      return NextResponse.json(
-        { success: false, error: 'A membership plan with this name already exists' },
-        { status: 409 }
-      );
+      return errorResponse('A membership plan with this name already exists', 409);
     }
 
     // Create the membership plan
@@ -132,11 +86,11 @@ export async function POST(request: NextRequest) {
       ...planData,
       createdAt: new Date(),
       updatedAt: new Date(),
-      createdBy: session.uid,
+      createdBy: context.session.uid,
     };
 
     const docRef = await adminDb.collection('membershipPlans').add(newPlan);
-    
+
     // Get the created plan
     const createdDoc = await docRef.get();
     const createdPlan: MembershipPlan = {
@@ -146,16 +100,9 @@ export async function POST(request: NextRequest) {
       updatedAt: createdDoc.data()?.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
     } as MembershipPlan;
 
-    return NextResponse.json({
-      success: true,
-      data: createdPlan,
-      message: 'Membership plan created successfully'
-    }, { status: 201 });
-
-  } catch (error) {
-    return NextResponse.json(
-      { success: false, error: 'Failed to create membership plan' },
-      { status: 500 }
-    );
+    return createdResponse(createdPlan, 'Membership plan created successfully');
+  } catch (err) {
+    console.error('Failed to create membership plan:', err);
+    return errorResponse('Failed to create membership plan', 500);
   }
-}
+});

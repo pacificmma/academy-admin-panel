@@ -33,7 +33,7 @@ import {
   DurationType,
   MembershipStatus,
   DURATION_TYPES,
-  DEFAULT_CLASS_TYPES,
+  CLASS_TYPE_OPTIONS, // Değiştirildi: DEFAULT_CLASS_TYPES yerine
   CURRENCIES,
   MEMBERSHIP_STATUSES,
   formatDuration,
@@ -79,6 +79,7 @@ export default function MembershipFormDialog({
           durationValue: membership.durationValue,
           durationType: membership.durationType,
           price: membership.price,
+          // EDIT DÜZELTME: classTypes'ı doğru formata dönüştür
           classTypes: membership.classTypes,
           status: membership.status,
           currency: membership.currency || 'USD',
@@ -289,18 +290,27 @@ export default function MembershipFormDialog({
                 <Autocomplete
                   multiple
                   freeSolo
-                  options={DEFAULT_CLASS_TYPES}
-                  value={formData.classTypes}
+                  options={CLASS_TYPE_OPTIONS}
+                  getOptionLabel={(option) => typeof option === 'string' ? option : option.label}
+                  value={
+                    formData.classTypes.map(value =>
+                      CLASS_TYPE_OPTIONS.find(opt => opt.value === value) || value
+                    )
+                  }
                   onChange={(_, newValue) => {
-                    handleInputChange('classTypes', newValue);
+                    // MAPPING: Convert selected objects back to their string values
+                    const mappedValues = newValue.map(option => 
+                      typeof option === 'string' ? option : option.value
+                    );
+                    handleInputChange('classTypes', mappedValues);
                   }}
                   disabled={loading}
                   renderTags={(value, getTagProps) =>
                     value.map((option, index) => (
                       <Chip
                         {...getTagProps({ index })}
-                        key={option}
-                        label={option}
+                        key={typeof option === 'string' ? option : option.value}
+                        label={typeof option === 'string' ? option : option.label}
                         sx={{
                           bgcolor: 'primary.main',
                           color: 'white',

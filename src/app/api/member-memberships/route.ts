@@ -1,14 +1,10 @@
 // src/app/api/member-memberships/route.ts - Fixed Member membership management API
-
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { adminAuth, adminDb } from '@/app/lib/firebase/admin';
-import { PERMISSIONS } from '@/app/lib/api/permissions';
-import { 
-  MemberMembership, 
-  CreateMemberMembershipRequest,
-  MemberMembershipFilters 
-} from '@/app/types/membership';
+import { adminDb } from '@/app/lib/firebase/admin';
+import { createdResponse, successResponse, errorResponse, notFoundResponse, badRequestResponse } from '@/app/lib/api/response-utils';
+import { requireStaff, RequestContext } from '@/app/lib/api/middleware';
+import { MemberMembership, MemberMembershipFilters, DurationType } from '@/app/types/membership';
 
 // Validation schema for creating member memberships
 const createMemberMembershipSchema = z.object({
@@ -20,86 +16,11 @@ const createMemberMembershipSchema = z.object({
   paymentReference: z.string().optional(),
 });
 
-// Interface for authenticated user
-interface AuthenticatedUser {
-  uid: string;
-  role: string;
-  email: string;
-  fullName: string;
-  isActive: boolean;
-}
-
-// Utility function to verify admin permission
-async function verifyMembershipPermission(request: NextRequest, operation: 'read' | 'create' | 'update' | 'delete'): Promise<AuthenticatedUser | null> {
-  try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '');
-    if (!token) {
-      return null;
-    }
-
-    const decodedToken = await adminAuth.verifyIdToken(token);
-    const userDoc = await adminDb.collection('staff').doc(decodedToken.uid).get();
-    
-    if (!userDoc.exists) {
-      return null;
-    }
-
-    const userData = userDoc.data();
-    
-    // FIXED: Check if userData exists before accessing properties
-    if (!userData) {
-      return null;
-    }
-    
-    // Check permissions based on operation
-    let hasPermission = false;
-    switch (operation) {
-      case 'read':
-        hasPermission = PERMISSIONS.members.read.includes(userData.role) || 
-                       PERMISSIONS.members.viewBasicInfo.includes(userData.role);
-        break;
-      case 'create':
-        hasPermission = PERMISSIONS.members.create.includes(userData.role);
-        break;
-      case 'update':
-        hasPermission = PERMISSIONS.members.update.includes(userData.role);
-        break;
-      case 'delete':
-        hasPermission = PERMISSIONS.members.delete.includes(userData.role);
-        break;
-    }
-
-    if (!hasPermission) {
-      return null;
-    }
-
-    // FIXED: Properly type the return object and ensure userData exists
-    return {
-      uid: decodedToken.uid,
-      role: userData.role,
-      email: userData.email,
-      fullName: userData.fullName,
-      isActive: userData.isActive
-    };
-  } catch (error) {
-    return null;
-  }
-}
-
 // GET /api/member-memberships - List member memberships with filtering
-export async function GET(request: NextRequest) {
+export const GET = requireStaff(async (request: NextRequest) => {
   try {
-    const user = await verifyMembershipPermission(request, 'read');
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
     const url = new URL(request.url);
     
-    // FIXED: Only include properties that exist in MemberMembershipFilters type
     const filters: MemberMembershipFilters = {
       memberId: url.searchParams.get('memberId') || undefined,
       membershipPlanId: url.searchParams.get('membershipPlanId') || undefined,
@@ -112,7 +33,7 @@ export async function GET(request: NextRequest) {
       searchTerm: url.searchParams.get('search') || undefined,
     };
 
-    let query = adminDb.collection('memberMemberships').orderBy('createdAt', 'desc');
+    let query: any = adminDb.collection('memberMemberships').orderBy('createdAt', 'desc');
 
     // Apply filters
     if (filters.memberId) {
@@ -131,7 +52,7 @@ export async function GET(request: NextRequest) {
     const snapshot = await query.get();
     let memberMemberships: MemberMembership[] = [];
 
-    snapshot.forEach(doc => {
+    snapshot.forEach((doc: { data: () => any; id: any; }) => {
       const data = doc.data();
       memberMemberships.push({
         id: doc.id,
@@ -176,115 +97,78 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({
-      success: true,
+    return successResponse({
       data: memberMemberships,
       total: memberMemberships.length
     });
 
-  } catch (error) {
-    return NextResponse.json(
-      { error: 'Failed to fetch member memberships', details: error },
-      { status: 500 }
-    );
+  } catch (err) {
+    return errorResponse('Failed to fetch member memberships', 500, { details: err });
   }
-}
+});
 
 // POST /api/member-memberships - Create new member membership
-export async function POST(request: NextRequest) {
+export const POST = requireStaff(async (request: NextRequest, context: RequestContext) => {
   try {
-    const user = await verifyMembershipPermission(request, 'create');
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
     const body = await request.json();
     const validation = createMemberMembershipSchema.safeParse(body);
 
     if (!validation.success) {
-      return NextResponse.json(
-        { 
-          error: 'Validation failed', 
-          details: validation.error.issues 
-        },
-        { status: 400 }
-      );
+      return errorResponse('Validation failed', 400, { validationErrors: validation.error.issues });
     }
 
+    const user = context.session;
+    
     // Verify that the member exists
     const memberDoc = await adminDb.collection('members').doc(validation.data.memberId).get();
     if (!memberDoc.exists) {
-      return NextResponse.json(
-        { error: 'Member not found' },
-        { status: 404 }
-      );
+      return notFoundResponse('Member');
     }
 
     // Verify that the membership plan exists and is active
     const planDoc = await adminDb.collection('membershipPlans').doc(validation.data.membershipPlanId).get();
     if (!planDoc.exists) {
-      return NextResponse.json(
-        { error: 'Membership plan not found' },
-        { status: 404 }
-      );
+      return notFoundResponse('Membership plan');
     }
 
     const planData = planDoc.data();
     if (!planData || planData.status !== 'active') {
-      return NextResponse.json(
-        { error: 'Membership plan is not active' },
-        { status: 400 }
-      );
+      return badRequestResponse('Membership plan is not active');
     }
 
-    // Calculate end date based on plan duration
+    // Calculate end date based on plan duration - NOW ALIGNED WITH FRONTEND TYPES
     const startDate = new Date(validation.data.startDate);
     const endDate = new Date(startDate);
     
-    // Add duration based on plan duration type
-    switch (planData.duration) {
-      case '1_week':
-        endDate.setDate(endDate.getDate() + 7);
+    const durationType = planData.durationType as DurationType;
+    const durationValue = planData.durationValue as number;
+
+    switch (durationType) {
+      case 'weeks':
+        endDate.setDate(endDate.getDate() + durationValue * 7);
         break;
-      case '1_month':
-        endDate.setMonth(endDate.getMonth() + 1);
+      case 'months':
+        endDate.setMonth(endDate.getMonth() + durationValue);
         break;
-      case '3_months':
-        endDate.setMonth(endDate.getMonth() + 3);
+      case 'years':
+        endDate.setFullYear(endDate.getFullYear() + durationValue);
         break;
-      case '6_months':
-        endDate.setMonth(endDate.getMonth() + 6);
+      case 'days':
+        endDate.setDate(endDate.getDate() + durationValue);
         break;
-      case '1_year':
-        endDate.setFullYear(endDate.getFullYear() + 1);
-        break;
-      case '18_months':
-        endDate.setMonth(endDate.getMonth() + 18);
-        break;
-      case '2_years':
-        endDate.setFullYear(endDate.getFullYear() + 2);
-        break;
-      default:
-        endDate.setMonth(endDate.getMonth() + 1);
     }
 
     // Check if member already has an active membership
     const existingMemberships = await adminDb.collection('memberMemberships')
       .where('memberId', '==', validation.data.memberId)
-      .where('status', '==', 'active')
+      .where('status', 'in', ['active', 'pending'])
       .get();
 
     if (!existingMemberships.empty) {
-      return NextResponse.json(
-        { error: 'Member already has an active membership' },
-        { status: 409 }
-      );
+      return errorResponse('Member already has an active membership', 409);
     }
 
-    // FIXED: Create membership data with proper typing and only existing properties
+    // Create membership data with proper typing
     const membershipData: Omit<MemberMembership, 'id'> = {
       memberId: validation.data.memberId,
       membershipPlanId: validation.data.membershipPlanId,
@@ -311,16 +195,9 @@ export async function POST(request: NextRequest) {
       ...membershipData
     };
 
-    return NextResponse.json({
-      success: true,
-      data: newMembership,
-      message: 'Member membership created successfully'
-    }, { status: 201 });
+    return createdResponse(newMembership, 'Member membership created successfully');
 
-  } catch (error) {
-    return NextResponse.json(
-      { error: 'Failed to create member membership', details: error },
-      { status: 500 }
-    );
+  } catch (err) {
+    return errorResponse('Failed to create member membership', 500, { details: err });
   }
-}
+});
