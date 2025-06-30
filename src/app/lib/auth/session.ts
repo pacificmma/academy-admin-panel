@@ -1,4 +1,4 @@
-// src/app/lib/auth/session.ts - SECURE SESSION MANAGEMENT
+// src/app/lib/auth/session.ts - SECURE SESSION MANAGEMENT (FIXED)
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 import { adminDb } from '@/app/lib/firebase/admin';
@@ -20,6 +20,7 @@ const SESSION_CONFIG = {
   maxAge: 24 * 60 * 60 * 1000, // 24 hours
   refreshThreshold: 2 * 60 * 60 * 1000, // 2 hours
   absoluteTimeout: 7 * 24 * 60 * 60 * 1000, // 7 days max
+  cookieName: 'session-token', // FIXED: Consistent cookie name
 };
 
 // Get JWT secret with validation
@@ -82,18 +83,20 @@ export async function verifySession(token: string): Promise<SessionData | null> 
       return null;
     }
 
-    // Verify user still exists and is active (for critical operations)
+    // For critical operations, verify user still exists and is active
     try {
       const staffDoc = await adminDb.collection('staff').doc(decoded.uid).get();
       if (!staffDoc.exists || !staffDoc.data()?.isActive) {
         return null;
       }
     } catch (error) {
+      console.error('Session verification DB error:', error);
       return null;
     }
 
     return decoded;
   } catch (error) {
+    console.error('JWT verification failed:', error);
     return null;
   }
 }
@@ -127,7 +130,7 @@ export async function refreshSession(currentSession: SessionData): Promise<strin
 export function setSessionCookie(response: NextResponse, token: string): void {
   const isProduction = process.env.NODE_ENV === 'production';
   
-  response.cookies.set('session-token', token, {
+  response.cookies.set(SESSION_CONFIG.cookieName, token, {
     httpOnly: true,
     secure: isProduction,
     sameSite: 'strict',
@@ -139,12 +142,12 @@ export function setSessionCookie(response: NextResponse, token: string): void {
 
 // Clear session cookie
 export function clearSessionCookie(response: NextResponse): void {
-  response.cookies.delete('session-token');
+  response.cookies.delete(SESSION_CONFIG.cookieName);
 }
 
 // Get session from request
 export async function getSession(request: NextRequest): Promise<SessionData | null> {
-  const token = request.cookies.get('session-token')?.value;
+  const token = request.cookies.get(SESSION_CONFIG.cookieName)?.value;
   
   if (!token) {
     return null;
@@ -153,18 +156,37 @@ export async function getSession(request: NextRequest): Promise<SessionData | nu
   return await verifySession(token);
 }
 
-// Middleware helper for role-based access
-export function requireRole(allowedRoles: UserRole[]) {
-  return async (request: NextRequest): Promise<{ allowed: boolean; session: SessionData | null }> => {
-    const session = await getSession(request);
-    
-    if (!session) {
-      return { allowed: false, session: null };
+// Update session activity (for session endpoint)
+export async function updateSessionActivity(sessionData: SessionData): Promise<string | null> {
+  const now = Date.now();
+  
+  // Check if refresh is needed
+  if (shouldRefreshSession(sessionData)) {
+    try {
+      return await refreshSession(sessionData);
+    } catch (error) {
+      console.error('Session refresh failed:', error);
+      return null;
     }
+  }
 
-    const hasPermission = allowedRoles.includes(session.role);
-    return { allowed: hasPermission, session };
+  // Update activity timestamp even if not refreshing
+  const updatedSession: SessionData = {
+    ...sessionData,
+    lastActivity: now,
   };
+
+  try {
+    return jwt.sign(updatedSession, getJWTSecret(), {
+      algorithm: 'HS256',
+      expiresIn: '24h',
+      issuer: 'pacific-mma-admin',
+      audience: 'pacific-mma-admin-users',
+    });
+  } catch (error) {
+    console.error('Session activity update failed:', error);
+    return null;
+  }
 }
 
 // Secure session validation for API routes
@@ -179,12 +201,17 @@ export async function validateAPIAccess(
       return { success: false, session: null, error: 'Authentication required' };
     }
 
+    if (!session.isActive) {
+      return { success: false, session: null, error: 'Account deactivated' };
+    }
+
     if (requiredRoles.length > 0 && !requiredRoles.includes(session.role)) {
       return { success: false, session, error: 'Insufficient permissions' };
     }
 
     return { success: true, session };
   } catch (error) {
+    console.error('API access validation failed:', error);
     return { success: false, session: null, error: 'Session validation failed' };
   }
 }

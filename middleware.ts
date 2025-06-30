@@ -1,9 +1,9 @@
-// middleware.ts - Enhanced Security with API Protection
+// middleware.ts - Enhanced Security with Consistent Session Management (FIXED)
 import { getSession } from '@/app/lib/auth/session';
 import { UserRole } from '@/app/types';
 import { NextRequest, NextResponse } from 'next/server';
 
-// Rate limiting store (will be replaced with Vercel KV)
+// Rate limiting store (in production, use Redis or Vercel KV)
 const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
 
 // Protected page routes configuration
@@ -47,20 +47,22 @@ const API_PERMISSIONS: Record<string, { methods: Record<string, UserRole[]> }> =
     methods: {
       'GET': ['admin', 'trainer', 'staff'],
       'POST': ['admin'],
-      'PUT': ['admin', 'trainer'], // trainer sadece assigned classes
+      'PUT': ['admin', 'trainer'],
       'DELETE': ['admin'],
     }
   },
   '/api/my-classes': {
     methods: {
       'GET': ['trainer', 'staff'],
-      'PUT': ['trainer'], // sadece kendi dersleri
+      'PUT': ['trainer'],
     }
   },
-  '/api/payments': {
+  '/api/discounts': {
     methods: {
       'GET': ['admin'],
-      'POST': ['admin'], // webhook için özel handling gerekli
+      'POST': ['admin'],
+      'PUT': ['admin'],
+      'DELETE': ['admin'],
     }
   },
 };
@@ -78,6 +80,46 @@ const RATE_LIMIT = {
   loginMaxRequests: process.env.NODE_ENV === 'production' ? 5 : 50,
   apiMaxRequests: process.env.NODE_ENV === 'production' ? 200 : 2000,
 };
+
+// Get client IP address
+function getClientIP(request: NextRequest): string {
+  const forwarded = request.headers.get('x-forwarded-for');
+  const real = request.headers.get('x-real-ip');
+  return forwarded?.split(',')[0] || real || 'unknown';
+}
+
+// Get rate limit based on route type
+function getRateLimit(pathname: string): number {
+  if (pathname === '/login') return RATE_LIMIT.loginMaxRequests;
+  if (pathname.startsWith('/api/')) return RATE_LIMIT.apiMaxRequests;
+  return RATE_LIMIT.maxRequests;
+}
+
+// Rate limiting check
+function checkRateLimit(request: NextRequest): { allowed: boolean; resetTime: number } {
+  const ip = getClientIP(request);
+  const pathname = request.nextUrl.pathname;
+  const maxRequests = getRateLimit(pathname);
+  
+  const now = Date.now();
+  const windowStart = now - RATE_LIMIT.windowMs;
+  const key = `${ip}-${pathname.startsWith('/api/') ? 'api' : pathname === '/login' ? 'login' : 'page'}`;
+  
+  let requestInfo = rateLimitStore.get(key);
+  
+  if (!requestInfo || requestInfo.resetTime <= windowStart) {
+    requestInfo = { count: 1, resetTime: now + RATE_LIMIT.windowMs };
+    rateLimitStore.set(key, requestInfo);
+    return { allowed: true, resetTime: requestInfo.resetTime };
+  }
+  
+  if (requestInfo.count >= maxRequests) {
+    return { allowed: false, resetTime: requestInfo.resetTime };
+  }
+  
+  requestInfo.count++;
+  return { allowed: true, resetTime: requestInfo.resetTime };
+}
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -165,6 +207,7 @@ async function handleApiRoute(request: NextRequest): Promise<NextResponse> {
       )
     );
   }
+
   return addCorsHeaders(addSecurityHeaders(NextResponse.next()));
 }
 
@@ -196,7 +239,8 @@ async function handlePageRoute(request: NextRequest): Promise<NextResponse> {
 
   if (!session.isActive) {
     const response = NextResponse.redirect(new URL('/login', request.url));
-    response.cookies.delete('pacific-mma-session');
+    // FIXED: Use consistent cookie name
+    response.cookies.delete('session-token');
     return addSecurityHeaders(response);
   }
 
@@ -217,6 +261,7 @@ async function handlePageRoute(request: NextRequest): Promise<NextResponse> {
     const redirectTo = session.role === 'admin' ? '/dashboard' : '/classes';
     return addSecurityHeaders(NextResponse.redirect(new URL(redirectTo, request.url)));
   }
+
   return addSecurityHeaders(NextResponse.next());
 }
 
@@ -313,59 +358,15 @@ function addSecurityHeaders(response: NextResponse): NextResponse {
   return response;
 }
 
-// Get rate limit based on route type
-function getRateLimit(pathname: string): number {
-  if (pathname === '/login') return RATE_LIMIT.loginMaxRequests;
-  if (pathname.startsWith('/api/')) return RATE_LIMIT.apiMaxRequests;
-  return RATE_LIMIT.maxRequests;
-}
-
-// Rate limiting check
-function checkRateLimit(request: NextRequest): { allowed: boolean; resetTime: number } {
-  const ip = getClientIP(request);
-  const pathname = request.nextUrl.pathname;
-  const maxRequests = getRateLimit(pathname);
-  
-  const now = Date.now();
-  const key = `${ip}-${pathname.startsWith('/api/') ? 'api' : pathname === '/login' ? 'login' : 'general'}`;
-  const current = rateLimitStore.get(key);
-  
-  if (!current || current.resetTime < now) {
-    rateLimitStore.set(key, { count: 1, resetTime: now + RATE_LIMIT.windowMs });
-    return { allowed: true, resetTime: now + RATE_LIMIT.windowMs };
-  }
-  
-  if (current.count >= maxRequests) {
-    return { allowed: false, resetTime: current.resetTime };
-  }
-  
-  current.count++;
-  return { allowed: true, resetTime: current.resetTime };
-}
-
-// Get client IP address
-function getClientIP(request: NextRequest): string {
-  const xForwardedFor = request.headers.get('x-forwarded-for');
-  const xRealIp = request.headers.get('x-real-ip');
-  const xClientIp = request.headers.get('x-client-ip');
-  
-  if (xForwardedFor) {
-    return xForwardedFor.split(',')[0].trim();
-  }
-  
-  return xRealIp || xClientIp || 'unknown';
-}
-
-
 export const config = {
   matcher: [
     /*
      * Match all request paths except for the ones starting with:
+     * - api (API routes)
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * - public folder files
      */
-    '/((?!_next/static|_next/image|favicon.ico|public).*)',
+    '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
 };

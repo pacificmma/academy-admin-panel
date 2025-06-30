@@ -1,4 +1,4 @@
-// src/app/types/auth.ts - Authentication related types
+// src/app/types/auth.ts - Authentication related types (UPDATED)
 
 export type UserRole = 'admin' | 'trainer' | 'staff';
 
@@ -8,6 +8,9 @@ export interface SessionData {
   role: UserRole;
   fullName: string;
   isActive: boolean;
+  createdAt: number;
+  expiresAt: number;
+  lastActivity: number;
 }
 
 export interface LoginCredentials {
@@ -23,6 +26,9 @@ export interface AuthUser {
   isActive: boolean;
   createdAt: string;
   updatedAt?: string;
+  lastLoginAt?: string;
+  lastLoginIP?: string;
+  lastLoginUserAgent?: string;
 }
 
 export interface PermissionCheck {
@@ -31,11 +37,47 @@ export interface PermissionCheck {
 }
 
 export interface AuthContextType {
-  user: any | null;
+  user: AuthUser | null;
   sessionData: SessionData | null;
   loading: boolean;
   logout: () => Promise<void>;
-  protectSession: () => void;
-  unprotectSession: () => void;
   refreshSession: () => Promise<void>;
+}
+
+// API Response interfaces
+export interface LoginResponse {
+  success: boolean;
+  data?: {
+    user: Omit<SessionData, 'createdAt' | 'expiresAt' | 'lastActivity'>;
+    redirectTo: string;
+  };
+  message?: string;
+  error?: string;
+}
+
+export interface SessionResponse {
+  success: boolean;
+  session?: Omit<SessionData, 'createdAt' | 'expiresAt' | 'lastActivity'>;
+  error?: string;
+}
+
+export interface LogoutResponse {
+  success: boolean;
+  message: string;
+}
+
+// Security interfaces
+export interface RateLimitInfo {
+  allowed: boolean;
+  resetTime: number;
+  remainingRequests?: number;
+}
+
+export interface SecurityEvent {
+  type: 'login_failed' | 'login_success' | 'session_expired' | 'unauthorized_access';
+  ip: string;
+  userAgent?: string;
+  email?: string;
+  timestamp: string;
+  details?: Record<string, any>;
 }

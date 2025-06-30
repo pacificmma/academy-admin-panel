@@ -41,12 +41,6 @@ function getClientIP(request: NextRequest): string {
   return xRealIp || xClientIp || 'unknown';
 }
 
-// Simple rate limiting check
-function checkRateLimit(ip: string, maxRequests: number = 10, windowMs: number = 15 * 60 * 1000): boolean {
-  // In production, use Redis or proper rate limiting service
-  return true; // Simplified for now - rate limiting is handled by middleware
-}
-
 // Input validation function
 function validateLoginInput(body: any): ValidationResult {
   const errors: string[] = [];
@@ -162,7 +156,11 @@ function recordFailedAttempt(ip: string, reason: string, details?: any) {
 
   // Log security event (in production, send to logging service)
   if (process.env.NODE_ENV === 'development') {
-    console.warn(`Failed login attempt: ${reason}`, { ip, details, timestamp: new Date().toISOString() });
+    console.warn(`Failed login attempt: ${reason}`, { 
+      ip, 
+      details, 
+      timestamp: new Date().toISOString() 
+    });
   }
 }
 
@@ -188,34 +186,39 @@ function getAuthErrorMessage(errorCode: string): string {
   }
 }
 
+function addSecurityHeaders(response: NextResponse): NextResponse {
+  response.headers.set('X-Content-Type-Options', 'nosniff');
+  response.headers.set('X-Frame-Options', 'DENY');
+  response.headers.set('X-XSS-Protection', '1; mode=block');
+  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  
+  if (process.env.NODE_ENV === 'production') {
+    response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  
+  return response;
+}
+
 // ============================================
 // MAIN LOGIN ENDPOINT
 // ============================================
 
 export async function POST(request: NextRequest) {  
+  const clientIP = getClientIP(request);
+  const userAgent = request.headers.get('user-agent') || 'unknown';
+
   try {
-    // Get client IP for security tracking
-    const clientIP = getClientIP(request);
-    const userAgent = request.headers.get('user-agent') || 'unknown';
-
-    // Rate limiting
-    if (!checkRateLimit(clientIP, 10, 15 * 60 * 1000)) {
-      return NextResponse.json(
-        { success: false, error: 'Too many requests. Please try again later.' },
-        { status: 429 }
-      );
-    }
-
     // Check for account lockout
     const lockoutCheck = checkAccountLockout(clientIP);
     if (!lockoutCheck.allowed) {
-      return NextResponse.json(
+      const response = NextResponse.json(
         { 
           success: false, 
           error: `Account temporarily locked. Try again in ${Math.ceil(lockoutCheck.remainingTime / 60000)} minutes.` 
         },
         { status: 429 }
       );
+      return addSecurityHeaders(response);
     }
 
     // Parse and validate request body
@@ -224,20 +227,22 @@ export async function POST(request: NextRequest) {
       body = await request.json();
     } catch (parseError) {
       recordFailedAttempt(clientIP, 'invalid_request');
-      return NextResponse.json(
+      const response = NextResponse.json(
         { success: false, error: 'Invalid request format' },
         { status: 400 }
       );
+      return addSecurityHeaders(response);
     }
 
     // Validate and sanitize input
     const validation = validateLoginInput(body);
     if (!validation.isValid) {
       recordFailedAttempt(clientIP, 'invalid_input');
-      return NextResponse.json(
+      const response = NextResponse.json(
         { success: false, error: validation.errors[0] },
         { status: 400 }
       );
+      return addSecurityHeaders(response);
     }
 
     const { email, password } = validation.sanitizedData!;
@@ -253,10 +258,11 @@ export async function POST(request: NextRequest) {
         errorCode: authError.code 
       });
       
-      return NextResponse.json(
+      const response = NextResponse.json(
         { success: false, error: errorMessage },
         { status: 401 }
       );
+      return addSecurityHeaders(response);
     }
 
     const { user } = signInResult;
@@ -268,19 +274,21 @@ export async function POST(request: NextRequest) {
     } catch (dbError: any) {
       await auth.signOut();
       recordFailedAttempt(clientIP, 'db_error');
-      return NextResponse.json(
+      const response = NextResponse.json(
         { success: false, error: 'Database connection error' },
         { status: 500 }
       );
+      return addSecurityHeaders(response);
     }
 
     if (!staffDoc.exists) {
       await auth.signOut();
       recordFailedAttempt(clientIP, 'unauthorized_user', { email });
-      return NextResponse.json(
+      const response = NextResponse.json(
         { success: false, error: 'Access denied. Admin panel access required.' },
         { status: 403 }
       );
+      return addSecurityHeaders(response);
     }
 
     const staffData = staffDoc.data();
@@ -289,10 +297,11 @@ export async function POST(request: NextRequest) {
     if (!staffData?.isActive) {
       await auth.signOut();
       recordFailedAttempt(clientIP, 'inactive_user', { email });
-      return NextResponse.json(
+      const response = NextResponse.json(
         { success: false, error: 'Your account has been deactivated. Please contact your administrator.' },
         { status: 403 }
       );
+      return addSecurityHeaders(response);
     }
 
     // Create session data
@@ -310,10 +319,11 @@ export async function POST(request: NextRequest) {
       sessionToken = await createSession(sessionData);
     } catch (sessionError) {
       await auth.signOut();
-      return NextResponse.json(
+      const response = NextResponse.json(
         { success: false, error: 'Failed to create session' },
         { status: 500 }
       );
+      return addSecurityHeaders(response);
     }
 
     // Update last login timestamp
@@ -325,6 +335,7 @@ export async function POST(request: NextRequest) {
       });
     } catch (updateError) {
       // Non-critical error, continue with login
+      console.warn('Failed to update login timestamp:', updateError);
     }
 
     // Clear failed attempts on successful login
@@ -343,12 +354,39 @@ export async function POST(request: NextRequest) {
     // Set secure session cookie
     setSessionCookie(response, sessionToken);
 
-    return response;
+    return addSecurityHeaders(response);
 
   } catch (error: any) {
-    return NextResponse.json(
+    console.error('Login error:', {
+      error: error.message,
+      ip: clientIP,
+      timestamp: new Date().toISOString(),
+    });
+    
+    const response = NextResponse.json(
       { success: false, error: 'Internal server error' },
       { status: 500 }
     );
+    return addSecurityHeaders(response);
   }
+}
+
+// Handle OPTIONS for CORS
+export async function OPTIONS() {
+  const origin = process.env.NODE_ENV === 'production' 
+    ? process.env.NEXT_PUBLIC_APP_URL || 'https://your-domain.com'
+    : 'http://localhost:3000';
+
+  const response = new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Credentials': 'true',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Max-Age': '86400',
+    },
+  });
+
+  return addSecurityHeaders(response);
 }
