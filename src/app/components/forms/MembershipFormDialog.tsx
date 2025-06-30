@@ -1,94 +1,426 @@
-// src/app/components/forms/LoginForm.tsx - FIXED VERSION with AuthContext Integration
+// src/app/components/forms/MembershipFormDialog.tsx - Complete Membership Form Dialog Component
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { 
-  Box, 
-  TextField, 
-  Button, 
-  Typography, 
+import React, { useState, useEffect } from 'react';
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Chip,
+  Box,
+  Typography,
+  Grid,
   InputAdornment,
-  IconButton,
-  Collapse
+  FormHelperText,
+  Autocomplete,
 } from '@mui/material';
-import { 
-  Email as EmailIcon, 
-  Lock as LockIcon, 
-  Visibility, 
-  VisibilityOff,
-  Login as LoginIcon
+import {
+  Save as SaveIcon,
+  Close as CloseIcon,
+  AttachMoney as MoneyIcon,
 } from '@mui/icons-material';
-import { signInWithCustomToken } from 'firebase/auth';
-import { auth } from '@/app/lib/firebase/config';
-import Alert from '@/app/components/ui/Alert';
-import { useAuth } from '@/app/contexts/AuthContext';
-import { LoginCredentials } from '@/app/types';
+import {
+  MembershipPlan,
+  MembershipPlanFormData,
+  MembershipDuration,
+  ClassType,
+  MembershipStatus,
+  MEMBERSHIP_DURATIONS,
+  CLASS_TYPES,
+  MEMBERSHIP_STATUSES,
+} from '../../types/membership';
 
-export default function LoginForm() {
-  const router = useRouter();
-  const { refreshSession } = useAuth();
-  const [formData, setFormData] = useState<LoginCredentials>({
-    email: '',
-    password: '',
-  });
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
+interface MembershipFormDialogProps {
+  open: boolean;
+  onClose: () => void;
+  onSubmit: (data: MembershipPlanFormData) => Promise<void>;
+  membership?: MembershipPlan | null;
+  mode: 'create' | 'edit';
+}
 
-  const handleChange = (name: string, value: string) => {
+const DEFAULT_FORM_DATA: MembershipPlanFormData = {
+  name: '',
+  description: '',
+  duration: '1_month',
+  price: 0,
+  classTypes: [],
+  status: 'active',
+  currency: 'USD',
+};
+
+export default function MembershipFormDialog({
+  open,
+  onClose,
+  onSubmit,
+  membership,
+  mode,
+}: MembershipFormDialogProps): React.JSX.Element {
+  const [formData, setFormData] = useState<MembershipPlanFormData>(DEFAULT_FORM_DATA);
+  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Initialize form data when dialog opens or membership changes
+  useEffect(() => {
+    if (open) {
+      if (mode === 'edit' && membership) {
+        setFormData({
+          name: membership.name,
+          description: membership.description || '',
+          duration: membership.duration,
+          price: membership.price,
+          classTypes: membership.classTypes,
+          status: membership.status,
+          currency: membership.currency || 'USD',
+        });
+      } else {
+        setFormData(DEFAULT_FORM_DATA);
+      }
+      setErrors({});
+    }
+  }, [open, membership, mode]);
+
+  const handleInputChange = (field: keyof MembershipPlanFormData, value: any) => {
     setFormData(prev => ({
       ...prev,
-      [name]: value,
+      [field]: value,
     }));
-    // Clear error when user starts typing
-    if (error) setError(null);
+
+    // Clear error for this field
+    if (errors[field]) {
+      setErrors(prev => ({
+        ...prev,
+        [field]: '',
+      }));
+    }
+  };
+
+  const validateForm = (): boolean => {
+    const newErrors: Record<string, string> = {};
+
+    // Name validation
+    if (!formData.name.trim()) {
+      newErrors.name = 'Plan name is required';
+    } else if (formData.name.trim().length < 3) {
+      newErrors.name = 'Plan name must be at least 3 characters';
+    } else if (formData.name.trim().length > 100) {
+      newErrors.name = 'Plan name must be less than 100 characters';
+    }
+
+    // Price validation
+    if (formData.price <= 0) {
+      newErrors.price = 'Price must be greater than 0';
+    } else if (formData.price > 10000) {
+      newErrors.price = 'Price must be less than $10,000';
+    }
+
+    // Class types validation
+    if (formData.classTypes.length === 0) {
+      newErrors.classTypes = 'At least one class type must be selected';
+    }
+
+    // Description validation (optional but with limits)
+    if (formData.description && formData.description.length > 500) {
+      newErrors.description = 'Description must be less than 500 characters';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
-    setError(null);
+    
+    if (!validateForm()) {
+      return;
+    }
 
+    setLoading(true);
     try {
-      // Step 1: Call login API
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
-        credentials: 'include',
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Login failed');
-      }
-
-      if (result.success) {
-        // Step 2: Refresh the auth context to get the latest session
-        await refreshSession();
-        
-        // Step 3: Small delay to ensure auth state is updated
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        // Step 4: Redirect based on role
-        const redirectTo = result.data?.redirectTo || '/dashboard';
-        
-        // Use replace instead of push for login redirects
-        router.replace(redirectTo);
-        
-        // Force a page refresh to ensure all components get the new auth state
-        window.location.href = redirectTo;
-      }
-    } catch (err: any) {
-      setError(err.message || 'An error occurred during login');
+      await onSubmit(formData);
+      onClose();
+    } catch (error) {
+      // Error handling is done by parent component
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  const isFormValid = formData.email && formData.password && !isLoading;
+  const handleClose = () => {
+    if (!loading) {
+      onClose();
+    }
+  };
+
+  const getDurationLabel = (duration: MembershipDuration): string => {
+    const durationConfig = MEMBERSHIP_DURATIONS.find(d => d.value === duration);
+    return durationConfig?.label || duration;
+  };
+
+  const getClassTypeLabel = (classType: ClassType): string => {
+    const classConfig = CLASS_TYPES.find(c => c.value === classType);
+    return classConfig?.label || classType;
+  };
+
+  return (
+    <Dialog 
+      open={open} 
+      onClose={handleClose}
+      maxWidth="md"
+      fullWidth
+      PaperProps={{
+        sx: {
+          borderRadius: 2,
+          minHeight: '500px',
+        }
+      }}
+    >
+      <DialogTitle sx={{ 
+        pb: 1, 
+        fontSize: '1.5rem', 
+        fontWeight: 600,
+        borderBottom: '1px solid',
+        borderColor: 'divider',
+      }}>
+        {mode === 'create' ? 'Create New Membership Plan' : 'Edit Membership Plan'}
+      </DialogTitle>
+
+      <Box component="form" onSubmit={handleSubmit}>
+        <DialogContent sx={{ pt: 3 }}>
+          <Grid container spacing={3}>
+            {/* Plan Name */}
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Plan Name"
+                value={formData.name}
+                onChange={(e) => handleInputChange('name', e.target.value)}
+                error={!!errors.name}
+                helperText={errors.name || 'Enter a descriptive name for this membership plan'}
+                placeholder="e.g., 3 Month BJJ Membership"
+                required
+                disabled={loading}
+              />
+            </Grid>
+
+            {/* Description */}
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Description"
+                value={formData.description}
+                onChange={(e) => handleInputChange('description', e.target.value)}
+                error={!!errors.description}
+                helperText={errors.description || 'Optional description for this plan'}
+                placeholder="Describe what's included in this membership plan..."
+                multiline
+                rows={3}
+                disabled={loading}
+              />
+            </Grid>
+
+            {/* Duration and Price */}
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth error={!!errors.duration}>
+                <InputLabel>Duration</InputLabel>
+                <Select
+                  value={formData.duration}
+                  onChange={(e) => handleInputChange('duration', e.target.value as MembershipDuration)}
+                  label="Duration"
+                  disabled={loading}
+                >
+                  {MEMBERSHIP_DURATIONS.map((duration) => (
+                    <MenuItem key={duration.value} value={duration.value}>
+                      {duration.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+                {errors.duration && <FormHelperText>{errors.duration}</FormHelperText>}
+              </FormControl>
+            </Grid>
+
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Price"
+                type="number"
+                value={formData.price}
+                onChange={(e) => handleInputChange('price', parseFloat(e.target.value) || 0)}
+                error={!!errors.price}
+                helperText={errors.price || 'Monthly price in USD'}
+                placeholder="0.00"
+                required
+                disabled={loading}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <MoneyIcon />
+                    </InputAdornment>
+                  ),
+                  inputProps: {
+                    min: 0,
+                    step: 0.01,
+                  }
+                }}
+              />
+            </Grid>
+
+            {/* Class Types */}
+            <Grid item xs={12}>
+              <Autocomplete
+                multiple
+                options={CLASS_TYPES}
+                getOptionLabel={(option) => option.label}
+                value={CLASS_TYPES.filter(ct => formData.classTypes.includes(ct.value))}
+                onChange={(_, newValue) => {
+                  handleInputChange('classTypes', newValue.map(option => option.value));
+                }}
+                renderTags={(value, getTagProps) =>
+                  value.map((option, index) => (
+                    <Chip
+                      {...getTagProps({ index })}
+                      key={option.value}
+                      label={option.label}
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                    />
+                  ))
+                }
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Class Types"
+                    placeholder="Select class types included in this plan"
+                    error={!!errors.classTypes}
+                    helperText={errors.classTypes || 'Choose which class types are included'}
+                    required
+                  />
+                )}
+                disabled={loading}
+              />
+            </Grid>
+
+            {/* Status */}
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel>Status</InputLabel>
+                <Select
+                  value={formData.status}
+                  onChange={(e) => handleInputChange('status', e.target.value as MembershipStatus)}
+                  label="Status"
+                  disabled={loading}
+                >
+                  {MEMBERSHIP_STATUSES.map((status) => (
+                    <MenuItem key={status.value} value={status.value}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box
+                          sx={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            bgcolor: status.color,
+                          }}
+                        />
+                        {status.label}
+                      </Box>
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+
+            {/* Currency */}
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Currency"
+                value={formData.currency}
+                onChange={(e) => handleInputChange('currency', e.target.value)}
+                placeholder="USD"
+                disabled={loading}
+                helperText="Currency code (e.g., USD, EUR, GBP)"
+              />
+            </Grid>
+          </Grid>
+
+          {/* Preview Section */}
+          {formData.name && (
+            <Box sx={{ mt: 4, p: 3, bgcolor: 'grey.50', borderRadius: 2 }}>
+              <Typography variant="h6" gutterBottom color="primary">
+                Plan Preview
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <Typography variant="body1">
+                  <strong>Name:</strong> {formData.name}
+                </Typography>
+                <Typography variant="body1">
+                  <strong>Duration:</strong> {getDurationLabel(formData.duration)}
+                </Typography>
+                <Typography variant="body1">
+                  <strong>Price:</strong> ${formData.price.toFixed(2)} {formData.currency}
+                </Typography>
+                <Typography variant="body1">
+                  <strong>Class Types:</strong> {formData.classTypes.map(getClassTypeLabel).join(', ') || 'None selected'}
+                </Typography>
+                <Typography variant="body1">
+                  <strong>Status:</strong> {MEMBERSHIP_STATUSES.find(s => s.value === formData.status)?.label}
+                </Typography>
+              </Box>
+            </Box>
+          )}
+        </DialogContent>
+
+        <DialogActions sx={{ p: 3, borderTop: '1px solid', borderColor: 'divider' }}>
+          <Button
+            onClick={handleClose}
+            disabled={loading}
+            startIcon={<CloseIcon />}
+            sx={{ mr: 1 }}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            variant="contained"
+            disabled={loading}
+            startIcon={loading ? undefined : <SaveIcon />}
+            sx={{
+              bgcolor: '#0F5C6B',
+              '&:hover': { bgcolor: '#0a4a57' },
+              minWidth: 120,
+            }}
+          >
+            {loading ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box
+                  sx={{
+                    width: 16,
+                    height: 16,
+                    border: '2px solid #ffffff40',
+                    borderTop: '2px solid #ffffff',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite',
+                    '@keyframes spin': {
+                      '0%': { transform: 'rotate(0deg)' },
+                      '100%': { transform: 'rotate(360deg)' },
+                    },
+                  }}
+                />
+                Saving...
+              </Box>
+            ) : (
+              mode === 'create' ? 'Create Plan' : 'Update Plan'
+            )}
+          </Button>
+        </DialogActions>
+      </Box>
+    </Dialog>
+  );
 }

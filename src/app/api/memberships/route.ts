@@ -1,4 +1,4 @@
-// src/app/api/memberships/route.ts - FIXED WITH CONSISTENT AUTHENTICATION
+// src/app/api/memberships/route.ts - FIXED VERSION with correct validation
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/app/lib/firebase/admin';
 import { validateAPIAccess } from '@/app/lib/auth/session';
@@ -19,9 +19,13 @@ interface MembershipData {
   name?: string;
   description?: string;
   duration?: string;
+  durationInDays?: number;
   price?: number;
+  currency?: string;
   classTypes?: string[];
   status?: string;
+  displayOrder?: number;
+  memberCount?: number;
   [key: string]: any;
 }
 
@@ -56,6 +60,7 @@ function checkRateLimit(ip: string, maxRequests = 50, windowMs = 15 * 60 * 1000)
   return true;
 }
 
+// Updated validation function that matches our MembershipPlanFormData interface
 function validateMembershipInput(data: any): ValidationResult {
   const errors: string[] = [];
   
@@ -63,39 +68,55 @@ function validateMembershipInput(data: any): ValidationResult {
     return { isValid: false, errors: ['Invalid request body'] };
   }
 
-  const { name, description, duration, price, classTypes, status } = data;
+  const { name, description, duration, price, classTypes, status, currency } = data;
 
   // Validate required fields
   if (!name || typeof name !== 'string' || name.trim().length === 0) {
     errors.push('Name is required and must be a non-empty string');
+  } else if (name.trim().length < 3) {
+    errors.push('Name must be at least 3 characters long');
+  } else if (name.trim().length > 100) {
+    errors.push('Name must be less than 100 characters long');
   }
 
-  if (!description || typeof description !== 'string' || description.trim().length === 0) {
-    errors.push('Description is required and must be a non-empty string');
+  // Description is optional but validate if provided
+  if (description !== undefined && description !== null) {
+    if (typeof description !== 'string') {
+      errors.push('Description must be a string');
+    } else if (description.length > 500) {
+      errors.push('Description must be less than 500 characters');
+    }
   }
 
-  if (!duration || typeof duration !== 'string' || duration.trim().length === 0) {
-    errors.push('Duration is required and must be a non-empty string');
+  // Validate duration (should be one of our predefined values)
+  const validDurations = ['1_month', '3_months', '6_months', '12_months', 'unlimited'];
+  if (!duration || typeof duration !== 'string' || !validDurations.includes(duration)) {
+    errors.push('Duration must be one of: 1_month, 3_months, 6_months, 12_months, unlimited');
   }
 
+  // Validate price
   if (price === undefined || price === null || typeof price !== 'number' || price < 0) {
     errors.push('Price is required and must be a positive number');
+  } else if (price > 10000) {
+    errors.push('Price must be less than $10,000');
   }
 
+  // Validate class types
   if (!Array.isArray(classTypes) || classTypes.length === 0) {
-    errors.push('Class types are required and must be a non-empty array');
-  }
-
-  if (classTypes && Array.isArray(classTypes)) {
+    errors.push('At least one class type must be selected');
+  } else {
+    const validClassTypes = ['bjj', 'mma', 'muay_thai', 'boxing', 'general_fitness', 'all'];
     for (const type of classTypes) {
-      if (typeof type !== 'string' || type.trim().length === 0) {
-        errors.push('All class types must be non-empty strings');
+      if (typeof type !== 'string' || !validClassTypes.includes(type)) {
+        errors.push('Invalid class type: ' + type);
         break;
       }
     }
   }
 
-  if (status && !['active', 'inactive', 'archived'].includes(status)) {
+  // Validate status
+  const validStatuses = ['active', 'inactive', 'archived'];
+  if (status && !validStatuses.includes(status)) {
     errors.push('Status must be one of: active, inactive, archived');
   }
 
@@ -103,32 +124,29 @@ function validateMembershipInput(data: any): ValidationResult {
     return { isValid: false, errors };
   }
 
-  // Convert duration to days for consistency
-  const durationLower = duration.toLowerCase();
-  let durationDays = 0;
-  
-  if (durationLower.includes('month')) {
-    const months = parseInt(durationLower.match(/\d+/)?.[0] || '0');
-    durationDays = months * 30;
-  } else if (durationLower.includes('year')) {
-    const years = parseInt(durationLower.match(/\d+/)?.[0] || '0');
-    durationDays = years * 365;
-  } else if (durationLower.includes('day')) {
-    durationDays = parseInt(durationLower.match(/\d+/)?.[0] || '0');
-  } else {
-    durationDays = 30; // Default to 30 days
-  }
+  // Convert duration to days for storage
+  const durationToDays: Record<string, number> = {
+    '1_month': 30,
+    '3_months': 90,
+    '6_months': 180,
+    '12_months': 365,
+    'unlimited': 9999
+  };
 
+  const durationInDays = durationToDays[duration] || 30;
+
+  // Sanitize and prepare data for storage
   const sanitizedData = {
     name: name.trim(),
-    description: description.trim(),
+    description: description?.trim() || '',
     duration: duration.trim(),
-    durationDays: durationDays,
-    price: Math.round(price * 100) / 100,
-    currency: 'USD',
+    durationInDays,
+    price: Math.round(price * 100) / 100, // Round to 2 decimal places
+    currency: currency?.trim() || 'USD',
     classTypes: classTypes.map((type: string) => type.trim()),
     status: status || 'active',
     displayOrder: 0,
+    memberCount: 0,
   };
 
   return { isValid: true, errors: [], sanitizedData };
@@ -180,8 +198,8 @@ export async function GET(request: NextRequest) {
       return addSecurityHeaders(response);
     }
 
-    // FIXED: Use session-based authentication instead of Bearer token
-    const { success, session, error } = await validateAPIAccess(request, ['admin']);
+    // Validate API access with admin or staff permissions
+    const { success, session, error } = await validateAPIAccess(request, ['admin', 'staff']);
     
     if (!success) {
       const response = NextResponse.json(
@@ -191,68 +209,67 @@ export async function GET(request: NextRequest) {
       return addSecurityHeaders(response);
     }
 
-    const url = new URL(request.url);
-    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
-    const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || '10')));
-    const offset = (page - 1) * limit;
-
-    const searchTerm = url.searchParams.get('search')?.trim();
-    const statusFilter = url.searchParams.get('status');
-    const sortBy = url.searchParams.get('sortBy') || 'createdAt';
-    const sortOrder = url.searchParams.get('sortOrder') === 'asc' ? 'asc' : 'desc';
-
     try {
-      let query: Query<DocumentData> = adminDb.collection('membershipPlans');
+      const url = new URL(request.url);
+      const searchParams = url.searchParams;
+      
+      // Build query
+      let query: Query<DocumentData> = adminDb.collection('membershipPlans') as Query<DocumentData>;
 
       // Apply filters
-      if (statusFilter && ['active', 'inactive', 'archived'].includes(statusFilter)) {
-        query = query.where('status', '==', statusFilter);
+      const status = searchParams.get('status');
+      if (status) {
+        const statusArray = status.split(',').map(s => s.trim());
+        query = query.where('status', 'in', statusArray);
       }
 
-      // Apply sorting
-      query = query.orderBy(sortBy, sortOrder);
+      const classTypes = searchParams.get('classTypes');
+      if (classTypes) {
+        const classTypesArray = classTypes.split(',').map(ct => ct.trim());
+        query = query.where('classTypes', 'array-contains-any', classTypesArray);
+      }
 
-      // Execute query
+      const duration = searchParams.get('duration');
+      if (duration) {
+        const durationArray = duration.split(',').map(d => d.trim());
+        query = query.where('duration', 'in', durationArray);
+      }
+
+      // Execute query with ordering
+      query = query.orderBy('createdAt', 'desc');
       const snapshot = await query.get();
-      let memberships: MembershipData[] = [];
 
+      const memberships: MembershipData[] = [];
       snapshot.forEach(doc => {
         memberships.push({
           id: doc.id,
           ...doc.data()
-        } as MembershipData);
+        });
       });
 
-      // Apply search filter (client-side for now)
-      if (searchTerm) {
-        const searchLower = searchTerm.toLowerCase();
-        memberships = memberships.filter(membership => 
+      // Apply text search on the client side (since Firestore doesn't support full-text search)
+      const search = searchParams.get('search');
+      let filteredMemberships = memberships;
+      
+      if (search) {
+        const searchLower = search.toLowerCase();
+        filteredMemberships = memberships.filter(membership =>
           membership.name?.toLowerCase().includes(searchLower) ||
-          membership.description?.toLowerCase().includes(searchLower) ||
-          membership.classTypes?.some(type => type.toLowerCase().includes(searchLower))
+          membership.description?.toLowerCase().includes(searchLower)
         );
       }
 
-      // Apply pagination
-      const totalCount = memberships.length;
-      const paginatedMemberships = memberships.slice(offset, offset + limit);
-
       const response = NextResponse.json({
         success: true,
-        data: sanitizeOutput(paginatedMemberships),
-        pagination: {
-          page,
-          limit,
-          total: totalCount,
-          pages: Math.ceil(totalCount / limit)
-        }
-      });
+        data: sanitizeOutput(filteredMemberships),
+        count: filteredMemberships.length
+      }, { status: 200 });
 
       return addSecurityHeaders(response);
 
     } catch (dbError: any) {
       const response = NextResponse.json(
-        { success: false, error: 'Failed to fetch membership plans' },
+        { success: false, error: 'Failed to load membership plans' },
         { status: 500 }
       );
       return addSecurityHeaders(response);
@@ -285,7 +302,7 @@ export async function POST(request: NextRequest) {
       return addSecurityHeaders(response);
     }
 
-    // FIXED: Use session-based authentication instead of Bearer token
+    // Only admins can create membership plans
     const { success, session, error } = await validateAPIAccess(request, ['admin']);
     
     if (!success) {
@@ -326,7 +343,6 @@ export async function POST(request: NextRequest) {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         createdBy: session!.uid,
-        memberCount: 0
       };
 
       const docRef = await adminDb.collection('membershipPlans').add(membershipData);
@@ -372,16 +388,11 @@ export async function OPTIONS() {
     ? process.env.NEXT_PUBLIC_APP_URL || 'https://your-domain.com'
     : 'http://localhost:3000';
 
-  const response = new NextResponse(null, {
-    status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': origin,
-      'Access-Control-Allow-Credentials': 'true',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      'Access-Control-Max-Age': '86400',
-    },
-  });
+  const response = new NextResponse(null, { status: 200 });
+  response.headers.set('Access-Control-Allow-Origin', origin);
+  response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  response.headers.set('Access-Control-Max-Age', '86400');
 
   return addSecurityHeaders(response);
 }
