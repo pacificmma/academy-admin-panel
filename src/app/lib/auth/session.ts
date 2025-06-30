@@ -1,5 +1,6 @@
-// src/app/lib/auth/session.ts - SECURE SESSION MANAGEMENT (FIXED)
+// src/app/lib/auth/session.ts - COMPLETE SECURE SESSION MANAGEMENT (FIXED)
 import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import jwt from 'jsonwebtoken';
 import { adminDb } from '@/app/lib/firebase/admin';
 import { UserRole } from '@/app/types';
@@ -20,8 +21,12 @@ const SESSION_CONFIG = {
   maxAge: 24 * 60 * 60 * 1000, // 24 hours
   refreshThreshold: 2 * 60 * 60 * 1000, // 2 hours
   absoluteTimeout: 7 * 24 * 60 * 60 * 1000, // 7 days max
-  cookieName: 'session-token', // FIXED: Consistent cookie name
+  cookieName: 'session-token',
 };
+
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
 
 // Get JWT secret with validation
 function getJWTSecret(): string {
@@ -31,6 +36,79 @@ function getJWTSecret(): string {
   }
   return secret;
 }
+
+// Verify JWT token
+async function verifySession(token: string): Promise<SessionData | null> {
+  try {
+    const decoded = jwt.verify(token, getJWTSecret(), {
+      algorithms: ['HS256'],
+      issuer: 'pacific-mma-admin',
+      audience: 'pacific-mma-admin-users',
+    }) as SessionData;
+
+    const now = Date.now();
+
+    // Check if session is expired
+    if (decoded.expiresAt < now) {
+      return null;
+    }
+
+    // Check absolute timeout
+    if (now - decoded.createdAt > SESSION_CONFIG.absoluteTimeout) {
+      return null;
+    }
+
+    // Verify user still exists and is active in database
+    try {
+      const staffDoc = await adminDb.collection('staff').doc(decoded.uid).get();
+      if (!staffDoc.exists || !staffDoc.data()?.isActive) {
+        return null;
+      }
+    } catch (dbError) {
+      console.error('Database verification failed during session check:', dbError);
+      return null;
+    }
+
+    return decoded;
+  } catch (error) {
+    // Invalid token or verification failed
+    return null;
+  }
+}
+
+// Check if session should be refreshed
+function shouldRefreshSession(sessionData: SessionData): boolean {
+  const now = Date.now();
+  const timeSinceLastActivity = now - sessionData.lastActivity;
+  return timeSinceLastActivity > SESSION_CONFIG.refreshThreshold;
+}
+
+// Refresh session with new timestamps
+async function refreshSession(sessionData: SessionData): Promise<string> {
+  const now = Date.now();
+  const refreshedSession: SessionData = {
+    ...sessionData,
+    lastActivity: now,
+    expiresAt: now + SESSION_CONFIG.maxAge,
+  };
+
+  // Verify user is still active
+  const staffDoc = await adminDb.collection('staff').doc(sessionData.uid).get();
+  if (!staffDoc.exists || !staffDoc.data()?.isActive) {
+    throw new Error('User is no longer active');
+  }
+
+  return jwt.sign(refreshedSession, getJWTSecret(), {
+    algorithm: 'HS256',
+    expiresIn: '24h',
+    issuer: 'pacific-mma-admin',
+    audience: 'pacific-mma-admin-users',
+  });
+}
+
+// ============================================
+// MAIN SESSION FUNCTIONS
+// ============================================
 
 // Create secure session token
 export async function createSession(userData: Omit<SessionData, 'createdAt' | 'expiresAt' | 'lastActivity'>): Promise<string> {
@@ -62,71 +140,7 @@ export async function createSession(userData: Omit<SessionData, 'createdAt' | 'e
   return token;
 }
 
-// Verify and decode session token
-export async function verifySession(token: string): Promise<SessionData | null> {
-  try {
-    const decoded = jwt.verify(token, getJWTSecret(), {
-      algorithms: ['HS256'],
-      issuer: 'pacific-mma-admin',
-      audience: 'pacific-mma-admin-users',
-    }) as SessionData;
-
-    const now = Date.now();
-
-    // Check if session is expired
-    if (decoded.expiresAt < now) {
-      return null;
-    }
-
-    // Check absolute timeout
-    if (now - decoded.createdAt > SESSION_CONFIG.absoluteTimeout) {
-      return null;
-    }
-
-    // For critical operations, verify user still exists and is active
-    try {
-      const staffDoc = await adminDb.collection('staff').doc(decoded.uid).get();
-      if (!staffDoc.exists || !staffDoc.data()?.isActive) {
-        return null;
-      }
-    } catch (error) {
-      console.error('Session verification DB error:', error);
-      return null;
-    }
-
-    return decoded;
-  } catch (error) {
-    console.error('JWT verification failed:', error);
-    return null;
-  }
-}
-
-// Check if session needs refresh
-export function shouldRefreshSession(sessionData: SessionData): boolean {
-  const now = Date.now();
-  return (sessionData.expiresAt - now) < SESSION_CONFIG.refreshThreshold;
-}
-
-// Refresh session token
-export async function refreshSession(currentSession: SessionData): Promise<string> {
-  const now = Date.now();
-  
-  // Update last activity and extend expiration
-  const refreshedSession: SessionData = {
-    ...currentSession,
-    lastActivity: now,
-    expiresAt: now + SESSION_CONFIG.maxAge,
-  };
-
-  return jwt.sign(refreshedSession, getJWTSecret(), {
-    algorithm: 'HS256',
-    expiresIn: '24h',
-    issuer: 'pacific-mma-admin',
-    audience: 'pacific-mma-admin-users',
-  });
-}
-
-// Set secure HTTP-only cookie
+// Set session cookie with secure options
 export function setSessionCookie(response: NextResponse, token: string): void {
   const isProduction = process.env.NODE_ENV === 'production';
   
@@ -145,7 +159,7 @@ export function clearSessionCookie(response: NextResponse): void {
   response.cookies.delete(SESSION_CONFIG.cookieName);
 }
 
-// Get session from request
+// Get session from request (for middleware and API routes)
 export async function getSession(request: NextRequest): Promise<SessionData | null> {
   const token = request.cookies.get(SESSION_CONFIG.cookieName)?.value;
   
@@ -155,6 +169,32 @@ export async function getSession(request: NextRequest): Promise<SessionData | nu
 
   return await verifySession(token);
 }
+
+// ============================================
+// SERVER-SIDE SESSION (For SSR/SSG)
+// ============================================
+
+// **FIX: This was missing!** 
+// Get session from server-side (for page components)
+export async function getServerSession(): Promise<SessionData | null> {
+  try {
+    const cookieStore = cookies();
+    const token = (await cookieStore).get(SESSION_CONFIG.cookieName)?.value;
+    
+    if (!token) {
+      return null;
+    }
+
+    return await verifySession(token);
+  } catch (error) {
+    // Return null if any error occurs
+    return null;
+  }
+}
+
+// ============================================
+// SESSION MANAGEMENT
+// ============================================
 
 // Update session activity (for session endpoint)
 export async function updateSessionActivity(sessionData: SessionData): Promise<string | null> {
@@ -189,6 +229,10 @@ export async function updateSessionActivity(sessionData: SessionData): Promise<s
   }
 }
 
+// ============================================
+// API AUTHENTICATION
+// ============================================
+
 // Secure session validation for API routes
 export async function validateAPIAccess(
   request: NextRequest,
@@ -214,4 +258,19 @@ export async function validateAPIAccess(
     console.error('API access validation failed:', error);
     return { success: false, session: null, error: 'Session validation failed' };
   }
+}
+
+// Enhanced API session validation (throws errors for middleware)
+export async function validateApiSession(request: NextRequest): Promise<SessionData> {
+  const session = await getSession(request);
+  
+  if (!session) {
+    throw new Error('No valid session found');
+  }
+
+  if (!session.isActive) {
+    throw new Error('User account is deactivated');
+  }
+
+  return session;
 }

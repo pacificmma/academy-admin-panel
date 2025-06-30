@@ -106,15 +106,6 @@ export interface MembershipPlanFilters {
 export interface MembershipStats {
   totalPlans: number;
   activePlans: number;
-  totalRevenue: number;
-  monthlyRevenue: number;
-  popularPlan: string;
-  membershipDistribution: {
-    planId: string;
-    planName: string;
-    memberCount?: number;
-    percentage: number;
-  }[];
 }
 
 // Filter and search options for UI

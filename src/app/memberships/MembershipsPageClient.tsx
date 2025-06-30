@@ -1,4 +1,4 @@
-// src/app/memberships/MembershipsPageClient.tsx - Complete implementation
+// src/app/memberships/MembershipsPageClient.tsx - FIXED VERSION with correct dialog props
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -41,8 +41,6 @@ import {
   MoreVert as MoreVertIcon,
   CardMembership as MembershipIcon,
   TrendingUp as TrendingUpIcon,
-  AttachMoney as MoneyIcon,
-  Star as StarIcon,
 } from '@mui/icons-material';
 import Layout from '../components/layout/Layout';
 import MembershipFormDialog from '../components/forms/MembershipFormDialog';
@@ -68,10 +66,6 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
   const [stats, setStats] = useState<MembershipStats>({
     totalPlans: 0,
     activePlans: 0,
-    totalRevenue: 0,
-    monthlyRevenue: 0,
-    popularPlan: '',
-    membershipDistribution: [],
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -102,7 +96,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
     loadStats();
   }, []);
 
-  const loadMemberships = async () => {
+  const loadMemberships = async (): Promise<void> => {
     try {
       setLoading(true);
       setError(null);
@@ -128,7 +122,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
     }
   };
 
-  const loadStats = async () => {
+  const loadStats = async (): Promise<void> => {
     try {
       const response = await fetch('/api/memberships/stats');
       const result = await response.json();
@@ -138,6 +132,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
       }
     } catch (err) {
       // Stats are optional, don't show error for this
+      console.warn('Failed to load stats:', err);
     }
   };
 
@@ -152,8 +147,8 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
     page * rowsPerPage + rowsPerPage
   );
 
-  // Event handlers
-  const handleCreateMembership = async (formData: MembershipPlanFormData) => {
+  // Event handlers with proper async/await handling
+  const handleCreateMembership = async (formData: MembershipPlanFormData): Promise<void> => {
     try {
       setSubmitLoading(true);
 
@@ -168,8 +163,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
       if (response.ok) {
         setSuccessMessage('Membership plan created successfully');
         setCreateDialogOpen(false);
-        loadMemberships();
-        loadStats();
+        await Promise.all([loadMemberships(), loadStats()]);
       } else {
         throw new Error(result.error || 'Failed to create membership plan');
       }
@@ -180,7 +174,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
     }
   };
 
-  const handleEditMembership = async (formData: MembershipPlanFormData) => {
+  const handleEditMembership = async (formData: MembershipPlanFormData): Promise<void> => {
     if (!selectedMembership) return;
 
     try {
@@ -198,8 +192,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
         setSuccessMessage('Membership plan updated successfully');
         setEditDialogOpen(false);
         setSelectedMembership(null);
-        loadMemberships();
-        loadStats();
+        await Promise.all([loadMemberships(), loadStats()]);
       } else {
         throw new Error(result.error || 'Failed to update membership plan');
       }
@@ -210,7 +203,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
     }
   };
 
-  const handleDeleteMembership = async () => {
+  const handleDeleteMembership = async (): Promise<void> => {
     if (!selectedMembership) return;
 
     try {
@@ -226,8 +219,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
         setSuccessMessage('Membership plan deleted successfully');
         setDeleteDialogOpen(false);
         setSelectedMembership(null);
-        loadMemberships();
-        loadStats();
+        await Promise.all([loadMemberships(), loadStats()]);
       } else {
         throw new Error(result.error || 'Failed to delete membership plan');
       }
@@ -239,49 +231,38 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
   };
 
   // Utility functions
-  const formatPrice = (price: number) => `$${price.toFixed(2)}`;
+  const formatPrice = (price: number): string => `$${price.toFixed(2)}`;
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string): string => {
     const statusConfig = MEMBERSHIP_STATUSES.find(s => s.value === status);
     return statusConfig?.color || '#9e9e9e';
   };
 
-  const getClassTypeLabels = (classTypes: string[]) => {
+  const getClassTypeLabels = (classTypes: string[]): string => {
     return classTypes.map(type => {
       const classType = CLASS_TYPES.find(c => c.value === type);
       return classType?.label || type;
     }).join(', ');
   };
 
-  const getDurationLabel = (duration: string) => {
+  const getDurationLabel = (duration: string): string => {
     const durationConfig = MEMBERSHIP_DURATIONS.find(d => d.value === duration);
     return durationConfig?.label || duration;
   };
 
+  // Stats cards - cleaned version
   const statsCards = [
     {
       title: 'Total Plans',
       value: stats.totalPlans,
       icon: MembershipIcon,
-      color: 'primary',
+      color: 'primary' as const,
     },
     {
       title: 'Active Plans',
       value: stats.activePlans,
       icon: TrendingUpIcon,
-      color: 'success',
-    },
-    {
-      title: 'Monthly Revenue',
-      value: formatPrice(stats.totalRevenue),
-      icon: MoneyIcon,
-      color: 'warning',
-    },
-    {
-      title: 'Popular Plan',
-      value: stats.popularPlan || 'N/A',
-      icon: StarIcon,
-      color: 'secondary',
+      color: 'success' as const,
     },
   ];
 
@@ -298,13 +279,13 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
           }}
         >
           <CardContent sx={{ p: 4, color: 'white' }}>
-            <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 700 }}>
+            <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 700, color: 'white'  }}>
               Membership Plans
             </Typography>
-            <Typography variant="h6" sx={{ opacity: 0.9, mb: 2 }}>
+            <Typography variant="h6" sx={{ opacity: 0.9, mb: 2, color: 'white'  }}>
               Create and manage membership plans for your academy
             </Typography>
-            <Typography variant="body1" sx={{ opacity: 0.8 }}>
+            <Typography variant="body1" sx={{ opacity: 0.8, color: 'white'  }}>
               Define pricing, duration, and class access for different membership tiers
             </Typography>
           </CardContent>
@@ -331,22 +312,46 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
           </Alert>
         </Snackbar>
 
-        {/* Stats Cards */}
+        {/* Statistics Cards */}
         <Grid container spacing={3} sx={{ mb: 4 }}>
-          {statsCards.map((stat, index) => (
+          {statsCards.map((card, index) => (
             <Grid item xs={12} sm={6} md={3} key={index}>
-              <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
+              <Card
+                elevation={0}
+                sx={{
+                  background: `${card.color === 'primary' ? '#e3f2fd' : '#e8f5e8'}`,
+                  border: '1px solid',
+                  borderColor: `${card.color}.200`,
+                  transition: 'transform 0.2s ease-in-out',
+                  '&:hover': {
+                    transform: 'translateY(-2px)',
+                  },
+                }}
+              >
                 <CardContent>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Box>
-                      <Typography color="text.secondary" gutterBottom>
-                        {stat.title}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: 48,
+                        height: 48,
+                        borderRadius: 2,
+                        bgcolor: `${card.color}.100`,
+                        color: `${card.color}.700`,
+                      }}
+                    >
+                      <card.icon />
+                    </Box>
+                    <Box sx={{ flex: 1 }}>
+                      <Typography variant="body2" color="text.secondary" gutterBottom>
+                        {card.title}
                       </Typography>
-                      <Typography variant="h5" component="div" fontWeight="600">
-                        {loading ? <Skeleton width={60} /> : stat.value}
+                      <Typography variant="h5" component="p" fontWeight="bold">
+                        {card.value}
                       </Typography>
                     </Box>
-                    <stat.icon sx={{ fontSize: 40, color: `${stat.color}.main` }} />
                   </Box>
                 </CardContent>
               </Card>
@@ -354,15 +359,28 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
           ))}
         </Grid>
 
-        {/* Actions Bar */}
-        <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid', borderColor: 'divider' }}>
-          <Grid container spacing={2} alignItems="center">
-            <Grid item xs={12} md={6}>
+        {/* Main Content */}
+        <Paper elevation={0} sx={{ borderRadius: 3, overflow: 'hidden' }}>
+          {/* Toolbar */}
+          <Box
+            sx={{
+              p: 3,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              borderBottom: '1px solid',
+              borderColor: 'divider',
+              bgcolor: 'grey.50',
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
               <TextField
-                fullWidth
                 placeholder="Search membership plans..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
+                variant="outlined"
+                size="small"
+                sx={{ minWidth: 300 }}
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
@@ -371,46 +389,46 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
                   ),
                 }}
               />
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
-                <Button
-                  variant="outlined"
-                  startIcon={<FilterIcon />}
-                  onClick={(e) => setFilterAnchorEl(e.currentTarget)}
-                >
-                  Filters
-                </Button>
-                <Button
-                  variant="contained"
-                  startIcon={<AddIcon />}
-                  onClick={() => setCreateDialogOpen(true)}
-                >
-                  Create Plan
-                </Button>
-              </Box>
-            </Grid>
-          </Grid>
-        </Paper>
+              <IconButton
+                onClick={(e) => setFilterAnchorEl(e.currentTarget)}
+                sx={{
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 1,
+                }}
+              >
+                <FilterIcon />
+              </IconButton>
+            </Box>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setCreateDialogOpen(true)}
+              sx={{
+                bgcolor: '#0F5C6B',
+                '&:hover': { bgcolor: '#0a4a57' },
+              }}
+            >
+              Add Plan
+            </Button>
+          </Box>
 
-        {/* Memberships Table */}
-        <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
+          {/* Table */}
           <TableContainer>
             <Table>
               <TableHead>
-                <TableRow>
-                  <TableCell>Plan Name</TableCell>
-                  <TableCell>Duration</TableCell>
-                  <TableCell>Price</TableCell>
-                  <TableCell>Class Types</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Members</TableCell>
-                  <TableCell align="right">Actions</TableCell>
+                <TableRow sx={{ bgcolor: 'grey.50' }}>
+                  <TableCell sx={{ fontWeight: 600 }}>Plan Name</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Duration</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Price</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Class Types</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Created</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 600 }}>Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {loading ? (
-                  // Loading skeleton
                   Array.from({ length: 5 }).map((_, index) => (
                     <TableRow key={index}>
                       <TableCell><Skeleton /></TableCell>
@@ -450,20 +468,12 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
                               width: 12,
                               height: 12,
                               borderRadius: '50%',
-                              backgroundColor: membership.colorCode || '#1976d2',
+                              backgroundColor:'#1976d2',
                             }}
                           />
                           <Box>
                             <Typography variant="body2" fontWeight="500">
                               {membership.name}
-                              {membership.isPopular && (
-                                <Chip
-                                  label="Popular"
-                                  size="small"
-                                  color="secondary"
-                                  sx={{ ml: 1, fontSize: '0.75rem' }}
-                                />
-                              )}
                             </Typography>
                             {membership.description && (
                               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
@@ -486,7 +496,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2" sx={{ maxWidth: 200 }}>
+                        <Typography variant="body2">
                           {getClassTypeLabels(membership.classTypes)}
                         </Typography>
                       </TableCell>
@@ -495,24 +505,24 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
                           label={membership.status}
                           size="small"
                           sx={{
-                            bgcolor: `${getStatusColor(membership.status)}20`,
-                            color: getStatusColor(membership.status),
-                            fontWeight: 500,
+                            bgcolor: getStatusColor(membership.status),
+                            color: 'white',
+                            textTransform: 'capitalize',
                           }}
                         />
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2" color="text.secondary">
-                          {membership.memberCount || 0}
+                          {membership.createdAt ? new Date(membership.createdAt).toLocaleDateString() : '-'}
                         </Typography>
                       </TableCell>
-                      <TableCell align="right">
+                      <TableCell align="center">
                         <IconButton
-                          onClick={(e) => {
-                            setMenuAnchorEl(e.currentTarget);
-                            setSelectedMembership(membership);
-                          }}
                           size="small"
+                          onClick={(e) => {
+                            setSelectedMembership(membership);
+                            setMenuAnchorEl(e.currentTarget);
+                          }}
                         >
                           <MoreVertIcon />
                         </IconButton>
@@ -525,18 +535,18 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
           </TableContainer>
 
           {/* Pagination */}
-          {!loading && filteredMemberships.length > 0 && (
+          {!loading && paginatedMemberships.length > 0 && (
             <TablePagination
-              rowsPerPageOptions={[5, 10, 25]}
               component="div"
               count={filteredMemberships.length}
-              rowsPerPage={rowsPerPage}
               page={page}
               onPageChange={(_, newPage) => setPage(newPage)}
+              rowsPerPage={rowsPerPage}
               onRowsPerPageChange={(e) => {
                 setRowsPerPage(parseInt(e.target.value, 10));
                 setPage(0);
               }}
+              rowsPerPageOptions={[5, 10, 25, 50]}
             />
           )}
         </Paper>
@@ -545,12 +555,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
         <Menu
           anchorEl={menuAnchorEl}
           open={Boolean(menuAnchorEl)}
-          onClose={() => {
-            setMenuAnchorEl(null);
-            setSelectedMembership(null);
-          }}
-          transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-          anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+          onClose={() => setMenuAnchorEl(null)}
         >
           <MenuItem
             onClick={() => {
@@ -559,7 +564,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
             }}
           >
             <EditIcon sx={{ mr: 1 }} />
-            Edit Plan
+            Edit
           </MenuItem>
           <MenuItem
             onClick={() => {
@@ -569,7 +574,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
             sx={{ color: 'error.main' }}
           >
             <DeleteIcon sx={{ mr: 1 }} />
-            Delete Plan
+            Delete
           </MenuItem>
         </Menu>
 
@@ -578,50 +583,27 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
           anchorEl={filterAnchorEl}
           open={Boolean(filterAnchorEl)}
           onClose={() => setFilterAnchorEl(null)}
-          PaperProps={{ sx: { minWidth: 300, p: 2 } }}
+          PaperProps={{ sx: { minWidth: 200 } }}
         >
-          <Typography variant="subtitle2" gutterBottom>
-            Filter Membership Plans
-          </Typography>
-
-          <FormControl size="small" fullWidth sx={{ mb: 2 }}>
-            <InputLabel>Status</InputLabel>
-            <Select
-              multiple
-              value={filters.status || []}
-              onChange={(e) => setFilters({ 
-                ...filters, 
-                status: e.target.value as string[] 
-              })}
-            >
-              {MEMBERSHIP_STATUSES.map((status) => (
-                <MenuItem key={status.value} value={status.value}>
-                  {status.label}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-
-          <FormControl size="small" fullWidth>
-            <InputLabel>Duration</InputLabel>
-            <Select
-              multiple
-              value={filters.duration || []}
-              onChange={(e) => setFilters({ 
-                ...filters, 
-                status: e.target.value as string[] 
-              })}
-            >
-              {MEMBERSHIP_DURATIONS.map((duration) => (
-                <MenuItem key={duration.value} value={duration.value}>
-                  {duration.label}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <MenuItem>
+            <FormControl fullWidth size="small">
+              <InputLabel>Status</InputLabel>
+              <Select
+                multiple
+                value={filters.status || []}
+                onChange={(e) => setFilters({ ...filters, status: e.target.value as string[] })}
+              >
+                {MEMBERSHIP_STATUSES.map((status) => (
+                  <MenuItem key={status.value} value={status.value}>
+                    {status.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </MenuItem>
         </Menu>
 
-        {/* Dialogs */}
+        {/* FIXED: Dialogs with correct props based on actual component interfaces */}
         <MembershipFormDialog
           open={createDialogOpen}
           onClose={() => setCreateDialogOpen(false)}

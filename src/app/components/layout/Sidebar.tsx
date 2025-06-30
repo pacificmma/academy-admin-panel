@@ -191,49 +191,6 @@ const Sidebar: React.FC<SidebarProps> = ({
         </Box>
       </Toolbar>
 
-      {/* User Info */}
-      <Box sx={{ p: 3, borderBottom: '1px solid', borderColor: 'divider' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Avatar
-            sx={{
-              width: 40,
-              height: 40,
-              bgcolor: 'primary.main',
-              fontSize: '1rem',
-              fontWeight: 600,
-            }}
-          >
-            {session.fullName.charAt(0).toUpperCase()}
-          </Avatar>
-          <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-            <Typography 
-              variant="body2" 
-              sx={{ 
-                fontWeight: 600,
-                color: 'text.primary',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {session.fullName}
-            </Typography>
-            <Chip
-              label={session.role.toUpperCase()}
-              size="small"
-              color={session.role === 'admin' ? 'primary' : 'secondary'}
-              variant="filled"
-              sx={{ 
-                height: 18, 
-                fontSize: '0.65rem',
-                fontWeight: 700,
-                mt: 0.5,
-              }}
-            />
-          </Box>
-        </Box>
-      </Box>
-
       {/* Navigation Menu */}
       <Box sx={{ overflow: 'auto', flex: 1, py: 2 }}>
         <List sx={{ px: 2 }}>

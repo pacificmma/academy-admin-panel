@@ -309,7 +309,9 @@ export async function POST(request: NextRequest) {
       uid: user.uid,
       email: staffData.email,
       role: staffData.role,
-      fullName: `${staffData.firstName} ${staffData.lastName}`.trim(),
+      fullName: staffData.fullName || 
+          `${staffData.firstName || ''} ${staffData.lastName || ''}`.trim() ||
+          staffData.email.split('@')[0] || 'User',
       isActive: staffData.isActive
     };
 
