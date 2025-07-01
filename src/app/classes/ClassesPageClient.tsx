@@ -28,8 +28,13 @@ import DeleteConfirmationDialog from '@/app/components/ui/DeleteConfirmationDial
 import { ClassSchedule, ClassInstance, ClassFormData, ClassType, ClassFilters, CLASS_TYPE_OPTIONS } from '@/app/types/class';
 import { useAuth } from '@/app/contexts/AuthContext';
 import { format, parseISO } from 'date-fns';
+import { SessionData } from '../types';
+import Layout from '../components/layout/Layout';
 
-export default function ClassesPageClient() {
+interface ClassesPageClientProps {
+  session: SessionData;
+}
+export default function ClassesPageClient({ session }: ClassesPageClientProps): React.JSX.Element {
   const { user } = useAuth();
   const [tabIndex, setTabIndex] = useState(0);
   const [schedules, setSchedules] = useState<ClassSchedule[]>([]);
@@ -318,6 +323,7 @@ export default function ClassesPageClient() {
 
 
   return (
+    <Layout session={session} title="Dashboard">
     <Box sx={{ p: 3 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4" component="h1">
@@ -564,5 +570,6 @@ export default function ClassesPageClient() {
         ] : []}
       />
     </Box>
+    </Layout>
   );
 }
