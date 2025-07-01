@@ -49,7 +49,10 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
   const [deleteTargetType, setDeleteTargetType] = useState<'schedule' | 'instance' | null>(null);
   const [instructors, setInstructors] = useState<Array<{ id: string; name: string; specialties?: string[] }>>([]);
   const [calendarViewMode, setCalendarViewMode] = useState<'day' | 'week' | 'month'>('week'); // For calendar component
-  const [instanceDisplayMode, setInstanceDisplayMode] = useState<'cards' | 'calendar'>('cards'); // For Upcoming Classes tab
+  // Set instanceDisplayMode default based on initial tabIndex (0 for calendar, 1 for cards)
+  const [instanceDisplayMode, setInstanceDisplayMode] = useState<'cards' | 'calendar'>(
+    (session.role === 'trainer' && tabIndex === 2) || tabIndex === 0 ? 'calendar' : 'cards'
+  );
 
   const [filters, setFilters] = useState<ClassFilters>({
     classType: undefined,
@@ -125,6 +128,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
     loadInstructors();
     if (tabIndex === 0) { // Class Schedules tab
       loadClassSchedules();
+      setInstanceDisplayMode('calendar'); // Default to calendar for Class Schedules
     } else if (tabIndex === 1 || (tabIndex === 2 && user?.role === 'trainer')) { // Upcoming Classes or My Schedule
       loadClassInstances();
     }
@@ -148,6 +152,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
             date: undefined, // No date filter for schedules
             searchTerm: '',
         });
+        setInstanceDisplayMode('calendar'); // Default to calendar for Class Schedules
     } else if (newValue === 2) { // My Schedule
         setFilters(prev => ({ ...prev, instructorId: user?.uid, date: format(new Date(), 'yyyy-MM-dd') }));
         setInstanceDisplayMode('calendar'); // Default to calendar for My Schedule
@@ -360,25 +365,52 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
 
       {!loading && (
         <Box>
+          {/* Class Schedules Tab - Now displays Calendar by default */}
           {tabIndex === 0 && (
-            <Grid container spacing={3}>
-              {schedules.length === 0 ? (
-                <Grid item xs={12}>
-                  <Alert severity="info">No class schedules found. Create one to get started!</Alert>
-                </Grid>
+            <Box>
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                All Class Schedules
+              </Typography>
+              {loading ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                  <CircularProgress />
+                </Box>
+              ) : schedules.length === 0 ? (
+                <Alert severity="info">No class schedules found. Create one to get started!</Alert>
               ) : (
-                schedules.map((schedule) => (
-                  <Grid item xs={12} sm={6} md={4} lg={3} key={schedule.id}>
-                    <ClassCard
-                      classData={schedule}
-                      type="schedule"
-                      onEdit={handleEditClass}
-                      onDelete={(id, type) => handleDeleteClass(schedule, type)}
-                    />
-                  </Grid>
-                ))
+                <ClassCalendar
+                  classes={schedules.map(schedule => ({
+                      ...schedule,
+                      // Convert schedule to a pseudo-instance for calendar display purposes if needed,
+                      // or ensure ClassCalendar can handle ClassSchedule directly for event display.
+                      // For simplicity, we might only display actual instances on the calendar.
+                      // However, since the request is to see the calendar for schedules, we'll
+                      // map schedules to a format ClassCalendar expects.
+                      // Assuming ClassCalendar can take ClassSchedule as an event, or map it to ClassInstance.
+                      // Given current ClassCalendar props, it expects ClassInstance. So mapping:
+                      id: schedule.id,
+                      scheduleId: schedule.id,
+                      date: schedule.startDate,
+                      endTime: `${Math.floor((parseInt(schedule.startTime.split(':')[0]) * 60 + parseInt(schedule.startTime.split(':')[1]) + schedule.duration) / 60).toString().padStart(2, '0')}:${((parseInt(schedule.startTime.split(':')[0]) * 60 + parseInt(schedule.startTime.split(':')[1]) + schedule.duration) % 60).toString().padStart(2, '0')}`,
+                      registeredParticipants: [], // Not relevant for schedule display
+                      waitlist: [], // Not relevant for schedule display
+                      status: 'scheduled', // Always scheduled for a base schedule
+                      createdAt: schedule.createdAt,
+                      updatedAt: schedule.updatedAt,
+                      // Only pass relevant fields, other instance-specific fields are not needed for calendar
+                  })) as ClassInstance[]} // Cast to ClassInstance array for ClassCalendar
+                  viewMode={calendarViewMode}
+                  onViewModeChange={handleCalendarViewModeChange}
+                  onClassClick={handleEditClass} // Edit schedule from calendar click
+                  onDateClick={handleCalendarDateClick}
+                  selectedDate={parseISO(filters.date || format(new Date(), 'yyyy-MM-dd'))}
+                  onEditClass={handleEditClass}
+                  onDeleteClass={(data, type) => handleDeleteClass(data, 'schedule')} // Delete schedule from calendar
+                  userRole={user?.role || 'member'}
+                  userId={user?.uid || ''}
+                />
               )}
-            </Grid>
+            </Box>
           )}
 
           {tabIndex === 1 && (
@@ -439,7 +471,8 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
                     InputLabelProps={{ shrink: true }}
                   />
                 </Grid>
-                <Grid item xs={12} sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                {/* Removed display mode toggle for Upcoming Classes as it's always cards */}
+                {/* <Grid item xs={12} sx={{ display: 'flex', justifyContent: 'flex-end' }}>
                   <ToggleButtonGroup
                     value={instanceDisplayMode}
                     exclusive
@@ -458,59 +491,40 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
                       <CalendarIcon /> Calendar
                     </ToggleButton>
                   </ToggleButtonGroup>
-                </Grid>
+                </Grid> */}
               </Grid>
 
-              {instanceDisplayMode === 'cards' ? (
-                <Grid container spacing={3}>
-                  {instances.length === 0 ? (
-                    <Grid item xs={12}>
-                      <Alert severity="info">No upcoming classes found for selected filters.</Alert>
-                    </Grid>
-                  ) : (
-                    instances
-                      .sort((a, b) => {
-                        const dateA = parseISO(a.date);
-                        const dateB = parseISO(b.date);
-                        if (dateA.getTime() !== dateB.getTime()) {
-                          return dateA.getTime() - dateB.getTime();
-                        }
-                        const [hA, mA] = a.startTime.split(':').map(Number);
-                        const [hB, mB] = b.startTime.split(':').map(Number);
-                        return (hA * 60 + mA) - (hB * 60 + mB);
-                      })
-                      .map((instance) => (
-                        <Grid item xs={12} sm={6} md={4} lg={3} key={instance.id}>
-                          <ClassCard
-                            classData={instance}
-                            type="instance"
-                            onEdit={handleEditClass}
-                            onDelete={(id, type) => handleDeleteClass(instance, type)}
-                            onStartClass={(id) => handleInstanceAction(id, 'start')}
-                            onEndClass={(id) => handleInstanceAction(id, 'end')}
-                            onCancelClass={(id) => handleInstanceAction(id, 'cancel')}
-                          />
-                        </Grid>
-                      ))
-                  )}
-                </Grid>
-              ) : (
-                <ClassCalendar
-                  classes={instances}
-                  viewMode={calendarViewMode}
-                  onViewModeChange={handleCalendarViewModeChange}
-                  onClassClick={handleEditClass}
-                  onDateClick={handleCalendarDateClick}
-                  selectedDate={parseISO(filters.date || format(new Date(), 'yyyy-MM-dd'))}
-                  onEditClass={handleEditClass}
-                  onDeleteClass={(data, type) => handleDeleteClass(data, type)}
-                  onStartClass={(id) => handleInstanceAction(id, 'start')}
-                  onEndClass={(id) => handleInstanceAction(id, 'end')}
-                  onCancelClass={(id) => handleInstanceAction(id, 'cancel')}
-                  userRole={user?.role || 'member'}
-                  userId={user?.uid || ''}
-                />
-              )}
+              {/* Always display cards for Upcoming Classes */}
+              <Grid container spacing={3}>
+                {instances.length === 0 ? (
+                  <Grid item xs={12}>
+                    <Alert severity="info">No upcoming classes found for selected filters.</Alert>
+                  </Grid>
+                ) : (
+                  instances
+                    .sort((a, b) => {
+                      const dateA = parseISO(a.date);
+                      const dateB = parseISO(b.date);
+                      if (dateA.getTime() !== dateB.getTime()) {
+                        return dateA.getTime() - dateB.getTime();
+                      }
+                      const [hA, mA] = a.startTime.split(':').map(Number);
+                      const [hB, mB] = b.startTime.split(':').map(Number);
+                      return (hA * 60 + mA) - (hB * 60 + mB);
+                    })
+                    .map((instance) => (
+                      <Grid item xs={12} sm={6} md={4} lg={3} key={instance.id}>
+                        <ClassCard
+                          classData={instance}
+                          type="instance"
+                          onEdit={handleEditClass}
+                          onDelete={(id, type) => handleDeleteClass(instance, type)}
+                          // Removed onStartClass, onEndClass, onCancelClass props from here
+                        />
+                      </Grid>
+                    ))
+                )}
+              </Grid>
             </Box>
           )}
 

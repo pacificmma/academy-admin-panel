@@ -34,9 +34,9 @@ interface ClassCardProps {
   type: 'schedule' | 'instance'; // Indicates if it's a schedule or a specific instance
   onEdit: (data: ClassSchedule | ClassInstance) => void;
   onDelete: (id: string, type: 'schedule' | 'instance') => void;
-  onStartClass?: (instanceId: string) => void;
-  onEndClass?: (instanceId: string) => void;
-  onCancelClass?: (instanceId: string) => void;
+  onStartClass?: (instanceId: string) => void; // Keep prop, but buttons removed from card
+  onEndClass?: (instanceId: string) => void; // Keep prop, but buttons removed from card
+  onCancelClass?: (instanceId: string) => void; // Keep prop, but buttons removed from card
 }
 
 export default function ClassCard({
@@ -63,7 +63,8 @@ export default function ClassCard({
   const isInstructor = user?.role === 'trainer' && user.uid === classData.instructorId;
   const isAdmin = user?.role === 'admin';
 
-  const showInstanceManagementButtons = type === 'instance' && (isAdmin || isInstructor);
+  // Removed showInstanceManagementButtons as per user request to not have Start/End/Cancel buttons on cards
+  // const showInstanceManagementButtons = type === 'instance' && (isAdmin || isInstructor);
 
   const canEditOrDelete = isAdmin || (type === 'instance' && isInstructor);
 
@@ -176,8 +177,8 @@ export default function ClassCard({
             sx={{ mt: 1, fontWeight: 'bold' }}
           />
         )}
-
-        {showInstanceManagementButtons && (
+        {/* Removed instance management buttons as per user request */}
+        {/* {showInstanceManagementButtons && (
           <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
             {(classData as ClassInstance).status === 'scheduled' && onStartClass && (
               <Button
@@ -212,7 +213,7 @@ export default function ClassCard({
               </Button>
             )}
           </Box>
-        )}
+        )} */}
       </CardContent>
     </Card>
   );

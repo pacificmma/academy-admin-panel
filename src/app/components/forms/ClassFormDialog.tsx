@@ -65,12 +65,9 @@ const DEFAULT_FORM_DATA: ClassFormData = {
   duration: 60, // in minutes
   startDate: formatFns(new Date(), 'yyyy-MM-dd'),
   startTime: '18:00',
-  price: 0,
+  price: 0, // No specific price field, just a single 'price'
   scheduleType: 'single', // Default to single event
   daysOfWeek: [],
-  recurrenceDurationValue: 4, // Default 4 weeks
-  recurrenceDurationUnit: 'weeks',
-  packagePrice: 0,
 };
 
 const DAYS_OF_WEEK = [
@@ -115,9 +112,6 @@ export default function ClassFormDialog({
           price: schedule.price, // Schedule price is the total price if recurring
           scheduleType: schedule.recurrence.scheduleType,
           daysOfWeek: schedule.recurrence.daysOfWeek || [],
-          recurrenceDurationValue: schedule.recurrence.durationValue || DEFAULT_FORM_DATA.recurrenceDurationValue,
-          recurrenceDurationUnit: schedule.recurrence.durationUnit || DEFAULT_FORM_DATA.recurrenceDurationUnit,
-          packagePrice: schedule.price, // For editing recurring, price is packagePrice
         });
       } else if (isEditingInstance) {
         // Editing an existing ClassInstance
@@ -133,9 +127,6 @@ export default function ClassFormDialog({
           price: instance.price || 0, // Instance might have its own price
           scheduleType: 'single', // An instance is always treated as a single event for editing
           daysOfWeek: [],
-          recurrenceDurationValue: DEFAULT_FORM_DATA.recurrenceDurationValue,
-          recurrenceDurationUnit: DEFAULT_FORM_DATA.recurrenceDurationUnit,
-          packagePrice: 0,
         });
       } else {
         // Creating a new class
@@ -148,12 +139,10 @@ export default function ClassFormDialog({
   useEffect(() => {
     // Generate preview only for schedules (create mode or editing a schedule) and if it's recurring
     if ((mode === 'create' || isEditingSchedule) && formData.scheduleType === 'recurring') {
-      if (formData.daysOfWeek.length > 0 && formData.startTime && formData.recurrenceDurationValue > 0) {
+      if (formData.daysOfWeek.length > 0 && formData.startTime) {
         const occurrences = generateRecurringClassDates(
           formData.startDate,
           formData.startTime,
-          formData.recurrenceDurationValue,
-          formData.recurrenceDurationUnit,
           formData.daysOfWeek
         );
         setPreviewOccurrences(occurrences.slice(0, 5)); // Show next 5 occurrences
@@ -168,8 +157,6 @@ export default function ClassFormDialog({
     formData.startTime,
     formData.scheduleType,
     formData.daysOfWeek,
-    formData.recurrenceDurationValue,
-    formData.recurrenceDurationUnit,
     mode,
     isEditingSchedule,
   ]);
@@ -188,16 +175,6 @@ export default function ClassFormDialog({
       : [...currentDays, day].sort((a, b) => a - b);
     handleInputChange('daysOfWeek', newDays);
   };
-
-  const calculateEndTime = (startTime: string, duration: number) => {
-    if (!startTime || duration <= 0) return '';
-    const [hours, minutes] = startTime.split(':').map(Number);
-    const startDate = new Date(); // Use a dummy date for calculation
-    startDate.setHours(hours, minutes, 0, 0);
-    const endDate = addMinutes(startDate, duration);
-    return formatFns(endDate, 'HH:mm');
-  };
-
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -220,21 +197,12 @@ export default function ClassFormDialog({
     if (!formData.startTime) {
       newErrors.startTime = 'Start time is required.';
     }
-
-    if (formData.scheduleType === 'single') {
-      if (formData.price < 0) {
-        newErrors.price = 'Price cannot be negative.';
-      }
-    } else { // Recurring
-      if (formData.packagePrice <= 0) {
-        newErrors.packagePrice = 'Package price must be greater than 0.';
-      }
-      if (formData.daysOfWeek.length === 0) {
-        newErrors.daysOfWeek = 'Select at least one day for weekly recurrence.';
-      }
-      if (formData.recurrenceDurationValue <= 0) {
-        newErrors.recurrenceDurationValue = 'Recurrence duration must be greater than 0.';
-      }
+    // Price validation: only check if non-negative for single event, or if recurring, price must be > 0
+    if (formData.price < 0) {
+      newErrors.price = 'Price cannot be negative.';
+    }
+    if (formData.scheduleType === 'recurring' && formData.daysOfWeek.length === 0) {
+      newErrors.daysOfWeek = 'Select at least one day for weekly recurrence.';
     }
 
     setErrors(newErrors);
@@ -449,68 +417,26 @@ export default function ClassFormDialog({
                 />
               </Grid>
 
-              {/* Price Field - changes based on schedule type */}
-              {formData.scheduleType === 'single' ? (
-                <Grid item xs={12} md={6}>
-                  <TextField
-                    fullWidth
-                    label="Price per Session"
-                    type="number"
-                    value={formData.price}
-                    onChange={(e) => handleInputChange('price', parseFloat(e.target.value) || 0)}
-                    error={!!errors.price}
-                    helperText={errors.price || 'Price for this single class session.'}
-                    inputProps={{ min: 0, step: 0.01 }}
-                    disabled={loading}
-                    InputProps={{
-                      startAdornment: <InputAdornment position="start">$</InputAdornment>,
-                    }}
-                  />
-                </Grid>
-              ) : (
+              {/* Price Field - now always 'price', no distinction for single/package */}
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Price"
+                  type="number"
+                  value={formData.price}
+                  onChange={(e) => handleInputChange('price', parseFloat(e.target.value) || 0)}
+                  error={!!errors.price}
+                  helperText={errors.price || 'Price for this class (per session for single, total for recurring).'}
+                  inputProps={{ min: 0, step: 0.01 }}
+                  disabled={loading}
+                  InputProps={{
+                    startAdornment: <InputAdornment position="start">$</InputAdornment>,
+                  }}
+                />
+              </Grid>
+
+              {formData.scheduleType === 'recurring' && (
                 <>
-                  <Grid item xs={12} md={6}>
-                    <TextField
-                      fullWidth
-                      label="Package Price"
-                      type="number"
-                      value={formData.packagePrice}
-                      onChange={(e) => handleInputChange('packagePrice', parseFloat(e.target.value) || 0)}
-                      error={!!errors.packagePrice}
-                      helperText={errors.packagePrice || 'Total price for the entire recurring package.'}
-                      inputProps={{ min: 0, step: 0.01 }}
-                      disabled={loading}
-                      InputProps={{
-                        startAdornment: <InputAdornment position="start">$</InputAdornment>,
-                      }}
-                    />
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <TextField
-                      fullWidth
-                      label="Recurrence Duration Value"
-                      type="number"
-                      value={formData.recurrenceDurationValue}
-                      onChange={(e) => handleInputChange('recurrenceDurationValue', parseInt(e.target.value) || 0)}
-                      error={!!errors.recurrenceDurationValue}
-                      helperText={errors.recurrenceDurationValue || `Number of ${formData.recurrenceDurationUnit} for recurrence.`}
-                      inputProps={{ min: 1, max: 52 }} // Max 52 weeks or months (approx 1 year)
-                      disabled={loading}
-                    />
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <FormControl fullWidth disabled={loading}>
-                      <InputLabel>Recurrence Duration Unit</InputLabel>
-                      <Select
-                        value={formData.recurrenceDurationUnit}
-                        onChange={(e) => handleInputChange('recurrenceDurationUnit', e.target.value as 'weeks' | 'months')}
-                        label="Recurrence Duration Unit"
-                      >
-                        <MenuItem value="weeks">Weeks</MenuItem>
-                        <MenuItem value="months">Months</MenuItem>
-                      </Select>
-                    </FormControl>
-                  </Grid>
                   <Grid item xs={12}>
                     <Typography variant="body2" sx={{ mb: 1 }}>
                       Select Days of Week for Recurring Events:

@@ -1,7 +1,7 @@
-// src/app/api/classes/schedules/route.ts - Class Schedule Management API (Updated for new recurrence)
+// src/app/api/classes/schedules/route.ts - Class Schedule Management API (Updated for new recurrence and fixes)
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/app/lib/firebase/admin';
-import { ClassSchedule, ClassFormData, generateRecurringClassDates, ClassScheduleWithoutIdAndTimestamps } from '@/app/types/class';
+import { ClassSchedule, ClassFormData, generateRecurringClassDates, ClassScheduleWithoutIdAndTimestamps, RecurrencePattern } from '@/app/types/class'; // Import RecurrencePattern
 import { z } from 'zod';
 import { requireAdmin, requireStaffOrTrainer, RequestContext } from '@/app/lib/api/middleware';
 import { createdResponse, successResponse, errorResponse } from '@/app/lib/api/response-utils';
@@ -17,12 +17,9 @@ const classScheduleSchema = z.object({
   duration: z.number().int().min(15).max(240), // Duration of each session
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), // Start date of first session
   startTime: z.string().regex(/^\d{2}:\d{2}$/), // Start time of each session
-  price: z.number().nonnegative(), // Price per session (for single) or packagePrice (for recurring total)
+  price: z.number().nonnegative(), // Price for single class or total package price for recurring
   scheduleType: z.enum(['single', 'recurring']),
   daysOfWeek: z.array(z.number().int().min(0).max(6)).optional(), // Only for recurring
-  recurrenceDurationValue: z.number().int().min(1).optional(), // Only for recurring
-  recurrenceDurationUnit: z.enum(['weeks', 'months']).optional(), // Only for recurring
-  packagePrice: z.number().nonnegative().optional(), // Only for recurring
 }).superRefine((data, ctx) => {
   if (data.scheduleType === 'recurring') {
     if (!data.daysOfWeek || data.daysOfWeek.length === 0) {
@@ -32,22 +29,17 @@ const classScheduleSchema = z.object({
         path: ['daysOfWeek'],
       });
     }
-    if (data.recurrenceDurationValue === undefined || data.recurrenceDurationValue <= 0) {
+    // For recurring, price must be greater than 0
+    if (data.price <= 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Recurrence duration value must be greater than 0',
-        path: ['recurrenceDurationValue'],
-      });
-    }
-    if (data.packagePrice === undefined || data.packagePrice <= 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Package price must be greater than 0 for recurring events',
-        path: ['packagePrice'],
+        message: 'Price must be greater than 0 for recurring events',
+        path: ['price'],
       });
     }
   } else { // Single event
-    if (data.price === undefined || data.price < 0) {
+    // For single, price cannot be negative
+    if (data.price < 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'Price cannot be negative for single event',
@@ -147,17 +139,15 @@ export const POST = requireAdmin(async (request: NextRequest, context: RequestCo
     const instructorName = instructorData?.fullName || 'Unknown';
 
     // Construct recurrence pattern based on scheduleType
-    const recurrencePattern = validatedData.scheduleType === 'recurring' ? {
+    const recurrencePattern: RecurrencePattern = validatedData.scheduleType === 'recurring' ? {
       scheduleType: 'recurring' as const, // Explicit cast
       daysOfWeek: validatedData.daysOfWeek,
-      durationValue: validatedData.recurrenceDurationValue,
-      durationUnit: validatedData.recurrenceDurationUnit,
     } : {
       scheduleType: 'single' as const, // Explicit cast
     };
 
-    // Determine the price to store in the schedule
-    const schedulePrice = validatedData.scheduleType === 'recurring' ? validatedData.packagePrice : validatedData.price;
+    // Price is now the single field 'price' from validatedData
+    const schedulePrice = validatedData.price; 
 
     const scheduleData: ClassScheduleWithoutIdAndTimestamps = { // Use new type alias
       name: validatedData.name,
@@ -168,8 +158,8 @@ export const POST = requireAdmin(async (request: NextRequest, context: RequestCo
       duration: validatedData.duration,
       startDate: validatedData.startDate,
       startTime: validatedData.startTime,
-      recurrence: recurrencePattern,
-      price: schedulePrice || 0,
+      recurrence: recurrencePattern, // Assign the explicitly typed recurrencePattern
+      price: schedulePrice,
       isActive: true, // New schedules are active by default
       createdBy: session.uid,
       // description and location are optional in ClassSchedule, and not expected from form
@@ -250,22 +240,20 @@ async function createSingleClassInstance(scheduleId: string, schedule: ClassSche
 
 /**
  * Helper function to generate class instances based on new recurrence pattern.
+ * This version uses a fixed 1-year recurrence period if 'recurring'.
  */
 async function generateClassInstances(scheduleId: string, schedule: ClassScheduleWithoutIdAndTimestamps) {
   try {
     if (schedule.recurrence.scheduleType !== 'recurring' ||
-        !schedule.recurrence.durationValue ||
-        !schedule.recurrence.durationUnit ||
-        !schedule.recurrence.daysOfWeek) {
+        !schedule.recurrence.daysOfWeek) { // Removed durationValue and durationUnit checks
       throw new Error('Invalid recurrence pattern for generating instances.');
     }
 
+    // Generate occurrences for a fixed period (e.g., 1 year)
     const occurrences = generateRecurringClassDates(
       schedule.startDate,
       schedule.startTime,
-      schedule.recurrence.durationValue,
-      schedule.recurrence.durationUnit,
-      schedule.recurrence.daysOfWeek
+      schedule.recurrence.daysOfWeek! // Pass only 3 arguments, use non-null assertion as checked above
     );
 
     const batch = adminDb.batch();
@@ -295,7 +283,7 @@ async function generateClassInstances(scheduleId: string, schedule: ClassSchedul
         location: schedule.location || '',
         notes: '',
         duration: schedule.duration,
-        price: (schedule.price / occurrences.length) || 0, // Distribute package price per session
+        price: (schedule.price / occurrences.length) || 0, // Distribute total package price per session
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       };
@@ -341,17 +329,15 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
       const instructorName = (await adminDb.collection('staff').doc(validatedData.instructorId).get()).data()?.fullName || 'Unknown';
   
       // Construct recurrence pattern based on scheduleType for storage
-      const recurrencePattern = validatedData.scheduleType === 'recurring' ? {
+      const recurrencePattern: RecurrencePattern = validatedData.scheduleType === 'recurring' ? {
         scheduleType: 'recurring' as const,
         daysOfWeek: validatedData.daysOfWeek,
-        durationValue: validatedData.recurrenceDurationValue,
-        durationUnit: validatedData.recurrenceDurationUnit,
       } : {
         scheduleType: 'single' as const,
       };
 
-      // Determine the price to store in the schedule
-      const schedulePrice = validatedData.scheduleType === 'recurring' ? validatedData.packagePrice : validatedData.price;
+      // Price is now the single field 'price' from validatedData
+      const schedulePrice = validatedData.price; 
   
       const updatePayload = {
         name: validatedData.name,
@@ -362,8 +348,8 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
         duration: validatedData.duration,
         startDate: validatedData.startDate,
         startTime: validatedData.startTime,
-        recurrence: recurrencePattern,
-        price: schedulePrice || 0,
+        recurrence: recurrencePattern, // Assign the explicitly typed recurrencePattern
+        price: schedulePrice,
         updatedAt: FieldValue.serverTimestamp(),
       };
   
@@ -376,9 +362,7 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
         oldSchedule.startTime !== validatedData.startTime ||
         oldSchedule.duration !== validatedData.duration ||
         (validatedData.scheduleType === 'recurring' &&
-          (oldSchedule.recurrence.daysOfWeek?.toString() !== validatedData.daysOfWeek?.toString() ||
-           oldSchedule.recurrence.durationValue !== validatedData.recurrenceDurationValue ||
-           oldSchedule.recurrence.durationUnit !== validatedData.recurrenceDurationUnit));
+          (oldSchedule.recurrence.daysOfWeek?.toString() !== validatedData.daysOfWeek?.toString())); // Check only daysOfWeek now
   
       if (shouldRegenerate) {
         // Delete existing instances for this schedule
@@ -394,8 +378,8 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
             ...oldSchedule, // Start with old schedule data
             ...updatePayload, // Overlay updated fields
             instructorName, // Ensure updated instructor name is propagated
-            recurrence: recurrencePattern, // Overlay new recurrence pattern
-            price: schedulePrice || 0, // Overlay new price
+            recurrence: recurrencePattern, // Overlay new recurrence pattern (explicitly typed)
+            price: schedulePrice, // Overlay new price
             // isActive and createdBy come from oldSchedule as they are not changed via updatePayload
         };
 
