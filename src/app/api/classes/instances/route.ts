@@ -1,14 +1,14 @@
-// src/app/api/classes/instances/[id]/route.ts (Updated - Removed Price Fields)
+// src/app/api/classes/instances/route.ts (CORRECTED VERSION)
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/app/lib/firebase/admin';
-import { ClassInstance } from '@/app/types/class';
+import { ClassInstance, ClassStatus } from '@/app/types/class';
 import { z } from 'zod';
 import { requireAdmin, requireStaffOrTrainer, RequestContext } from '@/app/lib/api/middleware';
 import { successResponse, errorResponse, notFoundResponse } from '@/app/lib/api/response-utils';
 import { FieldValue } from 'firebase-admin/firestore';
 import { addMinutes, format as formatFns } from 'date-fns';
 
-// Validation schema for updating class instances (Removed price field)
+// Validation schema for updating class instances
 const updateInstanceSchema = z.object({
   name: z.string().min(3).max(100).optional(),
   classType: z.enum(['MMA', 'BJJ', 'Boxing', 'Muay Thai', 'Wrestling', 'Judo', 'Kickboxing', 'Fitness', 'Yoga', 'Kids Martial Arts']).optional(),
@@ -27,172 +27,176 @@ const cancelInstanceSchema = z.object({
   reason: z.string().min(1, 'Cancellation reason is required'),
 });
 
-// GET /api/classes/instances/[id] - Get specific class instance
+// GET /api/classes/instances - List class instances with filtering
 export const GET = requireStaffOrTrainer(async (request: NextRequest, context: RequestContext) => {
-  const { params } = context;
-  if (!params?.id) {
-    return notFoundResponse('Class instance');
-  }
-
   try {
-    const instanceDoc = await adminDb.collection('classInstances').doc(params.id).get();
+    const { session } = context;
+    const url = new URL(request.url);
     
-    if (!instanceDoc.exists) {
-      return notFoundResponse('Class instance');
+    // Extract query parameters
+    const startDate = url.searchParams.get('startDate');
+    const endDate = url.searchParams.get('endDate');
+    const classType = url.searchParams.get('classType');
+    const instructorId = url.searchParams.get('instructorId');
+    const status = url.searchParams.get('status');
+    const search = url.searchParams.get('search');
+
+    let query: any = adminDb.collection('classInstances');
+
+    // Apply filters
+    if (startDate) {
+      query = query.where('date', '>=', startDate);
+    }
+    
+    if (endDate) {
+      query = query.where('date', '<=', endDate);
+    }
+    
+    if (classType) {
+      query = query.where('classType', '==', classType);
+    }
+    
+    if (instructorId) {
+      query = query.where('instructorId', '==', instructorId);
+    }
+    
+    if (status) {
+      query = query.where('status', '==', status);
     }
 
-    const instance: ClassInstance = {
-      id: instanceDoc.id,
-      ...instanceDoc.data(),
-      createdAt: instanceDoc.data()?.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-      updatedAt: instanceDoc.data()?.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-    } as ClassInstance;
+    // For trainers, only show their assigned instances
+    if (session.role === 'trainer') {
+      query = query.where('instructorId', '==', session.uid);
+    }
 
-    return successResponse(instance);
+    // Order by date and time
+    query = query.orderBy('date', 'asc').orderBy('startTime', 'asc');
+
+    const snapshot = await query.get();
+    let instances: ClassInstance[] = [];
+
+    snapshot.forEach((doc: any) => { // FIXED: Removed type annotation
+      const data = doc.data();
+      instances.push({
+        id: doc.id,
+        scheduleId: data.scheduleId,
+        name: data.name,
+        classType: data.classType,
+        instructorId: data.instructorId,
+        instructorName: data.instructorName,
+        date: data.date,
+        startTime: data.startTime,
+        endTime: data.endTime,
+        maxParticipants: data.maxParticipants,
+        registeredParticipants: data.registeredParticipants || [],
+        waitlist: data.waitlist || [],
+        status: data.status as ClassStatus,
+        location: data.location || '',
+        notes: data.notes || '',
+        duration: data.duration,
+        actualDuration: data.actualDuration,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+        updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+      });
+    });
+
+    // Apply search filtering after database query (since it's a complex filter)
+    if (search) {
+      const searchLower = search.toLowerCase();
+      instances = instances.filter(instance =>
+        instance.name.toLowerCase().includes(searchLower) ||
+        instance.instructorName.toLowerCase().includes(searchLower) ||
+        instance.classType.toLowerCase().includes(searchLower) ||
+        instance.notes?.toLowerCase().includes(searchLower) ||
+        instance.location?.toLowerCase().includes(searchLower)
+      );
+    }
+
+    return successResponse(instances);
   } catch (error) {
-    console.error('Get instance error:', error);
-    return errorResponse('Failed to fetch class instance');
+    console.error('Get instances error:', error);
+    return errorResponse('Failed to fetch class instances');
   }
 });
 
-// PUT /api/classes/instances/[id] - Update class instance
-export const PUT = requireAdmin(async (request: NextRequest, context: RequestContext) => {
-  const { params } = context;
-  if (!params?.id) {
-    return notFoundResponse('Class instance');
-  }
-
+// POST /api/classes/instances - Create a new class instance
+export const POST = requireAdmin(async (request: NextRequest, context: RequestContext) => {
   try {
+    const { session } = context;
     const body = await request.json();
-    const validatedData = updateInstanceSchema.parse(body);
-
-    const instanceRef = adminDb.collection('classInstances').doc(params.id);
-    const instanceDoc = await instanceRef.get();
-
-    if (!instanceDoc.exists) {
-      return notFoundResponse('Class instance');
-    }
-
-    const currentInstance = instanceDoc.data() as ClassInstance;
-
-    // Check if instance can be modified
-    if (currentInstance.status === 'completed') {
-      return errorResponse('Cannot modify completed class instances', 400);
-    }
-
-    // If instructor is being changed, verify the new instructor exists
-    let instructorName = currentInstance.instructorName;
-    if (validatedData.instructorId && validatedData.instructorId !== currentInstance.instructorId) {
-      const instructorDoc = await adminDb.collection('staff').doc(validatedData.instructorId).get();
-      if (!instructorDoc.exists) {
-        return errorResponse('Instructor not found', 400);
+    
+    // Validate required fields
+    const requiredFields = ['name', 'classType', 'instructorId', 'date', 'startTime', 'duration', 'maxParticipants'];
+    for (const field of requiredFields) {
+      if (!body[field]) {
+        return errorResponse(`${field} is required`, 400);
       }
-      instructorName = instructorDoc.data()?.fullName || 'Unknown';
     }
 
-    // Calculate new end time if start time or duration changed
-    let endTime = currentInstance.endTime;
-    if (validatedData.startTime || validatedData.duration) {
-      const startTime = validatedData.startTime || currentInstance.startTime;
-      const duration = validatedData.duration || currentInstance.duration;
-      
-      const [hours, minutes] = startTime.split(':').map(Number);
-      const startDate = new Date();
-      startDate.setHours(hours, minutes, 0, 0);
-      const endDate = addMinutes(startDate, duration);
-      endTime = formatFns(endDate, 'HH:mm');
+    // Verify instructor exists
+    const instructorDoc = await adminDb.collection('staff').doc(body.instructorId).get();
+    if (!instructorDoc.exists) {
+      return errorResponse('Instructor not found', 400);
     }
 
-    const updateData: Partial<ClassInstance> = {
-      ...validatedData,
+    const instructorName = instructorDoc.data()?.fullName || 'Unknown';
+
+    // Calculate end time
+    const [hours, minutes] = body.startTime.split(':').map(Number);
+    const startTimeDate = new Date();
+    startTimeDate.setHours(hours, minutes, 0, 0);
+    const endTimeDate = addMinutes(startTimeDate, body.duration);
+    const endTime = formatFns(endTimeDate, 'HH:mm');
+
+    const instanceData = {
+      scheduleId: body.scheduleId || null,
+      name: body.name,
+      classType: body.classType,
+      instructorId: body.instructorId,
       instructorName,
+      date: body.date,
+      startTime: body.startTime,
       endTime,
+      maxParticipants: body.maxParticipants,
+      registeredParticipants: [],
+      waitlist: [],
+      status: 'scheduled' as ClassStatus, // FIXED: Added explicit type assertion
+      location: body.location || '',
+      notes: body.notes || '',
+      duration: body.duration,
+      createdBy: session.uid,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+
+    const instanceRef = await adminDb.collection('classInstances').add(instanceData);
+
+    // FIXED: Explicit object construction instead of spread operator
+    const newInstance: ClassInstance = {
+      id: instanceRef.id,
+      scheduleId: instanceData.scheduleId,
+      name: instanceData.name,
+      classType: instanceData.classType,
+      instructorId: instanceData.instructorId,
+      instructorName: instanceData.instructorName,
+      date: instanceData.date,
+      startTime: instanceData.startTime,
+      endTime: instanceData.endTime,
+      maxParticipants: instanceData.maxParticipants,
+      registeredParticipants: instanceData.registeredParticipants,
+      waitlist: instanceData.waitlist,
+      status: instanceData.status,
+      location: instanceData.location,
+      notes: instanceData.notes,
+      duration: instanceData.duration,
+      actualDuration: undefined, // FIXED: Added missing field
+      createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
-    // Remove undefined values
-    Object.keys(updateData).forEach(key => {
-      if (updateData[key as keyof ClassInstance] === undefined) {
-        delete updateData[key as keyof ClassInstance];
-      }
-    });
-
-    await instanceRef.update({
-      ...updateData,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-
-    const updatedInstance: ClassInstance = {
-      ...currentInstance,
-      ...updateData,
-      id: params.id,
-    };
-
-    return successResponse(updatedInstance);
+    return successResponse(newInstance, 'Class instance created successfully');
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return errorResponse('Validation failed', 400, error.errors);
-    }
-    console.error('Update instance error:', error);
-    return errorResponse('Failed to update class instance');
-  }
-});
-
-// DELETE /api/classes/instances/[id] - Cancel class instance
-export const DELETE = requireAdmin(async (request: NextRequest, context: RequestContext) => {
-  const { params } = context;
-  if (!params?.id) {
-    return notFoundResponse('Class instance');
-  }
-
-  try {
-    const body = await request.json();
-    const { reason } = cancelInstanceSchema.parse(body);
-
-    const instanceRef = adminDb.collection('classInstances').doc(params.id);
-    const instanceDoc = await instanceRef.get();
-
-    if (!instanceDoc.exists) {
-      return notFoundResponse('Class instance');
-    }
-
-    const instance = instanceDoc.data() as ClassInstance;
-
-    // Check if instance can be cancelled
-    if (instance.status === 'completed') {
-      return errorResponse('Cannot cancel completed class instances', 400);
-    }
-
-    if (instance.status === 'cancelled') {
-      return errorResponse('Class instance is already cancelled', 400);
-    }
-
-    // Check if there are registered participants
-    if (instance.registeredParticipants && instance.registeredParticipants.length > 0) {
-      return errorResponse('Cannot cancel class with registered participants. Please handle participant notifications first.', 400);
-    }
-
-    // Update instance status to cancelled
-    await instanceRef.update({
-      status: 'cancelled',
-      notes: instance.notes ? `${instance.notes}\n\nCancelled: ${reason}` : `Cancelled: ${reason}`,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-
-    const updatedInstance: ClassInstance = {
-      ...instance,
-      id: params.id,
-      status: 'cancelled',
-      notes: instance.notes ? `${instance.notes}\n\nCancelled: ${reason}` : `Cancelled: ${reason}`,
-      updatedAt: new Date().toISOString(),
-    };
-
-    return successResponse(updatedInstance);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return errorResponse('Validation failed', 400, error.errors);
-    }
-    console.error('Cancel instance error:', error);
-    return errorResponse('Failed to cancel class instance');
+    console.error('Create instance error:', error);
+    return errorResponse('Failed to create class instance');
   }
 });
