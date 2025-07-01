@@ -1,870 +1,503 @@
-// src/app/classes/ClassesPageClient.tsx - Complete Class Management Page
+// src/app/classes/ClassesPageClient.tsx (Modified to use fixed User type and instance editing logic)
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
-  Container,
-  Paper,
-  Card,
-  CardContent,
-  Button,
-  Chip,
-  Tab,
-  Tabs,
-  Grid,
   Typography,
-  Divider,
-  IconButton,
-  Menu,
-  MenuItem,
-  ListItemIcon,
-  ListItemText,
+  CircularProgress,
   Alert,
-  Snackbar,
+  Tabs,
+  Tab,
+  Button,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
+  TextField,
+  InputAdornment,
+  MenuItem,
   FormControl,
   InputLabel,
   Select,
-  TextField,
-  InputAdornment,
-  Skeleton,
+  Grid,
 } from '@mui/material';
-import {
-  Add as AddIcon,
-  CalendarToday as CalendarIcon,
-  Schedule as ScheduleIcon,
-  Settings as SettingsIcon,
-  FitnessCenter as FitnessCenterIcon,
-  People as PeopleIcon,
-  School as SchoolIcon,
-  FilterList as FilterIcon,
-  ViewWeek as ViewWeekIcon,
-  ViewDay as ViewDayIcon,
-  ViewModule as ViewMonthIcon,
-  Search as SearchIcon,
-  Refresh as RefreshIcon,
-} from '@mui/icons-material';
-import Layout from '../components/layout/Layout';
-import ClassFormDialog from '../components/forms/ClassFormDialog';
-import ClassCard from '../components/ui/ClassCards'; // Corrected import file name
-import ClassCalendar from '../components/ui/ClassCalendar';
-import DeleteConfirmationDialog from '../components/ui/DeleteConfirmationDialog';
-import {
-  ClassSchedule,
-  ClassInstance,
-  ClassFormData,
-  ClassStats,
-  ClassType,
-  CLASS_TYPE_OPTIONS,
-  getClassTypeColor,
-} from '../types/class';
-import { SessionData } from '../types';
+import { Add as AddIcon, Search as SearchIcon } from '@mui/icons-material';
+import ClassCard from '@/app/components/ui/ClassCards';
+import ClassCalendar from '@/app/components/ui/ClassCalendar';
+import ClassFormDialog from '@/app/components/forms/ClassFormDialog';
+import DeleteConfirmationDialog from '@/app/components/ui/DeleteConfirmationDialog';
+import { ClassSchedule, ClassInstance, ClassFormData, ClassType, ClassFilters, CLASS_TYPE_OPTIONS } from '@/app/types/class';
+import { useAuth } from '@/app/contexts/AuthContext';
+import { format, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 
-interface ClassesPageClientProps {
-  session: SessionData;
-}
-
-export default function ClassesPageClient({ session }: ClassesPageClientProps) {
-  // State management
-  const [activeTab, setActiveTab] = useState(0);
-  const [viewMode, setViewMode] = useState<'day' | 'week' | 'month'>('week');
+export default function ClassesPageClient() {
+  const { user } = useAuth();
+  const [tabIndex, setTabIndex] = useState(0);
+  const [schedules, setSchedules] = useState<ClassSchedule[]>([]);
+  const [instances, setInstances] = useState<ClassInstance[]>([]);
   const [loading, setLoading] = useState(true);
-  const [submitLoading, setSubmitLoading] = useState(false);
-
-  // Data state
-  const [classSchedules, setClassSchedules] = useState<ClassSchedule[]>([]);
-  const [classInstances, setClassInstances] = useState<ClassInstance[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [isFormDialogOpen, setIsFormDialogOpen] = useState(false);
+  const [editingClass, setEditingClass] = useState<ClassSchedule | ClassInstance | null>(null);
+  const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [deleteTargetType, setDeleteTargetType] = useState<'schedule' | 'instance' | null>(null);
   const [instructors, setInstructors] = useState<Array<{ id: string; name: string; specialties?: string[] }>>([]);
-  const [stats, setStats] = useState<ClassStats>({
-    totalClasses: 0,
-    upcomingClasses: 0,
-    completedClasses: 0,
-    totalParticipants: 0,
-    averageAttendance: 0,
-    popularClassTypes: [],
+
+  // Filters for instances tab
+  const [filters, setFilters] = useState<ClassFilters>({
+    classType: undefined,
+    instructorId: undefined,
+    date: format(new Date(), 'yyyy-MM-dd'), // Default to today
+    searchTerm: '',
   });
 
-  // Filter and search state
-  const [searchTerm, setSearchTerm] = useState('');
-  const [classTypeFilter, setClassTypeFilter] = useState<ClassType | ''>('');
-  const [instructorFilter, setInstructorFilter] = useState('');
-  const [filterAnchorEl, setFilterAnchorEl] = useState<null | HTMLElement>(null);
-
-  // Dialog state
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [selectedClass, setSelectedClass] = useState<ClassSchedule | ClassInstance | null>(null);
-
-  // Notification state
-  const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
-
-  // Tab configuration based on user role
-  const getTabs = () => {
-    const baseTabs = [
-      { label: 'Schedule Overview', icon: CalendarIcon },
-      { label: 'All Classes', icon: FitnessCenterIcon },
-    ];
-
-    if (session.role === 'trainer' || session.role === 'staff') {
-      baseTabs.push({ label: 'My Classes', icon: ScheduleIcon });
-    }
-
-    if (session.role === 'admin') {
-      baseTabs.push(
-        { label: 'Class Analytics', icon: SchoolIcon },
-        { label: 'Settings', icon: SettingsIcon }
-      );
-    }
-
-    return baseTabs;
-  };
-
-  const tabs = getTabs();
-
-  // Load data
-  const loadClassSchedules = useCallback(async (): Promise<void> => {
+  const loadInstructors = useCallback(async () => {
     try {
-      setLoading(true);
-      setError(null);
+      const res = await fetch('/api/staff');
+      if (!res.ok) throw new Error('Failed to fetch instructors');
+      const data = await res.json();
+      setInstructors(data.data.map((staff: any) => ({ id: staff.id, name: staff.fullName, specialties: staff.specialties || [] })));
+    } catch (err: any) {
+      console.error('Failed to load instructors:', err);
+      setError(err.message || 'Failed to load instructors.');
+    }
+  }, []);
 
-      const params = new URLSearchParams();
-      if (searchTerm.trim()) params.append('search', searchTerm.trim());
-      if (classTypeFilter) params.append('classType', classTypeFilter);
-      if (instructorFilter) params.append('instructorId', instructorFilter);
-
-      const response = await fetch(`/api/classes/schedules?${params.toString()}`);
-      if (!response.ok) throw new Error('Failed to load class schedules');
-
-      const data = await response.json();
-      setClassSchedules(data.data || []);
-    } catch (error) {
-      setError('Failed to load class schedules');
-      console.error('Load schedules error:', error);
+  const loadClassSchedules = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/classes/schedules');
+      if (!res.ok) throw new Error('Failed to fetch class schedules');
+      const data = await res.json();
+      setSchedules(data.data || []);
+    } catch (err: any) {
+      console.error('Failed to load class schedules:', err);
+      setError(err.message || 'Failed to load class schedules.');
     } finally {
       setLoading(false);
     }
-  }, [searchTerm, classTypeFilter, instructorFilter]);
+  }, []);
 
-  const loadClassInstances = useCallback(async (): Promise<void> => {
+  const loadClassInstances = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - 30); // Last 30 days
-      const endDate = new Date();
-      endDate.setDate(endDate.getDate() + 30); // Next 30 days
+      const queryParams = new URLSearchParams();
+      // Ensure date filter is for today and future for "Upcoming Classes"
+      const today = format(new Date(), 'yyyy-MM-dd');
+      queryParams.append('date', filters.date || today); // Use filter date, or today
 
-      const params = new URLSearchParams({
-        startDate: startDate.toISOString().split('T')[0],
-        endDate: endDate.toISOString().split('T')[0],
+      if (filters.classType) queryParams.append('classType', filters.classType);
+      if (filters.instructorId) queryParams.append('instructorId', filters.instructorId);
+      if (filters.searchTerm) queryParams.append('search', filters.searchTerm);
+
+      const res = await fetch(`/api/classes/instances?${queryParams.toString()}`);
+      if (!res.ok) throw new Error('Failed to fetch class instances');
+      const data = await res.json();
+      // Filter out past classes on the client-side if date filter is not specific to past dates
+      const upcoming = data.data.filter((instance: ClassInstance) => {
+        const instanceDateTime = parseISO(`${instance.date}T${instance.startTime}`);
+        return instanceDateTime >= new Date(); // Only show instances that are today or in the future
       });
-
-      const response = await fetch(`/api/classes/instances?${params.toString()}`);
-      if (!response.ok) throw new Error('Failed to load class instances');
-
-      const data = await response.json();
-      setClassInstances(data.data || []);
-    } catch (error) {
-      setError('Failed to load class instances');
-      console.error('Load instances error:', error);
+      setInstances(upcoming || []);
+    } catch (err: any) {
+      console.error('Failed to load class instances:', err);
+      setError(err.message || 'Failed to load class instances.');
+    } finally {
+      setLoading(false);
     }
-  }, []);
-
-  const loadInstructors = useCallback(async (): Promise<void> => {
-    try {
-      const response = await fetch('/api/staff?role=trainer');
-      if (!response.ok) throw new Error('Failed to load instructors');
-
-      const data = await response.json();
-      setInstructors(data.data?.map((staff: any) => ({
-        id: staff.uid, // Use uid as the id
-        name: staff.fullName,
-        specialties: staff.specializations || [], // Correctly map 'specializations'
-      })) || []);
-    } catch (error) {
-      console.error('Load instructors error:', error);
-    }
-  }, []);
-
-  const loadStats = useCallback(async (): Promise<void> => {
-    try {
-      const response = await fetch('/api/classes/stats');
-      if (!response.ok) throw new Error('Failed to load stats');
-
-      const data = await response.json();
-      setStats(data.data || stats);
-    } catch (error) {
-      console.error('Load stats error:', error);
-    }
-  }, []);
+  }, [filters]); // Depend on filters for reloading
 
   useEffect(() => {
-    loadClassSchedules();
-    loadClassInstances();
     loadInstructors();
-    loadStats();
-  }, [loadClassSchedules, loadClassInstances, loadInstructors, loadStats]);
+    if (tabIndex === 0) {
+      loadClassSchedules();
+    } else if (tabIndex === 1) {
+      loadClassInstances();
+    } else if (tabIndex === 2 && user?.role === 'trainer') {
+      // For 'My Schedule' tab, load instances specific to the logged-in trainer
+      setFilters(prev => ({ ...prev, instructorId: user.uid, date: format(new Date(), 'yyyy-MM-dd') }));
+      loadClassInstances();
+    }
+  }, [tabIndex, loadClassSchedules, loadClassInstances, loadInstructors, user]); // Added user to dependencies
 
-  // Event handlers
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
-    setActiveTab(newValue);
+    setTabIndex(newValue);
+    // Reset filters when changing tabs, or set appropriate defaults
+    if (newValue === 1) { // Upcoming Classes tab
+      setFilters({
+        classType: undefined,
+        instructorId: undefined,
+        date: format(new Date(), 'yyyy-MM-dd'),
+        searchTerm: '',
+      });
+    } else if (newValue === 0) { // Class Schedules tab
+        // No filters for schedules currently, but clear if any were applied
+        setFilters({
+            classType: undefined,
+            instructorId: undefined,
+            date: undefined,
+            searchTerm: '',
+        });
+    }
   };
 
-  const handleCreateClass = async (formData: ClassFormData) => {
+  const handleCreateClassClick = () => {
+    setEditingClass(null);
+    setFormMode('create');
+    setIsFormDialogOpen(true);
+  };
+
+  const handleEditClass = (data: ClassSchedule | ClassInstance) => {
+    setEditingClass(data);
+    setFormMode('edit');
+    setIsFormDialogOpen(true);
+  };
+
+  const handleCloseFormDialog = () => {
+    setIsFormDialogOpen(false);
+    setEditingClass(null);
+  };
+
+  const handleSubmitForm = async (formData: ClassFormData) => {
+    setLoading(true);
     try {
-      setSubmitLoading(true);
-      const response = await fetch('/api/classes/schedules', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
+      let res: Response;
+      if (formMode === 'create') {
+        res = await fetch('/api/classes/schedules', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        });
+      } else {
+        // Handle editing either a schedule or an instance
+        if (!editingClass) throw new Error('No class selected for editing.');
 
-      if (!response.ok) throw new Error('Failed to create class');
+        if ('recurrence' in editingClass) { // It's a ClassSchedule
+          res = await fetch(`/api/classes/schedules/${editingClass.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData),
+          });
+        } else { // It's a ClassInstance
+          // For instances, only specific fields can be updated, and recurrence is not applicable.
+          const instanceUpdateData = {
+            name: formData.name,
+            description: formData.description,
+            classType: formData.classType,
+            instructorId: formData.instructorId,
+            maxParticipants: formData.maxParticipants,
+            duration: formData.duration,
+            date: formData.startDate,
+            startTime: formData.startTime,
+            // location, requirements, price, level, tags are not part of ClassFormData for instance update
+            // if these fields were needed, they would need to be passed explicitly or part of the instanceUpdateSchema
+          };
+          res = await fetch(`/api/classes/instances/${editingClass.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(instanceUpdateData),
+          });
+        }
+      }
 
-      setSuccessMessage('Class scheduled successfully!');
-      await loadClassSchedules();
-      await loadClassInstances();
-      setCreateDialogOpen(false);
-    } catch (error) {
-      setError('Failed to create class');
-      console.error('Create class error:', error);
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || `Failed to ${formMode} class`);
+      }
+
+      // Reload appropriate data based on the active tab
+      if (tabIndex === 0) {
+        loadClassSchedules();
+      } else {
+        loadClassInstances(); // This will reload for tab 1 and 2 (My Schedule)
+      }
+      handleCloseFormDialog();
+    } catch (err: any) {
+      console.error(`Error ${formMode}ing class:`, err);
+      setError(err.message || `Failed to ${formMode} class.`);
     } finally {
-      setSubmitLoading(false);
+      setLoading(false);
     }
   };
 
-  const handleEditClass = async (formData: ClassFormData) => {
-    if (!selectedClass || !('recurrence' in selectedClass)) return;
+  const handleDeleteClass = (id: string, type: 'schedule' | 'instance') => {
+    setDeleteTargetId(id);
+    setDeleteTargetType(type);
+    setIsDeleteDialogOpen(true);
+  };
 
+  const handleConfirmDelete = async () => {
+    if (!deleteTargetId || !deleteTargetType) return;
+
+    setLoading(true);
     try {
-      setSubmitLoading(true);
-      const response = await fetch(`/api/classes/schedules/${selectedClass.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+      const endpoint = deleteTargetType === 'schedule'
+        ? `/api/classes/schedules/${deleteTargetId}`
+        : `/api/classes/instances/${deleteTargetId}`; // DELETE for instance means cancellation (soft delete)
+      const res = await fetch(endpoint, {
+        method: 'DELETE',
       });
 
-      if (!response.ok) throw new Error('Failed to update class');
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || `Failed to delete ${deleteTargetType}`);
+      }
 
-      setSuccessMessage('Class updated successfully!');
-      await loadClassSchedules();
-      await loadClassInstances();
-      setEditDialogOpen(false);
-    } catch (error) {
-      setError('Failed to update class');
-      console.error('Update class error:', error);
+      // Reload appropriate data
+      if (tabIndex === 0) {
+        loadClassSchedules();
+      } else {
+        loadClassInstances();
+      }
+      setIsDeleteDialogOpen(false);
+      setDeleteTargetId(null);
+      setDeleteTargetType(null);
+    } catch (err: any) {
+      console.error(`Error deleting ${deleteTargetType}:`, err);
+      setError(err.message || `Failed to delete ${deleteTargetType}.`);
     } finally {
-      setSubmitLoading(false);
+      setLoading(false);
     }
   };
 
-  const handleDeleteClass = async () => {
-    if (!selectedClass) return;
-
-    try {
-      const isSchedule = 'recurrence' in selectedClass;
-      const endpoint = isSchedule
-        ? `/api/classes/schedules/${selectedClass.id}`
-        : `/api/classes/instances/${selectedClass.id}`;
-
-      const response = await fetch(endpoint, { method: 'DELETE' });
-      if (!response.ok) throw new Error('Failed to delete class');
-
-      setSuccessMessage(`${isSchedule ? 'Schedule' : 'Class'} deleted successfully!`);
-      await loadClassSchedules();
-      await loadClassInstances();
-      setDeleteDialogOpen(false);
-      setSelectedClass(null);
-    } catch (error) {
-      setError('Failed to delete class');
-      console.error('Delete class error:', error);
-    }
+  const handleCancelDelete = () => {
+    setIsDeleteDialogOpen(false);
+    setDeleteTargetId(null);
+    setDeleteTargetType(null);
   };
 
-  const handleClassInstanceAction = async (action: string, classInstance: ClassInstance) => {
+  const handleInstanceAction = useCallback(async (instanceId: string, action: 'start' | 'end' | 'cancel') => {
+    setLoading(true);
     try {
-      const response = await fetch(`/api/classes/instances/${classInstance.id}/${action}`, {
-        method: 'POST',
+      const res = await fetch(`/api/classes/instances/${instanceId}/${action}`, {
+        method: 'PATCH', // Using PATCH for status updates
       });
-
-      if (!response.ok) throw new Error(`Failed to ${action} class`);
-
-      setSuccessMessage(`Class ${action} successfully!`);
-      await loadClassInstances();
-    } catch (error) {
-      setError(`Failed to ${action} class`);
-      console.error(`${action} class error:`, error);
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || `Failed to ${action} class`);
+      }
+      loadClassInstances(); // Reload instances to reflect status change
+    } catch (err: any) {
+      console.error(`Error ${action}ing class instance:`, err);
+      setError(err.message || `Failed to ${action} class.`);
+    } finally {
+      setLoading(false);
     }
-  };
+  }, [loadClassInstances]);
 
-  // Filter events
-  const handleFilterClick = (event: React.MouseEvent<HTMLElement>) => {
-    setFilterAnchorEl(event.currentTarget);
-  };
 
-  const handleFilterClose = () => {
-    setFilterAnchorEl(null);
-  };
-
-  const clearFilters = () => {
-    setSearchTerm('');
-    setClassTypeFilter('');
-    setInstructorFilter('');
-  };
-
-  // Filtered data
-  const filteredSchedules = classSchedules.filter(schedule => {
-    const matchesSearch = !searchTerm ||
-      schedule.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      schedule.instructorName.toLowerCase().includes(searchTerm.toLowerCase());
-
-    const matchesClassType = !classTypeFilter || schedule.classType === classTypeFilter;
-    const matchesInstructor = !instructorFilter || schedule.instructorId === instructorFilter;
-
-    return matchesSearch && matchesClassType && matchesInstructor;
-  });
-
-  const filteredInstances = classInstances.filter(instance => {
-    if (session.role === 'trainer') {
-      return instance.instructorId === session.uid;
-    }
-    return true;
-  });
-
-  const renderTabContent = () => {
-    switch (activeTab) {
-      case 0: // Schedule Overview
-        return (
-          <Grid container spacing={4}>
-            <Grid item xs={12}>
-              <ClassCalendar
-                classes={filteredInstances}
-                viewMode={viewMode}
-                onViewModeChange={setViewMode}
-                onClassClick={(classInstance) => {
-                  setSelectedClass(classInstance);
-                  // Could open a detailed view dialog here
-                }}
-                onDateClick={(date) => {
-                  if (session.role === 'admin') {
-                    setCreateDialogOpen(true);
-                  }
-                }}
-                userRole={session.role}
-              />
-            </Grid>
-          </Grid>
-        );
-
-      case 1: // All Classes
-        return (
-          <Grid container spacing={3}>
-            {loading ? (
-              // Loading skeletons
-              Array.from({ length: 6 }).map((_, index) => (
-                <Grid item xs={12} sm={6} lg={4} key={index}>
-                  <Skeleton variant="rectangular" height={200} sx={{ borderRadius: 2 }} />
-                </Grid>
-              ))
-            ) : filteredSchedules.length === 0 ? (
-              <Grid item xs={12}>
-                <Box sx={{ textAlign: 'center', py: 8 }}>
-                  <FitnessCenterIcon sx={{ fontSize: 64, mb: 2, color: 'grey.400' }} />
-                  <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                    No classes found
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 3, maxWidth: 400, mx: 'auto' }}>
-                    {searchTerm || classTypeFilter || instructorFilter
-                      ? 'Try adjusting your filters to see more classes.'
-                      : session.role === 'admin'
-                        ? 'Get started by scheduling your first class.'
-                        : 'Classes will appear here when they are scheduled.'
-                    }
-                  </Typography>
-                  {(searchTerm || classTypeFilter || instructorFilter) && (
-                    <Button variant="outlined" onClick={clearFilters}>
-                      Clear Filters
-                    </Button>
-                  )}
-                  {session.role === 'admin' && !searchTerm && !classTypeFilter && !instructorFilter && (
-                    <Button
-                      variant="contained"
-                      startIcon={<AddIcon />}
-                      onClick={() => setCreateDialogOpen(true)}
-                    >
-                      Schedule Your First Class
-                    </Button>
-                  )}
-                </Box>
-              </Grid>
-            ) : (
-              filteredSchedules.map((schedule) => (
-                <Grid item xs={12} sm={6} lg={4} key={schedule.id}>
-                  <ClassCard
-                    classData={schedule}
-                    type="schedule"
-                    onEdit={() => {
-                      setSelectedClass(schedule);
-                      setEditDialogOpen(true);
-                    }}
-                    onDelete={() => {
-                      setSelectedClass(schedule);
-                      setDeleteDialogOpen(true);
-                    }}
-                    userRole={session.role}
-                  />
-                </Grid>
-              ))
-            )}
-          </Grid>
-        );
-
-      case 2: // My Classes (Trainer/Staff only)
-        const myInstances = filteredInstances.filter(instance =>
-          instance.instructorId === session.uid
-        );
-
-        return (
-          <Grid container spacing={3}>
-            {myInstances.length === 0 ? (
-              <Grid item xs={12}>
-                <Box sx={{ textAlign: 'center', py: 8 }}>
-                  <ScheduleIcon sx={{ fontSize: 64, mb: 2, color: 'grey.400' }} />
-                  <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                    No classes assigned
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    You don't have any classes assigned to you yet.
-                  </Typography>
-                </Box>
-              </Grid>
-            ) : (
-              myInstances.map((instance) => (
-                <Grid item xs={12} sm={6} lg={4} key={instance.id}>
-                  <ClassCard
-                    classData={instance}
-                    type="instance"
-                    onStartClass={() => handleClassInstanceAction('start', instance)}
-                    onEndClass={() => handleClassInstanceAction('end', instance)}
-                    onCancelClass={() => handleClassInstanceAction('cancel', instance)}
-                    onViewParticipants={() => {
-                      // Open participants dialog
-                    }}
-                    userRole={session.role}
-                  />
-                </Grid>
-              ))
-            )}
-          </Grid>
-        );
-
-      case 3: // Analytics (Admin only)
-        return (
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={3}>
-              <Card>
-                <CardContent sx={{ textAlign: 'center' }}>
-                  <Typography variant="h4" sx={{ fontWeight: 700, color: 'primary.main' }}>
-                    {stats.totalClasses}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Total Classes
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid item xs={12} md={3}>
-              <Card>
-                <CardContent sx={{ textAlign: 'center' }}>
-                  <Typography variant="h4" sx={{ fontWeight: 700, color: 'success.main' }}>
-                    {stats.upcomingClasses}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Upcoming Classes
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid item xs={12} md={3}>
-              <Card>
-                <CardContent sx={{ textAlign: 'center' }}>
-                  <Typography variant="h4" sx={{ fontWeight: 700, color: 'info.main' }}>
-                    {stats.totalParticipants}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Total Participants
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid item xs={12} md={3}>
-              <Card>
-                <CardContent sx={{ textAlign: 'center' }}>
-                  <Typography variant="h4" sx={{ fontWeight: 700, color: 'warning.main' }}>
-                    {Math.round(stats.averageAttendance)}%
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Average Attendance
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-
-            {/* Popular Class Types */}
-            <Grid item xs={12} md={6}>
-              <Card>
-                <CardContent>
-                  <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                    Popular Class Types
-                  </Typography>
-                  <Box sx={{ mt: 2 }}>
-                    {stats.popularClassTypes.map((classType, index) => (
-                      <Box key={index} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 1 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Box
-                            sx={{
-                              width: 12,
-                              height: 12,
-                              borderRadius: '50%',
-                              bgcolor: classType.color,
-                            }}
-                          />
-                          <Typography variant="body2">
-                            {classType.type}
-                          </Typography>
-                        </Box>
-                        <Chip
-                          label={classType.count}
-                          size="small"
-                          variant="outlined"
-                        />
-                      </Box>
-                    ))}
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-          </Grid>
-        );
-
-      case 4: // Settings (Admin only)
-        return (
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                Class Management Settings
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Settings panel coming soon...
-              </Typography>
-            </CardContent>
-          </Card>
-        );
-
-      default:
-        return null;
-    }
+  const handleFilterChange = (field: keyof ClassFilters, value: any) => {
+    setFilters(prev => ({ ...prev, [field]: value }));
   };
 
   return (
-    <Layout session={session} title="Class Management">
-      <Container maxWidth="xl" sx={{ py: 4 }}>
-        {/* Header Section */}
-        <Paper
-          elevation={0}
-          sx={{
-            mb: 4,
-            background: 'linear-gradient(135deg, #0F5C6B 0%, #2e6f8c 100%)',
-            borderRadius: 3,
-            overflow: 'hidden',
-          }}
-        >
-          <CardContent sx={{ p: 4, color: 'white' }}>
-            <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 700, color: 'white' }}>
-              Class Management
-            </Typography>
-            <Typography variant="h6" sx={{ opacity: 0.9, mb: 2, color: 'white' }}>
-              {session.role === 'admin'
-                ? 'Manage all classes, schedules, and instructors across your academy.'
-                : session.role === 'trainer'
-                  ? 'View and manage your assigned classes and training sessions.'
-                  : 'Access class schedules and training information.'
-              }
-            </Typography>
-          </CardContent>
-        </Paper>
+    <Box sx={{ p: 3 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h4" component="h1">
+          Class Management
+        </Typography>
+        {(user?.role === 'admin' || user?.role === 'staff') && (
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={handleCreateClassClick}
+          >
+            Schedule New Class
+          </Button>
+        )}
+      </Box>
 
-        {/* Navigation Tabs */}
-        <Paper elevation={0} sx={{ mb: 4, borderRadius: 2 }}>
-          <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 2 }}>
-            <Tabs
-              value={activeTab}
-              onChange={handleTabChange}
-              aria-label="class management tabs"
-              sx={{
-                '& .MuiTab-root': {
-                  textTransform: 'none',
-                  fontWeight: 600,
-                  minHeight: 64,
-                  fontSize: '0.95rem',
-                },
-              }}
-            >
-              {tabs.map((tab, index) => (
-                <Tab
-                  key={index}
-                  icon={<tab.icon />}
-                  iconPosition="start"
-                  label={tab.label}
-                  sx={{ gap: 1 }}
-                />
-              ))}
-            </Tabs>
-          </Box>
-        </Paper>
+      <Tabs value={tabIndex} onChange={handleTabChange} sx={{ mb: 3 }}>
+        <Tab label="Class Schedules" />
+        <Tab label="Upcoming Classes" />
+        {user?.role === 'trainer' && <Tab label="My Schedule" />}
+      </Tabs>
 
-        {/* Controls Bar */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-            <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              {tabs[activeTab]?.label}
-            </Typography>
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
 
-            {activeTab === 1 && (
-              <Chip
-                label={`${filteredSchedules.length} schedules`}
-                size="small"
-                variant="outlined"
-                color="primary"
-              />
-            )}
-          </Box>
-
-          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-            {/* Search */}
-            {activeTab === 1 && (
-              <TextField
-                size="small"
-                placeholder="Search classes..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon />
-                    </InputAdornment>
-                  ),
-                }}
-                sx={{ width: 250 }}
-              />
-            )}
-
-            {/* View Mode Toggle for Schedule Overview */}
-            {activeTab === 0 && (
-              <Box sx={{ display: 'flex', bgcolor: 'background.paper', borderRadius: 1, p: 0.5, border: 1, borderColor: 'divider' }}>
-                <IconButton
-                  size="small"
-                  onClick={() => setViewMode('day')}
-                  sx={{
-                    bgcolor: viewMode === 'day' ? 'primary.main' : 'transparent',
-                    color: viewMode === 'day' ? 'primary.contrastText' : 'text.secondary',
-                  }}
-                >
-                  <ViewDayIcon />
-                </IconButton>
-                <IconButton
-                  size="small"
-                  onClick={() => setViewMode('week')}
-                  sx={{
-                    bgcolor: viewMode === 'week' ? 'primary.main' : 'transparent',
-                    color: viewMode === 'week' ? 'primary.contrastText' : 'text.secondary',
-                  }}
-                >
-                  <ViewWeekIcon />
-                </IconButton>
-                <IconButton
-                  size="small"
-                  onClick={() => setViewMode('month')}
-                  sx={{
-                    bgcolor: viewMode === 'month' ? 'primary.main' : 'transparent',
-                    color: viewMode === 'month' ? 'primary.contrastText' : 'text.secondary',
-                  }}
-                >
-                  <ViewMonthIcon />
-                </IconButton>
-              </Box>
-            )}
-
-            {/* Filter Button */}
-            {activeTab === 1 && (
-              <Button
-                variant="outlined"
-                startIcon={<FilterIcon />}
-                onClick={handleFilterClick}
-                size="small"
-              >
-                Filter
-              </Button>
-            )}
-
-            {/* Refresh Button */}
-            <IconButton
-              onClick={() => {
-                loadClassSchedules();
-                loadClassInstances();
-                loadStats();
-              }}
-              disabled={loading}
-            >
-              <RefreshIcon />
-            </IconButton>
-
-            {/* Add Class Button - Admin only */}
-            {session.role === 'admin' && (
-              <Button
-                variant="contained"
-                startIcon={<AddIcon />}
-                onClick={() => setCreateDialogOpen(true)}
-                size="small"
-              >
-                Schedule Class
-              </Button>
-            )}
-          </Box>
+      {loading && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+          <CircularProgress />
         </Box>
+      )}
 
-        {/* Main Content */}
-        {renderTabContent()}
+      {!loading && (
+        <Box>
+          {tabIndex === 0 && (
+            <Grid container spacing={3}>
+              {schedules.length === 0 ? (
+                <Grid item xs={12}>
+                  <Alert severity="info">No class schedules found. Create one to get started!</Alert>
+                </Grid>
+              ) : (
+                schedules.map((schedule) => (
+                  <Grid item xs={12} sm={6} md={4} lg={3} key={schedule.id}>
+                    <ClassCard
+                      classData={schedule}
+                      type="schedule"
+                      onEdit={handleEditClass}
+                      onDelete={handleDeleteClass}
+                    />
+                  </Grid>
+                ))
+              )}
+            </Grid>
+          )}
 
-        {/* Create Class Dialog */}
-        <ClassFormDialog
-          open={createDialogOpen}
-          onClose={() => setCreateDialogOpen(false)}
-          onSubmit={handleCreateClass}
-          mode="create"
-          instructors={instructors}
-        />
+          {tabIndex === 1 && (
+            <Box>
+              <Grid container spacing={2} sx={{ mb: 3 }} alignItems="center">
+                <Grid item xs={12} sm={4}>
+                  <TextField
+                    fullWidth
+                    label="Search Classes"
+                    value={filters.searchTerm}
+                    onChange={(e) => handleFilterChange('searchTerm', e.target.value)}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchIcon />
+                        </InputAdornment>
+                      ),
+                    }}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={3}>
+                  <FormControl fullWidth>
+                    <InputLabel>Class Type</InputLabel>
+                    <Select
+                      value={filters.classType || ''}
+                      onChange={(e) => handleFilterChange('classType', e.target.value as ClassType)}
+                      label="Class Type"
+                    >
+                      <MenuItem value=""><em>Any</em></MenuItem>
+                      {CLASS_TYPE_OPTIONS.map((type) => (
+                        <MenuItem key={type} value={type}>{type}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12} sm={3}>
+                  <FormControl fullWidth>
+                    <InputLabel>Instructor</InputLabel>
+                    <Select
+                      value={filters.instructorId || ''}
+                      onChange={(e) => handleFilterChange('instructorId', e.target.value as string)}
+                      label="Instructor"
+                    >
+                      <MenuItem value=""><em>Any</em></MenuItem>
+                      {instructors.map((instructor) => (
+                        <MenuItem key={instructor.id} value={instructor.id}>{instructor.name}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12} sm={2}>
+                  <TextField
+                    fullWidth
+                    type="date"
+                    label="Date"
+                    value={filters.date}
+                    onChange={(e) => handleFilterChange('date', e.target.value)}
+                    InputLabelProps={{ shrink: true }}
+                  />
+                </Grid>
+              </Grid>
 
-        {/* Edit Class Dialog */}
-        <ClassFormDialog
-          open={editDialogOpen}
-          onClose={() => setEditDialogOpen(false)}
-          onSubmit={handleEditClass}
-          classSchedule={selectedClass as ClassSchedule}
-          mode="edit"
-          instructors={instructors}
-        />
+              <Grid container spacing={3}>
+                {instances.length === 0 ? ( // Displaying 'instances' directly here now, as API handles filtering
+                  <Grid item xs={12}>
+                    <Alert severity="info">No upcoming classes found for the selected filters.</Alert>
+                  </Grid>
+                ) : (
+                  instances
+                    .sort((a, b) => {
+                      // Sort by date then by time
+                      const dateA = parseISO(a.date);
+                      const dateB = parseISO(b.date);
+                      if (dateA.getTime() !== dateB.getTime()) {
+                        return dateA.getTime() - dateB.getTime();
+                      }
+                      const [hA, mA] = a.startTime.split(':').map(Number);
+                      const [hB, mB] = b.startTime.split(':').map(Number);
+                      return (hA * 60 + mA) - (hB * 60 + mB);
+                    })
+                    .map((instance) => (
+                      <Grid item xs={12} sm={6} md={4} lg={3} key={instance.id}>
+                        <ClassCard
+                          classData={instance}
+                          type="instance"
+                          onEdit={handleEditClass}
+                          onDelete={handleDeleteClass}
+                          onStartClass={handleInstanceAction}
+                          onEndClass={handleInstanceAction}
+                          onCancelClass={handleInstanceAction}
+                        />
+                      </Grid>
+                    ))
+                )}
+              </Grid>
+            </Box>
+          )}
 
-        {/* Delete Confirmation Dialog */}
-        <DeleteConfirmationDialog
-          open={deleteDialogOpen}
-          onClose={() => {
-            setDeleteDialogOpen(false);
-            setSelectedClass(null);
-          }}
-          onConfirm={handleDeleteClass}
-          title={`Delete ${selectedClass && 'recurrence' in selectedClass ? 'Class Schedule' : 'Class Instance'}`}
-          itemName={selectedClass?.name || ''}
-          itemType={selectedClass && 'recurrence' in selectedClass ? 'class schedule' : 'class instance'}
-          warningMessage="This action cannot be undone."
-          additionalInfo={[]} // You can add relevant info here if needed
-        />
+          {tabIndex === 2 && user?.role === 'trainer' && (
+            <Box>
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                My Scheduled Classes
+              </Typography>
+              {loading ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                  <CircularProgress />
+                </Box>
+              ) : (
+                <ClassCalendar
+                  // When on 'My Schedule' tab, instances are already filtered by instructorId
+                  classes={instances}
+                  onEditClass={handleEditClass}
+                  onDeleteClass={handleDeleteClass}
+                  onStartClass={handleInstanceAction}
+                  onEndClass={handleInstanceAction}
+                  onCancelClass={handleInstanceAction}
+                  userRole={user.role}
+                  userId={user.uid}
+                />
+              )}
+            </Box>
+          )}
+        </Box>
+      )}
 
-        {/* Filter Menu */}
-        <Menu
-          anchorEl={filterAnchorEl}
-          open={Boolean(filterAnchorEl)}
-          onClose={handleFilterClose}
-          transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-          anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-          PaperProps={{ sx: { minWidth: 200 } }}
-        >
-          <Box sx={{ p: 2 }}>
-            <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
-              Filter by Class Type
-            </Typography>
-            <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-              <Select
-                value={classTypeFilter}
-                onChange={(e) => setClassTypeFilter(e.target.value as ClassType | '')}
-                displayEmpty
-              >
-                <MenuItem value="">All Types</MenuItem>
-                {CLASS_TYPE_OPTIONS.map((type) => (
-                  <MenuItem key={type} value={type}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Box
-                        sx={{
-                          width: 12,
-                          height: 12,
-                          borderRadius: '50%',
-                          bgcolor: getClassTypeColor(type),
-                        }}
-                      />
-                      {type}
-                    </Box>
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+      <ClassFormDialog
+        open={isFormDialogOpen}
+        onClose={handleCloseFormDialog}
+        onSubmit={handleSubmitForm}
+        classSchedule={formMode === 'edit' && editingClass && 'recurrence' in editingClass ? editingClass : null}
+        // When editing an instance, pass relevant instance data to form data fields
+        // Note: ClassFormDialog is primarily for schedules. For instance-specific edits,
+        // it's populating schedule-related fields. This is acceptable for basic fields.
+        // If more complex instance-specific fields (e.g., actualDuration, notes)
+        // were to be edited, a dedicated instance form or more advanced ClassFormDialog
+        // would be needed.
+        mode={formMode}
+        instructors={instructors}
+      />
 
-            <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
-              Filter by Instructor
-            </Typography>
-            <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-              <Select
-                value={instructorFilter}
-                onChange={(e) => setInstructorFilter(e.target.value)}
-                displayEmpty
-              >
-                <MenuItem value="">All Instructors</MenuItem>
-                {instructors.map((instructor) => (
-                  <MenuItem key={instructor.id} value={instructor.id}>
-                    {instructor.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            <Button
-              fullWidth
-              variant="outlined"
-              onClick={() => {
-                clearFilters();
-                handleFilterClose();
-              }}
-              size="small"
-            >
-              Clear All Filters
-            </Button>
-          </Box>
-        </Menu>
-
-        {/* Success/Error Notifications */}
-        <Snackbar
-          open={!!successMessage}
-          autoHideDuration={6000}
-          onClose={() => setSuccessMessage(null)}
-        >
-          <Alert onClose={() => setSuccessMessage(null)} severity="success">
-            {successMessage}
-          </Alert>
-        </Snackbar>
-
-        <Snackbar
-          open={!!error}
-          autoHideDuration={6000}
-          onClose={() => setError(null)}
-        >
-          <Alert onClose={() => setError(null)} severity="error">
-            {error}
-          </Alert>
-        </Snackbar>
-      </Container>
-    </Layout>
+      <DeleteConfirmationDialog
+        open={isDeleteDialogOpen}
+        onClose={handleCancelDelete}
+        onConfirm={handleConfirmDelete}
+        title={`Confirm ${deleteTargetType === 'schedule' ? 'Schedule Deletion' : 'Class Cancellation'}`}
+        message={`Are you sure you want to ${deleteTargetType === 'schedule' ? 'delete this class schedule and all its associated instances' : 'cancel this class instance'}? This action cannot be undone.`}
+      />
+    </Box>
   );
 }

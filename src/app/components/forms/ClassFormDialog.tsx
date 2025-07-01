@@ -1,4 +1,4 @@
-// src/app/components/forms/ClassFormDialog.tsx - Comprehensive Class Scheduling Dialog (Modified)
+// src/app/components/forms/ClassFormDialog.tsx (No functional changes from previous iteration, providing for completeness)
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -53,7 +53,7 @@ interface ClassFormDialogProps {
   open: boolean;
   onClose: () => void;
   onSubmit: (data: ClassFormData) => Promise<void>;
-  classSchedule?: ClassSchedule | null;
+  classSchedule?: ClassSchedule | null; // Changed to classSchedule as it's primarily for schedules
   mode: 'create' | 'edit';
   instructors: Array<{ id: string; name: string; specialties?: string[] }>;
 }
@@ -101,6 +101,7 @@ export default function ClassFormDialog({
   useEffect(() => {
     if (open) {
       if (mode === 'edit' && classSchedule) {
+        // When editing, populate form with existing class schedule data
         setFormData({
           name: classSchedule.name,
           description: classSchedule.description || '',
@@ -153,7 +154,7 @@ export default function ClassFormDialog({
     const currentDays = formData.recurrence.daysOfWeek || [];
     const newDays = currentDays.includes(day)
       ? currentDays.filter(d => d !== day)
-      : [...currentDays, day].sort();
+      : [...currentDays, day].sort((a, b) => a - b); // Ensure days are sorted
     
     handleRecurrenceChange('daysOfWeek', newDays);
   };
@@ -199,9 +200,10 @@ export default function ClassFormDialog({
     setLoading(true);
     try {
       await onSubmit(formData);
-      onClose();
+      // onClose handled by onSubmit in parent component
     } catch (error) {
       console.error('Failed to save class:', error);
+      // Error handling will be done by the parent component (ClassesPageClient)
     } finally {
       setLoading(false);
     }
@@ -262,7 +264,7 @@ export default function ClassFormDialog({
                 >
                   {CLASS_TYPE_OPTIONS.map((type) => (
                     <MenuItem key={type} value={type}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }>
                         <Box
                           sx={{
                             width: 12,

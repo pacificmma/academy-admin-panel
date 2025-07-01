@@ -1,6 +1,22 @@
 // src/app/types/auth.ts (Updated for consistency)
 // src/app/types/auth.ts - FIXED Authentication types with better security
-export type UserRole = 'admin' | 'trainer' | 'staff';
+export type UserRole = 'admin' | 'staff' | 'trainer' | 'member'; // Defined UserRole here for direct access within this file
+
+export interface AuthSession {
+  uid: string;
+  email: string;
+  fullName: string;
+  role: UserRole;
+  isActive: boolean;
+}
+
+export interface User {
+  uid: string;
+  email: string;
+  fullName: string;
+  role: UserRole; // Added this property to resolve the compilation error
+  isActive: boolean;
+}
 
 export interface SessionData {
   uid: string;

@@ -1,48 +1,42 @@
-// src/app/components/ui/ClassCard.tsx - Individual Class Display Card
-'use client';
-
-import React from 'react';
+// src/app/components/ui/ClassCards.tsx (Modified to use fixed User type)
+import React, { useState } from 'react';
 import {
   Card,
   CardContent,
   Typography,
   Box,
   Chip,
+  Button,
   IconButton,
   Menu,
   MenuItem,
-  Avatar,
-  Badge,
-  Tooltip,
-  Button,
+  ListItemIcon,
+  ListItemText,
 } from '@mui/material';
 import {
+  AccessTime as TimeIcon,
+  CalendarToday as CalendarIcon,
+  People as PeopleIcon,
+  LocationOn as LocationIcon,
   MoreVert as MoreVertIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
-  Person as PersonIcon,
-  AccessTime as TimeIcon,
-  LocationOn as LocationIcon,
-  People as PeopleIcon,
-  Repeat as RepeatIcon,
-  PlayArrow as StartIcon,
-  Stop as EndIcon,
+  PlayArrow as PlayArrowIcon,
+  Stop as StopIcon,
   Cancel as CancelIcon,
 } from '@mui/icons-material';
-import { useState } from 'react';
-import { ClassInstance, ClassSchedule, getClassTypeColor, formatClassTime } from '../../types/class';
+import { format } from 'date-fns';
+import { ClassSchedule, ClassInstance, getClassTypeColor } from '@/app/types/class';
+import { useAuth } from '@/app/contexts/AuthContext';
 
 interface ClassCardProps {
-  classData: ClassInstance | ClassSchedule;
-  type: 'instance' | 'schedule';
-  onEdit?: () => void;
-  onDelete?: () => void;
-  onViewParticipants?: () => void;
-  onStartClass?: () => void;
-  onEndClass?: () => void;
-  onCancelClass?: () => void;
-  showActions?: boolean;
-  userRole: 'admin' | 'trainer' | 'staff';
+  classData: ClassSchedule | ClassInstance;
+  type: 'schedule' | 'instance'; // Indicates if it's a schedule or a specific instance
+  onEdit: (data: ClassSchedule | ClassInstance) => void;
+  onDelete: (id: string, type: 'schedule' | 'instance') => void;
+  onStartClass?: (instanceId: string) => void;
+  onEndClass?: (instanceId: string) => void;
+  onCancelClass?: (instanceId: string) => void;
 }
 
 export default function ClassCard({
@@ -50,328 +44,174 @@ export default function ClassCard({
   type,
   onEdit,
   onDelete,
-  onViewParticipants,
   onStartClass,
   onEndClass,
   onCancelClass,
-  showActions = true,
-  userRole,
 }: ClassCardProps) {
-  const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
+  const { user } = useAuth();
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const openMenu = Boolean(anchorEl);
 
   const handleMenuClick = (event: React.MouseEvent<HTMLElement>) => {
-    setMenuAnchor(event.currentTarget);
+    setAnchorEl(event.currentTarget);
   };
 
   const handleMenuClose = () => {
-    setMenuAnchor(null);
+    setAnchorEl(null);
   };
 
-  const handleMenuAction = (action: () => void) => {
-    action();
-    handleMenuClose();
-  };
+  // User.role now correctly exists due to the fix in src/app/types/auth.ts
+  const isInstructor = user?.role === 'trainer' && user.uid === classData.instructorId;
+  const isAdmin = user?.role === 'admin';
 
-  // Determine if this is a class instance or schedule
-  const isInstance = type === 'instance';
-  const instance = isInstance ? (classData as ClassInstance) : null;
-  const schedule = !isInstance ? (classData as ClassSchedule) : null;
-
-  // Get common properties
-  const name = classData.name;
-  const classType = classData.classType;
-  const instructorName = classData.instructorName;
-  const maxParticipants = classData.maxParticipants;
-  const location = 'location' in classData ? classData.location : undefined;
-
-  // Instance-specific properties
-  const date = instance?.date;
-  const startTime = instance?.startTime || schedule?.startTime;
-  const endTime = instance?.endTime;
-  const registeredParticipants = instance?.registeredParticipants || [];
-  const waitlist = instance?.waitlist || [];
-  const status = instance?.status || 'scheduled';
-
-  // Schedule-specific properties
-  const recurrence = schedule?.recurrence;
-  const duration = instance?.actualDuration || schedule?.duration;
-
-  const classTypeColor = getClassTypeColor(classType);
-  const participantsCount = registeredParticipants.length;
-  const waitlistCount = waitlist.length;
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'scheduled': return 'primary';
-      case 'ongoing': return 'success';
-      case 'completed': return 'default';
-      case 'cancelled': return 'error';
-      default: return 'default';
-    }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'scheduled': return 'Scheduled';
-      case 'ongoing': return 'In Progress';
-      case 'completed': return 'Completed';
-      case 'cancelled': return 'Cancelled';
-      default: return status;
-    }
-  };
-
-  const canManageClass = userRole === 'admin' || (userRole === 'trainer' && classData.instructorId);
+  const showManagementButtons = type === 'instance' && (isAdmin || isInstructor);
 
   return (
-    <Card
-      sx={{
-        borderRadius: 2,
-        transition: 'all 0.2s ease',
-        '&:hover': {
-          transform: 'translateY(-2px)',
-          boxShadow: 4,
-        },
-        position: 'relative',
-        overflow: 'visible',
-      }}
-    >
-      {/* Status indicator */}
-      <Box
-        sx={{
-          position: 'absolute',
-          top: -4,
-          left: 16,
-          right: 16,
-          height: 4,
-          bgcolor: classTypeColor,
-          borderRadius: '2px 2px 0 0',
-        }}
-      />
-
-      <CardContent sx={{ p: 3 }}>
-        {/* Header */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-          <Box sx={{ flex: 1 }}>
-            <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5, lineHeight: 1.2 }}>
-              {name}
-            </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-              <Chip
-                label={classType}
-                size="small"
-                sx={{
-                  bgcolor: `${classTypeColor}15`,
-                  color: classTypeColor,
-                  fontWeight: 600,
-                  border: `1px solid ${classTypeColor}30`,
-                }}
-              />
-              {instance && (
-                <Chip
-                  label={getStatusText(status)}
-                  size="small"
-                  color={getStatusColor(status) as any}
-                  variant="outlined"
-                />
-              )}
-              {schedule && recurrence?.type !== 'none' && (
-                <Tooltip title={`Repeats ${recurrence?.type}`}>
-                  <Chip
-                    icon={<RepeatIcon />}
-                    label="Recurring"
-                    size="small"
-                    variant="outlined"
-                    color="info"
-                  />
-                </Tooltip>
-              )}
-            </Box>
-          </Box>
-
-          {showActions && canManageClass && (
-            <IconButton
+    <Card sx={{ borderRadius: 2, boxShadow: 3, transition: '0.3s', '&:hover': { boxShadow: 6 } }}>
+      <CardContent>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+          <Box>
+            <Chip
+              label={classData.classType}
               size="small"
-              onClick={handleMenuClick}
-              sx={{ ml: 1 }}
-            >
-              <MoreVertIcon />
-            </IconButton>
-          )}
+              sx={{
+                bgcolor: getClassTypeColor(classData.classType),
+                color: 'white',
+                fontWeight: 'bold',
+                mb: 1,
+              }}
+            />
+            <Typography variant="h6" component="div" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
+              {classData.name}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {classData.instructorName}
+            </Typography>
+          </Box>
+          <IconButton
+            aria-label="settings"
+            onClick={handleMenuClick}
+            sx={{ mt: -1, mr: -1 }}
+          >
+            <MoreVertIcon />
+          </IconButton>
+          <Menu
+            anchorEl={anchorEl}
+            open={openMenu}
+            onClose={handleMenuClose}
+            MenuListProps={{
+              'aria-labelledby': 'basic-button',
+            }}
+          >
+            {/* Edit Option */}
+            {(isAdmin || isInstructor) && (
+              <MenuItem onClick={() => { onEdit(classData); handleMenuClose(); }}>
+                <ListItemIcon>
+                  <EditIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>Edit</ListItemText>
+              </MenuItem>
+            )}
+
+            {/* Delete/Cancel Option */}
+            {isAdmin && ( // Only admin can delete/cancel schedules or instances
+              <MenuItem onClick={() => { onDelete(classData.id, type); handleMenuClose(); }}>
+                <ListItemIcon>
+                  <DeleteIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{type === 'schedule' ? 'Delete Schedule' : 'Cancel Instance'}</ListItemText>
+              </MenuItem>
+            )}
+
+          </Menu>
         </Box>
 
-        {/* Main Info */}
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-          {/* Instructor */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Avatar sx={{ width: 24, height: 24, bgcolor: 'primary.main', fontSize: 12 }}>
-              {instructorName.charAt(0)}
-            </Avatar>
-            <Typography variant="body2" color="text.secondary">
-              {instructorName}
-            </Typography>
-          </Box>
-
-          {/* Date and Time */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <TimeIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-            <Typography variant="body2" color="text.secondary">
-              {instance && date ? (
-                `${new Date(date).toLocaleDateString()} • ${formatClassTime(startTime!, duration!)}`
-              ) : schedule ? (
-                `${formatClassTime(startTime!, duration!)} • ${recurrence?.type !== 'none' ? 
-                  `${recurrence?.type}${recurrence?.daysOfWeek?.length ? 
-                    ` (${recurrence.daysOfWeek.map(d => 
-                      ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]
-                    ).join(', ')})` : ''}` : 'One-time'}`
-              ) : (
-                'Time TBD'
-              )}
-            </Typography>
-          </Box>
-
-          {/* Location */}
-          {location && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <LocationIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-              <Typography variant="body2" color="text.secondary">
-                {location}
-              </Typography>
-            </Box>
-          )}
-
-          {/* Participants */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Badge
-              badgeContent={waitlistCount > 0 ? waitlistCount : 0}
-              color="warning"
-              anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-              invisible={waitlistCount === 0}
-            >
-              <PeopleIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-            </Badge>
-            <Typography variant="body2" color="text.secondary">
-              {participantsCount}/{maxParticipants} participants
-              {waitlistCount > 0 && (
-                <Typography component="span" variant="caption" color="warning.main" sx={{ ml: 1 }}>
-                  (+{waitlistCount} waiting)
-                </Typography>
-              )}
-            </Typography>
-          </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+          <CalendarIcon fontSize="small" color="action" />
+          <Typography variant="body2">
+            {type === 'instance'
+              ? format(new Date((classData as ClassInstance).date), 'PPP')
+              : format(new Date((classData as ClassSchedule).startDate), 'PPP')
+            }
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+          <TimeIcon fontSize="small" color="action" />
+          <Typography variant="body2">
+            {classData.startTime} - {type === 'instance' ? (classData as ClassInstance).endTime : `${Math.floor((parseInt(classData.startTime.split(':')[0]) * 60 + parseInt(classData.startTime.split(':')[1]) + classData.duration) / 60).toString().padStart(2, '0')}:${((parseInt(classData.startTime.split(':')[0]) * 60 + parseInt(classData.startTime.split(':')[1]) + classData.duration) % 60).toString().padStart(2, '0')}`}
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+          <PeopleIcon fontSize="small" color="action" />
+          <Typography variant="body2">
+            Max Participants: {classData.maxParticipants}
+            {type === 'instance' && ` (${(classData as ClassInstance).registeredParticipants.length} registered)`}
+          </Typography>
         </Box>
 
-        {/* Action Buttons for Instances */}
-        {instance && showActions && canManageClass && (
+        {type === 'instance' && (classData as ClassInstance).location && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+            <LocationIcon fontSize="small" color="action" />
+            <Typography variant="body2">
+              {(classData as ClassInstance).location}
+            </Typography>
+          </Box>
+        )}
+
+        {type === 'instance' && (
+          <Chip
+            label={(classData as ClassInstance).status.toUpperCase()}
+            size="small"
+            color={
+              (classData as ClassInstance).status === 'scheduled'
+                ? 'info'
+                : (classData as ClassInstance).status === 'ongoing'
+                  ? 'success'
+                  : (classData as ClassInstance).status === 'completed'
+                    ? 'default'
+                    : 'error'
+            }
+            sx={{ mt: 1, fontWeight: 'bold' }}
+          />
+        )}
+
+        {showManagementButtons && (
           <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-            {status === 'scheduled' && onStartClass && (
+            {(classData as ClassInstance).status === 'scheduled' && onStartClass && (
               <Button
-                size="small"
                 variant="outlined"
-                startIcon={<StartIcon />}
-                onClick={onStartClass}
-                color="success"
+                size="small"
+                startIcon={<PlayArrowIcon />}
+                onClick={() => onStartClass((classData as ClassInstance).id)}
               >
                 Start Class
               </Button>
             )}
-            {status === 'ongoing' && onEndClass && (
+            {(classData as ClassInstance).status === 'ongoing' && onEndClass && (
               <Button
-                size="small"
                 variant="outlined"
-                startIcon={<EndIcon />}
-                onClick={onEndClass}
-                color="primary"
+                size="small"
+                color="success"
+                startIcon={<StopIcon />}
+                onClick={() => onEndClass((classData as ClassInstance).id)}
               >
                 End Class
               </Button>
             )}
-            {status === 'scheduled' && onCancelClass && (
+            {((classData as ClassInstance).status === 'scheduled' || (classData as ClassInstance).status === 'ongoing') && onCancelClass && (
               <Button
-                size="small"
                 variant="outlined"
-                startIcon={<CancelIcon />}
-                onClick={onCancelClass}
-                color="error"
-              >
-                Cancel
-              </Button>
-            )}
-            {onViewParticipants && (
-              <Button
                 size="small"
-                variant="text"
-                startIcon={<PersonIcon />}
-                onClick={onViewParticipants}
+                color="error"
+                startIcon={<CancelIcon />}
+                onClick={() => onCancelClass((classData as ClassInstance).id)}
               >
-                View List
+                Cancel Class
               </Button>
             )}
           </Box>
         )}
-
-        {/* Progress bar for capacity */}
-        <Box sx={{ mt: 2 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
-            <Typography variant="caption" color="text.secondary">
-              Capacity
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {participantsCount}/{maxParticipants}
-            </Typography>
-          </Box>
-          <Box
-            sx={{
-              width: '100%',
-              height: 4,
-              bgcolor: 'grey.200',
-              borderRadius: 2,
-              overflow: 'hidden',
-            }}
-          >
-            <Box
-              sx={{
-                height: '100%',
-                bgcolor: participantsCount >= maxParticipants ? 'error.main' : 
-                         participantsCount >= maxParticipants * 0.8 ? 'warning.main' : 
-                         'success.main',
-                width: `${Math.min((participantsCount / maxParticipants) * 100, 100)}%`,
-                transition: 'width 0.3s ease',
-              }}
-            />
-          </Box>
-        </Box>
       </CardContent>
-
-      {/* Action Menu */}
-      <Menu
-        anchorEl={menuAnchor}
-        open={Boolean(menuAnchor)}
-        onClose={handleMenuClose}
-        transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-        anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-      >
-        {onEdit && (
-          <MenuItem onClick={() => handleMenuAction(onEdit)}>
-            <EditIcon sx={{ mr: 1, fontSize: 18 }} />
-            Edit {type === 'instance' ? 'Class' : 'Schedule'}
-          </MenuItem>
-        )}
-        {onViewParticipants && (
-          <MenuItem onClick={() => handleMenuAction(onViewParticipants)}>
-            <PersonIcon sx={{ mr: 1, fontSize: 18 }} />
-            View Participants
-          </MenuItem>
-        )}
-        {onDelete && userRole === 'admin' && (
-          <MenuItem 
-            onClick={() => handleMenuAction(onDelete)}
-            sx={{ color: 'error.main' }}
-          >
-            <DeleteIcon sx={{ mr: 1, fontSize: 18 }} />
-            Delete {type === 'instance' ? 'Class' : 'Schedule'}
-          </MenuItem>
-        )}
-      </Menu>
     </Card>
   );
 }
