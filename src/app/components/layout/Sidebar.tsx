@@ -1,3 +1,4 @@
+// src/app/components/layout/Sidebar.tsx - Fixed selected tab text color
 'use client';
 
 import React from 'react';
@@ -199,7 +200,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             if (item.text === 'divider') {
               return (
                 <Box key={index} sx={{ my: 2 }}>
-        
+                  <Divider />
                 </Box>
               );
             }
@@ -220,16 +221,19 @@ const Sidebar: React.FC<SidebarProps> = ({
                     py: 1.5,
                     '&.Mui-selected': {
                       backgroundColor: 'primary.main',
-                      color: 'primary.contrastText',
+                      color: 'white', // Bu önemli - genel rengi beyaz yapıyor
                       '& .MuiListItemIcon-root': {
-                        color: 'primary.contrastText',
+                        color: 'white', // İkon rengini beyaz yapıyor
+                      },
+                      '& .MuiListItemText-primary': {
+                        color: 'white', // Metin rengini beyaz yapıyor - BU ÖNEMLİ
                       },
                       '&:hover': {
                         backgroundColor: 'primary.dark',
                       },
                       '& .MuiChip-root': {
                         backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                        color: 'primary.contrastText',
+                        color: 'white',
                       },
                     },
                     '&:hover': {
@@ -245,7 +249,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     sx={{
                       minWidth: 40,
                       justifyContent: 'center',
-                      color: isActive ? 'inherit' : 'text.secondary',
+                      color: isActive ? 'white' : 'text.secondary', // Burada da açık belirtiyoruz
                     }}
                   >
                     {item.icon}
@@ -255,6 +259,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     primaryTypographyProps={{
                       fontSize: 14,
                       fontWeight: isActive ? 600 : 500,
+                      color: isActive ? 'white' : 'inherit', // Burada da açık belirtiyoruz
                     }}
                   />
                   {item.badge && (
@@ -268,6 +273,10 @@ const Sidebar: React.FC<SidebarProps> = ({
                         fontSize: '0.65rem',
                         fontWeight: 600,
                         ml: 1,
+                        ...(isActive && {
+                          backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                          color: 'white',
+                        }),
                       }}
                     />
                   )}

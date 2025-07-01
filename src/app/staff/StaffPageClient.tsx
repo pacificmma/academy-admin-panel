@@ -390,7 +390,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
-                              color: 'primary.main',
+                              color: 'white',
                               fontWeight: 600,
                             }}
                           >
