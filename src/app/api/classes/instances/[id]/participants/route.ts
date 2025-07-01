@@ -9,7 +9,10 @@ import { NextRequest } from "next/server";
 export const GET_PARTICIPANTS = requireStaffOrTrainer(async (request: NextRequest, context: RequestContext) => {
     try {
       const { params } = context;
-      const instanceDoc = await adminDb.collection('classInstances').doc(params?.id).get();
+      if (!params?.id) {
+        return errorResponse('Class instance ID is required', 400);
+      }
+      const instanceDoc = await adminDb.collection('classInstances').doc(params.id).get();
       
       if (!instanceDoc.exists) {
         return errorResponse('Class instance not found', 404);
@@ -24,7 +27,7 @@ export const GET_PARTICIPANTS = requireStaffOrTrainer(async (request: NextReques
   
       // Get participant details
       const membersSnapshot = await adminDb.collection('members')
-        .where(adminDb.firestore.FieldPath.documentId(), 'in', participantIds) // FIXED: Corrected FieldPath usage
+        .where(adminDb.FieldValue.documentId(), 'in', participantIds) // FIXED: Corrected FieldPath usage
         .get();
   
       const memberMap = new Map();

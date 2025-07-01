@@ -11,6 +11,9 @@ export const POST = requireAdmin(async (
   ) => {
     try {
       const { params, session } = context;
+      if (!params?.id) {
+        return errorResponse('Member membership ID is required', 400);
+      }
       const body = await request.json();
       const { reason } = body;
   
@@ -19,7 +22,7 @@ export const POST = requireAdmin(async (
       }
   
       // Check if membership exists and is active
-      const membershipDoc = await adminDb.collection('memberMemberships').doc(params?.id).get();
+      const membershipDoc = await adminDb.collection('memberMemberships').doc(params.id).get();
       if (!membershipDoc.exists) {
         return errorResponse('Member membership not found', 404);
       }
@@ -29,7 +32,7 @@ export const POST = requireAdmin(async (
         return errorResponse('Only active memberships can be cancelled', 400);
       }
   
-      await adminDb.collection('memberMemberships').doc(params?.id).update({
+      await adminDb.collection('memberMemberships').doc(params.id).update({
         status: 'cancelled',
         cancellationReason: reason.trim(),
         cancelledBy: session.uid,

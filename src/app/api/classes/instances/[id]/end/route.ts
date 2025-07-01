@@ -9,10 +9,13 @@ import { NextRequest } from "next/server";
 export const POST_END_CLASS = requireTrainer(async (request: NextRequest, context: RequestContext) => {
     try {
       const { session, params } = context;
+      if (!params?.id) {
+        return errorResponse('Class instance ID is required', 400);
+      }
       const body = await request.json();
       const { actualDuration, notes } = body;
   
-      const instanceRef = adminDb.collection('classInstances').doc(params?.id);
+      const instanceRef = adminDb.collection('classInstances').doc(params.id);
       const instanceDoc = await instanceRef.get();
   
       if (!instanceDoc.exists) {
@@ -34,7 +37,7 @@ export const POST_END_CLASS = requireTrainer(async (request: NextRequest, contex
       const updateData: any = {
         status: 'completed',
         // FIXED: Corrected FieldValue.serverTimestamp() usage
-        updatedAt: adminDb.firestore.FieldValue.serverTimestamp(),
+        updatedAt: adminDb.FieldValue.serverTimestamp(),
       };
   
       if (actualDuration) {

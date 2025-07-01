@@ -83,7 +83,7 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
     // Update the membership plan
     const updatedData = {
       ...updateData,
-      updatedAt: adminDb.firestore.FieldValue.serverTimestamp(), // FIXED: Use consistent server timestamp
+      updatedAt: adminDb.FieldValue.serverTimestamp(), // FIXED: Use consistent server timestamp
       updatedBy: context.session.uid,
     };
 

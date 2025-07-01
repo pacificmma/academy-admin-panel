@@ -9,7 +9,10 @@ import { NextRequest } from "next/server";
 export const POST_START_CLASS = requireTrainer(async (request: NextRequest, context: RequestContext) => {
     try {
       const { session, params } = context;
-      const instanceRef = adminDb.collection('classInstances').doc(params?.id);
+      if (!params?.id) {
+        return errorResponse('Class instance ID is required', 400);
+      }
+      const instanceRef = adminDb.collection('classInstances').doc(params.id);
       const instanceDoc = await instanceRef.get();
   
       if (!instanceDoc.exists) {
@@ -31,7 +34,7 @@ export const POST_START_CLASS = requireTrainer(async (request: NextRequest, cont
       await instanceRef.update({
         status: 'ongoing',
         // FIXED: Corrected FieldValue.serverTimestamp() usage
-        updatedAt: adminDb.firestore.FieldValue.serverTimestamp(),
+        updatedAt: adminDb.FieldValue.serverTimestamp(),
       });
   
       return successResponse({ message: 'Class started successfully' });

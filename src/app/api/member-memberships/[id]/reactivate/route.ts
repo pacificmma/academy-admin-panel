@@ -14,8 +14,10 @@ export const POST = requireAdmin(async (
 ) => {
   try {
     const { params, session } = context;
-
-    const membershipDoc = await adminDb.collection('memberMemberships').doc(params?.id).get();
+    if (!params?.id) {
+      return errorResponse('Member membership ID is required', 400);
+    }
+    const membershipDoc = await adminDb.collection('memberMemberships').doc(params.id).get();
     if (!membershipDoc.exists) {
       return errorResponse('Member membership not found', 404);
     }
@@ -33,7 +35,7 @@ export const POST = requireAdmin(async (
       return errorResponse('Cannot reactivate expired membership', 400);
     }
 
-    await adminDb.collection('memberMemberships').doc(params?.id).update({
+    await adminDb.collection('memberMemberships').doc(params.id).update({
       status: 'active',
       suspensionReason: null,
       suspendedBy: null,

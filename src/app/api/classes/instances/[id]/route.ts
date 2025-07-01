@@ -10,7 +10,10 @@ import { NextRequest } from "next/server";
 export const GET_INSTANCE = requireStaffOrTrainer(async (request: NextRequest, context: RequestContext) => {
     try {
       const { params } = context;
-      const instanceDoc = await adminDb.collection('classInstances').doc(params?.id).get();
+      if (!params?.id) {
+        return errorResponse('Class instance ID is required', 400);
+      }
+      const instanceDoc = await adminDb.collection('classInstances').doc(params.id).get();
       
       if (!instanceDoc.exists) {
         return errorResponse('Class instance not found', 404);

@@ -128,8 +128,8 @@ export const POST = requireAdmin(async (request: NextRequest, context: RequestCo
 
     const scheduleRef = await adminDb.collection('classSchedules').add({
       ...scheduleData,
-      createdAt: adminDb.firestore.FieldValue.serverTimestamp(),
-      updatedAt: adminDb.firestore.FieldValue.serverTimestamp(),
+      createdAt: adminDb.FieldValue.serverTimestamp(),
+      updatedAt: adminDb.FieldValue.serverTimestamp(),
     });
 
     // Generate class instances based on recurrence
@@ -192,8 +192,8 @@ async function generateClassInstances(scheduleId: string, schedule: Omit<ClassSc
         status: 'scheduled',
         location: schedule.location || '',
         notes: '',
-        createdAt: adminDb.firestore.FieldValue.serverTimestamp(),
-        updatedAt: adminDb.firestore.FieldValue.serverTimestamp(),
+        createdAt: adminDb.FieldValue.serverTimestamp(),
+        updatedAt: adminDb.FieldValue.serverTimestamp(),
       };
 
       batch.set(instanceRef, instanceData);

@@ -9,10 +9,13 @@ import { NextRequest } from "next/server";
 export const POST_CANCEL_CLASS = requireAdmin(async (request: NextRequest, context: RequestContext) => {
     try {
       const { session, params } = context;
+      if (!params?.id) {
+        return errorResponse('Class instance ID is required', 400);
+      }
       const body = await request.json();
       const { reason } = body;
   
-      const instanceRef = adminDb.collection('classInstances').doc(params?.id);
+      const instanceRef = adminDb.collection('classInstances').doc(params.id);
       const instanceDoc = await instanceRef.get();
   
       if (!instanceDoc.exists) {
@@ -34,7 +37,7 @@ export const POST_CANCEL_CLASS = requireAdmin(async (request: NextRequest, conte
       const updateData: any = {
         status: 'cancelled',
         // FIXED: Corrected FieldValue.serverTimestamp() usage
-        updatedAt: adminDb.firestore.FieldValue.serverTimestamp(),
+        updatedAt: adminDb.FieldValue.serverTimestamp(),
       };
   
       if (reason) {
