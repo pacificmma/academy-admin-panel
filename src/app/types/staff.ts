@@ -1,35 +1,44 @@
-// src/app/types/staff.ts - Temizlenmiş version
+// src/app/types/staff.ts - (Modified for consistency)
 import { UserRole } from './auth';
-
-// Base entity type (moved from common.ts)
-export interface BaseEntity {
-  id: string;
-  createdAt: string;
-  updatedAt?: string;
-}
+import { BaseEntity } from './common'; // Assuming BaseEntity is from common.ts
 
 export interface StaffData {
   fullName: string;
   email: string;
   role: UserRole;
+  phoneNumber?: string; // Added as optional
+  dateOfBirth?: string; // Added as optional
+  emergencyContact?: { // Added as optional
+    name?: string;
+    phone?: string;
+    relationship?: string;
+  };
+  specializations?: string[]; // Added as optional
+  certifications?: string[]; // Added as optional
 }
 
 export interface StaffRecord extends StaffData, BaseEntity {
   uid: string;
   isActive: boolean;
   lastLoginAt?: string;
-  phone?: string;
-  profileImage?: string;
+  profileImage?: string; // Keep existing optional properties
 }
 
 export interface CreateStaffRequest extends StaffData {
   password: string;
-  phone?: string;
 }
 
 export interface UpdateStaffRequest {
   fullName?: string;
   role?: UserRole;
   isActive?: boolean;
-  phone?: string;
+  phoneNumber?: string; // Added for update requests
+  dateOfBirth?: string; // Added for update requests
+  emergencyContact?: { // Added for update requests
+    name?: string;
+    phone?: string;
+    relationship?: string;
+  };
+  specializations?: string[]; // Added for update requests
+  certifications?: string[]; // Added for update requests
 }

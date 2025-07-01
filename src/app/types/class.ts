@@ -1,4 +1,4 @@
-// src/app/types/class.ts - Comprehensive Class Types
+// src/app/types/class.ts - Comprehensive Class Types (Modified)
 export type ClassType = 'MMA' | 'BJJ' | 'Boxing' | 'Muay Thai' | 'Wrestling' | 'Judo' | 'Kickboxing' | 'Fitness' | 'Yoga' | 'Kids Martial Arts';
 
 export type RecurrenceType = 'none' | 'daily' | 'weekly' | 'monthly';
@@ -25,12 +25,12 @@ export interface ClassSchedule {
   startDate: string; // ISO date string
   startTime: string; // HH:MM format
   recurrence: RecurrencePattern;
-  location?: string;
-  requirements?: string[];
-  price?: number;
+  location?: string; // Made optional
+  requirements?: string[]; // Made optional
+  price?: number; // Made optional
   isActive: boolean;
-  tags?: string[];
-  level?: 'Beginner' | 'Intermediate' | 'Advanced' | 'All Levels';
+  tags?: string[]; // Made optional
+  level?: 'Beginner' | 'Intermediate' | 'Advanced' | 'All Levels'; // Made optional
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -78,11 +78,11 @@ export interface ClassFormData {
   startDate: string;
   startTime: string;
   recurrence: RecurrencePattern;
-  location?: string;
-  requirements?: string[];
-  price?: number;
-  level?: 'Beginner' | 'Intermediate' | 'Advanced' | 'All Levels';
-  tags?: string[];
+  // Removed location?: string;
+  // Removed requirements?: string[];
+  // Removed price?: number;
+  // Removed level?: 'Beginner' | 'Intermediate' | 'Advanced' | 'All Levels';
+  // Removed tags?: string[];
 }
 
 export interface ClassFilters {

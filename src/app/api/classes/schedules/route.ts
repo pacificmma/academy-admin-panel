@@ -1,4 +1,4 @@
-// src/app/api/classes/schedules/route.ts - Class Schedule Management API
+// src/app/api/classes/schedules/route.ts - Class Schedule Management API (Modified)
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/app/lib/firebase/admin';
 import { ClassSchedule, ClassFormData, getNextOccurrences } from '@/app/types/class';
@@ -7,7 +7,7 @@ import { requireAdmin, requireStaffOrTrainer, RequestContext } from '@/app/lib/a
 import { createdResponse, successResponse, errorResponse } from '@/app/lib/api/response-utils';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 
-// Validation schema for class schedule
+// Validation schema for class schedule (Modified)
 const classScheduleSchema = z.object({
   name: z.string().min(3).max(100),
   description: z.string().optional(),
@@ -24,11 +24,11 @@ const classScheduleSchema = z.object({
     endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     occurrences: z.number().int().min(1).max(365).optional(),
   }),
-  location: z.string().optional(),
-  requirements: z.array(z.string()).optional(),
-  price: z.number().min(0).optional(),
-  level: z.enum(['Beginner', 'Intermediate', 'Advanced', 'All Levels']).optional(),
-  tags: z.array(z.string()).optional(),
+  location: z.string().optional(), // Made optional
+  requirements: z.array(z.string()).optional(), // Made optional
+  price: z.number().min(0).optional(), // Made optional
+  level: z.enum(['Beginner', 'Intermediate', 'Advanced', 'All Levels']).optional(), // Made optional
+  tags: z.array(z.string()).optional(), // Made optional
 });
 
 // GET /api/classes/schedules - Get all class schedules

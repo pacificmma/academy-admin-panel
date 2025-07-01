@@ -1,4 +1,4 @@
-// src/app/components/forms/ClassFormDialog.tsx - Comprehensive Class Scheduling Dialog
+// src/app/components/forms/ClassFormDialog.tsx - Comprehensive Class Scheduling Dialog (Modified)
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -72,11 +72,7 @@ const DEFAULT_FORM_DATA: ClassFormData = {
     interval: 1,
     daysOfWeek: [],
   },
-  location: '',
-  requirements: [],
-  price: 0,
-  level: 'All Levels',
-  tags: [],
+  // Removed location, requirements, price, level, tags from default form data
 };
 
 const DAYS_OF_WEEK = [
@@ -115,11 +111,7 @@ export default function ClassFormDialog({
           startDate: classSchedule.startDate,
           startTime: classSchedule.startTime,
           recurrence: classSchedule.recurrence,
-          location: classSchedule.location || '',
-          requirements: classSchedule.requirements || [],
-          price: classSchedule.price || 0,
-          level: classSchedule.level || 'All Levels',
-          tags: classSchedule.tags || [],
+          // Removed location, requirements, price, level, tags assignments when editing
         });
       } else {
         setFormData(DEFAULT_FORM_DATA);

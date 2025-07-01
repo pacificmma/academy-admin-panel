@@ -1,14 +1,17 @@
-// src/app/api/staff/route.ts - Staff List API (Updated)
+// src/app/api/staff/route.ts - Staff List API (Modified)
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/app/lib/firebase/admin';
-import { withSecurity, handleError, sanitizeOutput } from '@/app/lib/security/api-security';
+import { errorResponse, successResponse } from '@/app/lib/api/response-utils';
+import { withSecurity } from '@/app/lib/security/api-security';
+import { PERMISSIONS } from '@/app/lib/api/permissions';
+import { UserRole } from '@/app/types/auth';
 
 // GET /api/staff - List all staff members
 export async function GET(request: NextRequest) {
   try {
-    // Apply security checks - only admins can list all staff
+    // Apply security checks - allow admin, trainer, and staff to list staff for basic info (e.g., instructors for classes)
     const { session, error } = await withSecurity(request, {
-      requiredRoles: ['admin'],
+      requiredRoles: PERMISSIONS.staff.viewBasicInfo, // MODIFIED: Allow staff and trainers to view basic info
       rateLimit: { maxRequests: 100, windowMs: 15 * 60 * 1000 }
     });
 
@@ -23,90 +26,46 @@ export async function GET(request: NextRequest) {
 
     try {
       // Build query
-      let query = adminDb.collection('staff').orderBy('createdAt', 'desc');
+      let query: any = adminDb.collection('staff').orderBy('createdAt', 'desc');
 
       // Apply filters
       if (role && ['admin', 'trainer', 'staff'].includes(role)) {
         query = query.where('role', '==', role);
       }
 
-      if (status) {
-        const isActive = status === 'active';
-        query = query.where('isActive', '==', isActive);
+      if (status === 'active') {
+        query = query.where('isActive', '==', true);
+      } else if (status === 'inactive') {
+        query = query.where('isActive', '==', false);
       }
 
-      // Execute query
-      const snapshot = await query.limit(limit + 1).get(); // +1 to check if there are more results
-
-      let staffList: any[] = [];
-      snapshot.forEach(doc => {
+      const snapshot = await query.offset(offset).limit(limit).get();
+      let staffMembers = snapshot.docs.map((doc: { data: () => any; id: any; }) => {
         const data = doc.data();
-        staffList.push({
+        return {
           uid: doc.id,
-          email: data.email,
-          fullName: data.fullName,
-          phoneNumber: data.phoneNumber,
-          role: data.role,
-          isActive: data.isActive,
+          ...data,
           createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-          updatedAt: data.updatedAt?.toDate?.()?.toISOString(),
-          lastLoginAt: data.lastLoginAt,
-          emergencyContact: data.emergencyContact,
-          specializations: data.specializations || [],
-          certifications: data.certifications || [],
-          // Exclude sensitive fields
-        });
+          lastLoginAt: data.lastLoginAt?.toDate?.()?.toISOString() || null,
+        };
       });
 
-      // Apply search filter (client-side for simplicity)
+      // Apply search filtering
       if (search) {
-        const searchTerm = search.toLowerCase();
-        staffList = staffList.filter(staff =>
-          staff.fullName.toLowerCase().includes(searchTerm) ||
-          staff.email.toLowerCase().includes(searchTerm) ||
-          staff.role.toLowerCase().includes(searchTerm)
+        const searchLower = search.toLowerCase();
+        staffMembers = staffMembers.filter((staff: { fullName: string; email: string; }) =>
+          staff.fullName.toLowerCase().includes(searchLower) ||
+          staff.email.toLowerCase().includes(searchLower)
         );
       }
 
-      // Apply pagination
-      const hasMore = staffList.length > limit;
-      if (hasMore) {
-        staffList = staffList.slice(0, limit);
-      }
-
-      const paginatedList = staffList.slice(offset, offset + limit);
-
-      return NextResponse.json({
-        success: true,
-        data: paginatedList,
-        pagination: {
-          total: staffList.length,
-          limit,
-          offset,
-          hasMore: hasMore && (offset + limit < staffList.length)
-        }
-      });
-
+      return successResponse(staffMembers);
     } catch (dbError: any) {
-      throw new Error('Failed to fetch staff members');
+      console.error('Database query error for staff:', dbError);
+      throw new Error('Failed to fetch staff members from database');
     }
 
   } catch (error: any) {
-    return handleError(error);
+    return errorResponse(error.message || 'Failed to list staff members', 500);
   }
-}
-
-// Handle OPTIONS for CORS
-export async function OPTIONS() {
-  return new NextResponse(null, {
-    status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': process.env.NODE_ENV === 'production' 
-        ? process.env.NEXT_PUBLIC_APP_DOMAIN || 'https://yourdomain.com'
-        : 'http://localhost:3000',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      'Access-Control-Allow-Credentials': 'true',
-    },
-  });
 }
