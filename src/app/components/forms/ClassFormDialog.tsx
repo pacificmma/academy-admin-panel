@@ -1,4 +1,4 @@
-// src/app/components/forms/ClassFormDialog.tsx (Güncellendi)
+// src/app/components/forms/ClassFormDialog.tsx (Updated)
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -17,88 +17,77 @@ import {
   Typography,
   Grid,
   Chip,
-  Switch,
-  FormControlLabel,
-  Autocomplete,
-  FormHelperText,
-  Divider,
   IconButton,
   Tooltip,
   Alert,
   InputAdornment,
+  FormHelperText,
+  RadioGroup,
+  FormControlLabel,
+  Radio,
+  FormLabel,
+  Checkbox
 } from '@mui/material';
 import {
-  Save as SaveIcon,
   Close as CloseIcon,
-  Add as AddIcon,
-  Delete as DeleteIcon,
-  AccessTime as TimeIcon,
   CalendarToday as CalendarIcon,
-  Repeat as RepeatIcon,
+  AccessTime as TimeIcon,
+  Save as SaveIcon,
 } from '@mui/icons-material';
 import { DatePicker, TimePicker } from '@mui/x-date-pickers';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { format as formatFns, parseISO, addHours, addMinutes } from 'date-fns';
 import {
   ClassSchedule,
   ClassFormData,
-  RecurrencePattern,
   ClassType,
   CLASS_TYPE_OPTIONS,
-  LEVEL_OPTIONS,
   getClassTypeColor,
-  getNextOccurrences,
+  generateRecurringClassDates,
   ClassInstance,
 } from '../../types/class';
 
 interface ClassFormDialogProps {
   open: boolean;
   onClose: () => void;
-  onSubmit: (data: ClassFormData) => Promise<void>;
-  classSchedule?: ClassSchedule | null; // Programları düzenlemek için
-  initialClassDataForInstanceEdit?: ClassFormData; // Örnekleri düzenlemek için, ClassFormData uyumlu formata dönüştürülmüş
+  onSubmit: (data: ClassFormData, scheduleId?: string) => Promise<void>;
+  classDataForEdit?: ClassSchedule | ClassInstance | null; // Unified prop for edit data
   mode: 'create' | 'edit';
   instructors: Array<{ id: string; name: string; specialties?: string[] }>;
 }
 
 const DEFAULT_FORM_DATA: ClassFormData = {
   name: '',
-  description: '',
   classType: 'MMA',
   instructorId: '',
   maxParticipants: 20,
-  duration: 60,
-  startDate: new Date().toISOString().split('T')[0],
+  duration: 60, // in minutes
+  startDate: formatFns(new Date(), 'yyyy-MM-dd'),
   startTime: '18:00',
-  recurrence: {
-    type: 'none',
-    interval: 1,
-    daysOfWeek: [],
-  },
-  // Varsayılan form verilerine isteğe bağlı alanlar eklendi
-  location: '',
-  requirements: [],
   price: 0,
-  level: 'All Levels',
-  tags: [],
+  scheduleType: 'single', // Default to single event
+  daysOfWeek: [],
+  recurrenceDurationValue: 4, // Default 4 weeks
+  recurrenceDurationUnit: 'weeks',
+  packagePrice: 0,
 };
 
 const DAYS_OF_WEEK = [
-  { value: 1, label: 'Pazartesi', short: 'Pzt' },
-  { value: 2, label: 'Salı', short: 'Sal' },
-  { value: 3, label: 'Çarşamba', short: 'Çar' },
-  { value: 4, label: 'Perşembe', short: 'Per' },
-  { value: 5, label: 'Cuma', short: 'Cum' },
-  { value: 6, label: 'Cumartesi', short: 'Cmt' },
-  { value: 0, label: 'Pazar', short: 'Paz' },
+  { value: 0, label: 'Sunday', short: 'Sun' },
+  { value: 1, label: 'Monday', short: 'Mon' },
+  { value: 2, label: 'Tuesday', short: 'Tue' },
+  { value: 3, label: 'Wednesday', short: 'Wed' },
+  { value: 4, label: 'Thursday', short: 'Thu' },
+  { value: 5, label: 'Friday', short: 'Fri' },
+  { value: 6, label: 'Saturday', short: 'Sat' },
 ];
 
 export default function ClassFormDialog({
   open,
   onClose,
   onSubmit,
-  classSchedule,
-  initialClassDataForInstanceEdit,
+  classDataForEdit,
   mode,
   instructors,
 }: ClassFormDialogProps) {
@@ -107,58 +96,83 @@ export default function ClassFormDialog({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [previewOccurrences, setPreviewOccurrences] = useState<Array<{ date: string; time: string }>>([]);
 
+  const isEditingSchedule = mode === 'edit' && classDataForEdit && 'recurrence' in classDataForEdit;
+  const isEditingInstance = mode === 'edit' && classDataForEdit && !('recurrence' in classDataForEdit);
+
   useEffect(() => {
     if (open) {
-      if (mode === 'edit') {
-        if (classSchedule) {
-          // Bir program düzenleniyor
-          setFormData({
-            name: classSchedule.name,
-            description: classSchedule.description || '',
-            classType: classSchedule.classType,
-            instructorId: classSchedule.instructorId,
-            maxParticipants: classSchedule.maxParticipants,
-            duration: classSchedule.duration,
-            startDate: classSchedule.startDate,
-            startTime: classSchedule.startTime,
-            recurrence: classSchedule.recurrence,
-            location: classSchedule.location || '',
-            requirements: classSchedule.requirements || [],
-            price: classSchedule.price || 0,
-            level: classSchedule.level || 'All Levels',
-            tags: classSchedule.tags || [],
-          });
-        } else if (initialClassDataForInstanceEdit) {
-          // Bir örnek düzenleniyor
-          setFormData(initialClassDataForInstanceEdit);
-        } else {
-          setFormData(DEFAULT_FORM_DATA);
-        }
+      if (isEditingSchedule) {
+        // Editing an existing ClassSchedule
+        const schedule = classDataForEdit as ClassSchedule;
+        setFormData({
+          name: schedule.name,
+          classType: schedule.classType,
+          instructorId: schedule.instructorId,
+          maxParticipants: schedule.maxParticipants,
+          duration: schedule.duration,
+          startDate: schedule.startDate,
+          startTime: schedule.startTime,
+          price: schedule.price, // Schedule price is the total price if recurring
+          scheduleType: schedule.recurrence.scheduleType,
+          daysOfWeek: schedule.recurrence.daysOfWeek || [],
+          recurrenceDurationValue: schedule.recurrence.durationValue || DEFAULT_FORM_DATA.recurrenceDurationValue,
+          recurrenceDurationUnit: schedule.recurrence.durationUnit || DEFAULT_FORM_DATA.recurrenceDurationUnit,
+          packagePrice: schedule.price, // For editing recurring, price is packagePrice
+        });
+      } else if (isEditingInstance) {
+        // Editing an existing ClassInstance
+        const instance = classDataForEdit as ClassInstance;
+        setFormData({
+          name: instance.name,
+          classType: instance.classType,
+          instructorId: instance.instructorId,
+          maxParticipants: instance.maxParticipants,
+          duration: instance.duration,
+          startDate: instance.date, // Instance date becomes start date for form
+          startTime: instance.startTime,
+          price: instance.price || 0, // Instance might have its own price
+          scheduleType: 'single', // An instance is always treated as a single event for editing
+          daysOfWeek: [],
+          recurrenceDurationValue: DEFAULT_FORM_DATA.recurrenceDurationValue,
+          recurrenceDurationUnit: DEFAULT_FORM_DATA.recurrenceDurationUnit,
+          packagePrice: 0,
+        });
       } else {
+        // Creating a new class
         setFormData(DEFAULT_FORM_DATA);
       }
       setErrors({});
     }
-  }, [open, mode, classSchedule, initialClassDataForInstanceEdit]);
+  }, [open, classDataForEdit, mode, isEditingSchedule, isEditingInstance]);
 
   useEffect(() => {
-    // Yalnızca programlar için önizleme oluştur, örnekler için değil
-    if (mode === 'create' || (mode === 'edit' && classSchedule)) {
-        if (formData.recurrence.type !== 'none') {
-            const occurrences = getNextOccurrences(
-                formData.startDate,
-                formData.startTime,
-                formData.recurrence,
-                5
-            );
-            setPreviewOccurrences(occurrences);
-        } else {
-            setPreviewOccurrences([]);
-        }
-    } else {
+    // Generate preview only for schedules (create mode or editing a schedule) and if it's recurring
+    if ((mode === 'create' || isEditingSchedule) && formData.scheduleType === 'recurring') {
+      if (formData.daysOfWeek.length > 0 && formData.startTime && formData.recurrenceDurationValue > 0) {
+        const occurrences = generateRecurringClassDates(
+          formData.startDate,
+          formData.startTime,
+          formData.recurrenceDurationValue,
+          formData.recurrenceDurationUnit,
+          formData.daysOfWeek
+        );
+        setPreviewOccurrences(occurrences.slice(0, 5)); // Show next 5 occurrences
+      } else {
         setPreviewOccurrences([]);
+      }
+    } else {
+      setPreviewOccurrences([]);
     }
-  }, [formData.startDate, formData.startTime, formData.recurrence, mode, classSchedule]);
+  }, [
+    formData.startDate,
+    formData.startTime,
+    formData.scheduleType,
+    formData.daysOfWeek,
+    formData.recurrenceDurationValue,
+    formData.recurrenceDurationUnit,
+    mode,
+    isEditingSchedule,
+  ]);
 
   const handleInputChange = (field: keyof ClassFormData, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -167,53 +181,59 @@ export default function ClassFormDialog({
     }
   };
 
-  const handleRecurrenceChange = (field: keyof RecurrencePattern, value: any) => {
-    setFormData(prev => ({
-      ...prev,
-      recurrence: { ...prev.recurrence, [field]: value }
-    }));
-  };
-
   const handleDayOfWeekToggle = (day: number) => {
-    const currentDays = formData.recurrence.daysOfWeek || [];
+    const currentDays = formData.daysOfWeek || [];
     const newDays = currentDays.includes(day)
       ? currentDays.filter(d => d !== day)
       : [...currentDays, day].sort((a, b) => a - b);
-
-    handleRecurrenceChange('daysOfWeek', newDays);
+    handleInputChange('daysOfWeek', newDays);
   };
+
+  const calculateEndTime = (startTime: string, duration: number) => {
+    if (!startTime || duration <= 0) return '';
+    const [hours, minutes] = startTime.split(':').map(Number);
+    const startDate = new Date(); // Use a dummy date for calculation
+    startDate.setHours(hours, minutes, 0, 0);
+    const endDate = addMinutes(startDate, duration);
+    return formatFns(endDate, 'HH:mm');
+  };
+
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
     if (!formData.name.trim()) {
-      newErrors.name = 'Ders adı gerekli';
+      newErrors.name = 'Class name is required.';
     }
-
     if (!formData.instructorId) {
-      newErrors.instructorId = 'Eğitmen gerekli';
+      newErrors.instructorId = 'Instructor is required.';
     }
-
     if (formData.maxParticipants < 1 || formData.maxParticipants > 100) {
-      newErrors.maxParticipants = 'Katılımcılar 1 ile 100 arasında olmalı';
+      newErrors.maxParticipants = 'Max participants must be between 1 and 100.';
     }
-
     if (formData.duration < 15 || formData.duration > 240) {
-      newErrors.duration = 'Süre 15 ile 240 dakika arasında olmalı';
+      newErrors.duration = 'Duration must be between 15 and 240 minutes.';
     }
-
     if (!formData.startDate) {
-      newErrors.startDate = 'Başlangıç tarihi gerekli';
+      newErrors.startDate = 'Start date is required.';
     }
-
     if (!formData.startTime) {
-      newErrors.startTime = 'Başlangıç saati gerekli';
+      newErrors.startTime = 'Start time is required.';
     }
 
-    // Yalnızca program oluştururken veya düzenlerken tekrarlama doğrulaması yap
-    if (mode === 'create' || (mode === 'edit' && classSchedule)) {
-      if (formData.recurrence.type === 'weekly' && (!formData.recurrence.daysOfWeek || formData.recurrence.daysOfWeek.length === 0)) {
-        newErrors.recurrence = 'Haftalık tekrarlama için en az bir gün seçin';
+    if (formData.scheduleType === 'single') {
+      if (formData.price < 0) {
+        newErrors.price = 'Price cannot be negative.';
+      }
+    } else { // Recurring
+      if (formData.packagePrice <= 0) {
+        newErrors.packagePrice = 'Package price must be greater than 0.';
+      }
+      if (formData.daysOfWeek.length === 0) {
+        newErrors.daysOfWeek = 'Select at least one day for weekly recurrence.';
+      }
+      if (formData.recurrenceDurationValue <= 0) {
+        newErrors.recurrenceDurationValue = 'Recurrence duration must be greater than 0.';
       }
     }
 
@@ -222,39 +242,43 @@ export default function ClassFormDialog({
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault(); // Formun varsayılan gönderimini engelle
+    e.preventDefault();
     if (!validateForm()) return;
 
     setLoading(true);
     try {
-      await onSubmit(formData);
+      await onSubmit(formData, isEditingSchedule ? classDataForEdit?.id : undefined);
     } catch (error) {
-      console.error('Ders kaydedilemedi:', error);
+      console.error('Failed to save class:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const selectedInstructor = instructors.find(i => i.id === formData.instructorId);
+  const handleClose = () => {
+    if (!loading) {
+      onClose();
+    }
+  };
 
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns}>
       <Dialog
         open={open}
-        onClose={onClose}
+        onClose={handleClose}
         maxWidth="md"
         fullWidth
         PaperProps={{
           sx: { borderRadius: 2, maxHeight: '90vh' }
         }}
       >
-        <form onSubmit={handleSubmit}> {/* onSubmit ile form etiketi */}
+        <form onSubmit={handleSubmit}>
           <DialogTitle>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                {mode === 'create' ? 'Yeni Ders Planla' : 'Dersi Düzenle'}
+                {mode === 'create' ? 'Schedule New Class' : 'Edit Class'}
               </Typography>
-              <IconButton onClick={onClose} size="small">
+              <IconButton onClick={handleClose} size="small">
                 <CloseIcon />
               </IconButton>
             </Box>
@@ -262,32 +286,33 @@ export default function ClassFormDialog({
 
           <DialogContent sx={{ p: 3 }}>
             <Grid container spacing={3}>
-              {/* Temel Bilgiler */}
+              {/* Basic Information */}
               <Grid item xs={12}>
                 <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
-                  Temel Bilgiler
+                  Basic Information
                 </Typography>
               </Grid>
 
               <Grid item xs={12} md={8}>
                 <TextField
                   fullWidth
-                  label="Ders Adı"
+                  label="Class Name"
                   value={formData.name}
                   onChange={(e) => handleInputChange('name', e.target.value)}
                   error={!!errors.name}
                   helperText={errors.name}
-                  placeholder="örn: Sabah BJJ Temelleri"
+                  placeholder="e.g., Morning BJJ Fundamentals"
+                  disabled={loading}
                 />
               </Grid>
 
               <Grid item xs={12} md={4}>
-                <FormControl fullWidth error={!!errors.classType}>
-                  <InputLabel>Ders Tipi</InputLabel>
+                <FormControl fullWidth error={!!errors.classType} disabled={loading}>
+                  <InputLabel>Class Type</InputLabel>
                   <Select
                     value={formData.classType}
                     onChange={(e) => handleInputChange('classType', e.target.value as ClassType)}
-                    label="Ders Tipi"
+                    label="Class Type"
                   >
                     {CLASS_TYPE_OPTIONS.map((type) => (
                       <MenuItem key={type} value={type}>
@@ -308,26 +333,14 @@ export default function ClassFormDialog({
                 </FormControl>
               </Grid>
 
-              <Grid item xs={12}>
-                <TextField
-                  fullWidth
-                  label="Açıklama"
-                  value={formData.description}
-                  onChange={(e) => handleInputChange('description', e.target.value)}
-                  multiline
-                  rows={2}
-                  placeholder="Ders içeriği ve hedefleri hakkında kısa açıklama..."
-                />
-              </Grid>
-
-              {/* Eğitmen ve Kapasite */}
+              {/* Instructor and Capacity */}
               <Grid item xs={12} md={6}>
-                <FormControl fullWidth error={!!errors.instructorId}>
-                  <InputLabel>Eğitmen</InputLabel>
+                <FormControl fullWidth error={!!errors.instructorId} disabled={loading}>
+                  <InputLabel>Instructor</InputLabel>
                   <Select
                     value={formData.instructorId}
                     onChange={(e) => handleInputChange('instructorId', e.target.value)}
-                    label="Eğitmen"
+                    label="Instructor"
                   >
                     {instructors.map((instructor) => (
                       <MenuItem key={instructor.id} value={instructor.id}>
@@ -349,29 +362,46 @@ export default function ClassFormDialog({
               <Grid item xs={12} md={6}>
                 <TextField
                   fullWidth
-                  label="Maksimum Katılımcı"
+                  label="Max Participants"
                   type="number"
                   value={formData.maxParticipants}
                   onChange={(e) => handleInputChange('maxParticipants', parseInt(e.target.value) || 0)}
                   error={!!errors.maxParticipants}
                   helperText={errors.maxParticipants}
                   inputProps={{ min: 1, max: 100 }}
+                  disabled={loading}
                 />
               </Grid>
 
-              {/* Program Bilgileri */}
+              {/* Schedule Details */}
               <Grid item xs={12}>
-                <Divider sx={{ my: 2 }} />
-                <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
-                  Program & Zamanlama
+                <Typography variant="subtitle1" sx={{ fontWeight: 600, my: 2 }}>
+                  Schedule & Timing
                 </Typography>
               </Grid>
 
+              {/* Schedule Type Selection - Only for new classes or editing schedules */}
+              {(mode === 'create' || isEditingSchedule) && (
+                <Grid item xs={12}>
+                  <FormControl component="fieldset" disabled={loading}>
+                    <FormLabel component="legend">Schedule Type</FormLabel>
+                    <RadioGroup
+                      row
+                      value={formData.scheduleType}
+                      onChange={(e) => handleInputChange('scheduleType', e.target.value as 'single' | 'recurring')}
+                    >
+                      <FormControlLabel value="single" control={<Radio />} label="Single Event" />
+                      <FormControlLabel value="recurring" control={<Radio />} label="Recurring Event" />
+                    </RadioGroup>
+                  </FormControl>
+                </Grid>
+              )}
+
               <Grid item xs={12} md={4}>
                 <DatePicker
-                  label="Başlangıç Tarihi"
-                  value={new Date(formData.startDate)}
-                  onChange={(date) => handleInputChange('startDate', date?.toISOString().split('T')[0] || '')}
+                  label="Start Date"
+                  value={parseISO(formData.startDate)}
+                  onChange={(date) => handleInputChange('startDate', formatFns(date as Date, 'yyyy-MM-dd'))}
                   slotProps={{
                     textField: {
                       fullWidth: true,
@@ -379,13 +409,14 @@ export default function ClassFormDialog({
                       helperText: errors.startDate,
                     }
                   }}
+                  disabled={loading}
                 />
               </Grid>
 
               <Grid item xs={12} md={4}>
                 <TimePicker
-                  label="Başlangıç Saati"
-                  value={new Date(`2000-01-01T${formData.startTime}`)}
+                  label="Start Time"
+                  value={formData.startTime ? addHours(parseISO(formData.startDate), parseInt(formData.startTime.split(':')[0])) : null} // Using startDate as base for TimePicker value
                   onChange={(time) => {
                     if (time) {
                       const hours = time.getHours().toString().padStart(2, '0');
@@ -400,106 +431,119 @@ export default function ClassFormDialog({
                       helperText: errors.startTime,
                     }
                   }}
+                  disabled={loading}
                 />
               </Grid>
 
               <Grid item xs={12} md={4}>
                 <TextField
                   fullWidth
-                  label="Süre (dakika)"
+                  label="Duration (minutes)"
                   type="number"
                   value={formData.duration}
                   onChange={(e) => handleInputChange('duration', parseInt(e.target.value) || 0)}
                   error={!!errors.duration}
                   helperText={errors.duration}
                   inputProps={{ min: 15, max: 240, step: 15 }}
+                  disabled={loading}
                 />
               </Grid>
 
-              {/* Tekrarlama Ayarları - Örnek düzenlenirken gizli */}
-              {(mode === 'create' || (mode === 'edit' && classSchedule)) && (
+              {/* Price Field - changes based on schedule type */}
+              {formData.scheduleType === 'single' ? (
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    fullWidth
+                    label="Price per Session"
+                    type="number"
+                    value={formData.price}
+                    onChange={(e) => handleInputChange('price', parseFloat(e.target.value) || 0)}
+                    error={!!errors.price}
+                    helperText={errors.price || 'Price for this single class session.'}
+                    inputProps={{ min: 0, step: 0.01 }}
+                    disabled={loading}
+                    InputProps={{
+                      startAdornment: <InputAdornment position="start">$</InputAdornment>,
+                    }}
+                  />
+                </Grid>
+              ) : (
                 <>
-                  <Grid item xs={12}>
-                    <FormControl fullWidth>
-                      <InputLabel>Tekrarlama</InputLabel>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      fullWidth
+                      label="Package Price"
+                      type="number"
+                      value={formData.packagePrice}
+                      onChange={(e) => handleInputChange('packagePrice', parseFloat(e.target.value) || 0)}
+                      error={!!errors.packagePrice}
+                      helperText={errors.packagePrice || 'Total price for the entire recurring package.'}
+                      inputProps={{ min: 0, step: 0.01 }}
+                      disabled={loading}
+                      InputProps={{
+                        startAdornment: <InputAdornment position="start">$</InputAdornment>,
+                      }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      fullWidth
+                      label="Recurrence Duration Value"
+                      type="number"
+                      value={formData.recurrenceDurationValue}
+                      onChange={(e) => handleInputChange('recurrenceDurationValue', parseInt(e.target.value) || 0)}
+                      error={!!errors.recurrenceDurationValue}
+                      helperText={errors.recurrenceDurationValue || `Number of ${formData.recurrenceDurationUnit} for recurrence.`}
+                      inputProps={{ min: 1, max: 52 }} // Max 52 weeks or months (approx 1 year)
+                      disabled={loading}
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <FormControl fullWidth disabled={loading}>
+                      <InputLabel>Recurrence Duration Unit</InputLabel>
                       <Select
-                        value={formData.recurrence.type}
-                        onChange={(e) => handleRecurrenceChange('type', e.target.value)}
-                        label="Tekrarlama"
+                        value={formData.recurrenceDurationUnit}
+                        onChange={(e) => handleInputChange('recurrenceDurationUnit', e.target.value as 'weeks' | 'months')}
+                        label="Recurrence Duration Unit"
                       >
-                        <MenuItem value="none">Tek seferlik Etkinlik</MenuItem>
-                        <MenuItem value="daily">Günlük</MenuItem>
-                        <MenuItem value="weekly">Haftalık</MenuItem>
-                        <MenuItem value="monthly">Aylık</MenuItem>
+                        <MenuItem value="weeks">Weeks</MenuItem>
+                        <MenuItem value="months">Months</MenuItem>
                       </Select>
                     </FormControl>
                   </Grid>
-
-                  {formData.recurrence.type === 'weekly' && (
-                    <Grid item xs={12}>
-                      <Typography variant="body2" sx={{ mb: 1 }}>
-                        Haftanın Günlerini Seçin:
-                      </Typography>
-                      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                        {DAYS_OF_WEEK.map((day) => (
-                          <Chip
-                            key={day.value}
-                            label={day.short}
-                            onClick={() => handleDayOfWeekToggle(day.value)}
-                            color={formData.recurrence.daysOfWeek?.includes(day.value) ? 'primary' : 'default'}
-                            variant={formData.recurrence.daysOfWeek?.includes(day.value) ? 'filled' : 'outlined'}
-                            size="small"
-                          />
-                        ))}
-                      </Box>
-                      {errors.recurrence && (
-                        <Typography variant="caption" color="error" sx={{ mt: 1, display: 'block' }}>
-                          {errors.recurrence}
-                        </Typography>
-                      )}
-                    </Grid>
-                  )}
-
-                  {formData.recurrence.type !== 'none' && (
-                    <>
-                      <Grid item xs={12} md={6}>
-                        <TextField
-                          fullWidth
-                          label="Her"
-                          type="number"
-                          value={formData.recurrence.interval}
-                          onChange={(e) => handleRecurrenceChange('interval', parseInt(e.target.value) || 1)}
-                          inputProps={{ min: 1, max: 12 }}
-                          helperText={`Her ${formData.recurrence.interval} ${formData.recurrence.type === 'daily' ? 'gün' : formData.recurrence.type === 'weekly' ? 'hafta' : 'ay'}`}
+                  <Grid item xs={12}>
+                    <Typography variant="body2" sx={{ mb: 1 }}>
+                      Select Days of Week for Recurring Events:
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                      {DAYS_OF_WEEK.map((day) => (
+                        <Chip
+                          key={day.value}
+                          label={day.label}
+                          onClick={() => handleDayOfWeekToggle(day.value)}
+                          color={formData.daysOfWeek?.includes(day.value) ? 'primary' : 'default'}
+                          variant={formData.daysOfWeek?.includes(day.value) ? 'filled' : 'outlined'}
+                          size="small"
+                          disabled={loading}
                         />
-                      </Grid>
-
-                      <Grid item xs={12} md={6}>
-                        <DatePicker
-                          label="Bitiş Tarihi (İsteğe Bağlı)"
-                          value={formData.recurrence.endDate ? new Date(formData.recurrence.endDate) : null}
-                          onChange={(date) => handleRecurrenceChange('endDate', date?.toISOString().split('T')[0] || undefined)}
-                          slotProps={{
-                            textField: {
-                              fullWidth: true,
-                            }
-                          }}
-                        />
-                      </Grid>
-                    </>
-                  )}
-                  {/* Yaklaşan derslerin önizlemesi */}
+                      ))}
+                    </Box>
+                    {errors.daysOfWeek && (
+                      <FormHelperText error>{errors.daysOfWeek}</FormHelperText>
+                    )}
+                  </Grid>
+                  {/* Preview of upcoming classes for recurring events */}
                   {previewOccurrences.length > 0 && (
                     <Grid item xs={12}>
                       <Alert severity="info" sx={{ mt: 2 }}>
                         <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
-                          Sonraki 5 planlanmış ders:
+                          Next 5 scheduled class dates:
                         </Typography>
                         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                           {previewOccurrences.map((occurrence, index) => (
                             <Chip
                               key={index}
-                              label={`${new Date(occurrence.date).toLocaleDateString()} ${occurrence.time}`}
+                              label={`${formatFns(parseISO(occurrence.date), 'MMM dd')} ${occurrence.time}`}
                               size="small"
                               variant="outlined"
                             />
@@ -510,91 +554,12 @@ export default function ClassFormDialog({
                   )}
                 </>
               )}
-              {/* İsteğe bağlı alanlar: Konum, Gereksinimler, Fiyat, Seviye, Etiketler */}
-              <Grid item xs={12} md={6}>
-                <TextField
-                  fullWidth
-                  label="Konum (İsteğe Bağlı)"
-                  value={formData.location}
-                  onChange={(e) => handleInputChange('location', e.target.value)}
-                  placeholder="örn: Ana Salon, Minder Alanı 1"
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <TextField
-                  fullWidth
-                  type="number"
-                  label="Fiyat (İsteğe Bağlı)"
-                  value={formData.price}
-                  onChange={(e) => handleInputChange('price', parseFloat(e.target.value) || 0)}
-                  inputProps={{ min: 0, step: 0.01 }}
-                  InputProps={{
-                    startAdornment: <InputAdornment position="start">$</InputAdornment>,
-                  }}
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <FormControl fullWidth>
-                  <InputLabel>Seviye (İsteğe Bağlı)</InputLabel>
-                  <Select
-                    value={formData.level}
-                    onChange={(e) => handleInputChange('level', e.target.value)}
-                    label="Seviye (İsteğe Bağlı)"
-                  >
-                    {LEVEL_OPTIONS.map((level) => (
-                      <MenuItem key={level} value={level}>{level}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <Autocomplete
-                  multiple
-                  freeSolo
-                  options={[]} // Serbest etiketlere izin ver
-                  value={formData.tags || []}
-                  onChange={(_, newValue) => handleInputChange('tags', newValue)}
-                  renderTags={(value, getTagProps) =>
-                    value.map((option, index) => (
-                      <Chip label={option} {...getTagProps({ index })} key={index} />
-                    ))
-                  }
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label="Etiketler (İsteğe Bağlı)"
-                      placeholder="örn: başlangıç-dostu, sparring"
-                    />
-                  )}
-                />
-              </Grid>
-              <Grid item xs={12}>
-                <Autocomplete
-                  multiple
-                  freeSolo
-                  options={[]} // Serbest gereksinimlere izin ver
-                  value={formData.requirements || []}
-                  onChange={(_, newValue) => handleInputChange('requirements', newValue)}
-                  renderTags={(value, getTagProps) =>
-                    value.map((option, index) => (
-                      <Chip label={option} {...getTagProps({ index })} key={index} />
-                    ))
-                  }
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label="Gereksinimler (İsteğe Bağlı)"
-                      placeholder="örn: su şişesi getir, ağızlık"
-                    />
-                  )}
-                />
-              </Grid>
             </Grid>
           </DialogContent>
 
           <DialogActions sx={{ p: 3, gap: 2 }}>
-            <Button onClick={onClose} disabled={loading}>
-              İptal
+            <Button onClick={handleClose} disabled={loading}>
+              Cancel
             </Button>
             <Button
               type="submit"
@@ -602,7 +567,7 @@ export default function ClassFormDialog({
               startIcon={loading ? null : <SaveIcon />}
               disabled={loading}
             >
-              {loading ? 'Kaydediliyor...' : mode === 'create' ? 'Ders Planla' : 'Dersi Güncelle'}
+              {loading ? 'Saving...' : mode === 'create' ? 'Schedule Class' : 'Update Class'}
             </Button>
           </DialogActions>
         </form>

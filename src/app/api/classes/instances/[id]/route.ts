@@ -1,4 +1,4 @@
-// src/app/api/classes/instances/[id]/route.ts - Individual Class Instance Management (Modified to fix instructorName update logic)
+// src/app/api/classes/instances/[id]/route.ts - Individual Class Instance Management (Updated with fixed price update logic)
 
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/app/lib/firebase/admin';
@@ -7,18 +7,18 @@ import { errorResponse, successResponse, notFoundResponse, badRequestResponse } 
 import { ClassInstance, ClassStatus } from '@/app/types/class';
 import { z } from 'zod';
 import { FieldValue } from 'firebase-admin/firestore';
+import { addMinutes, format as formatFns } from 'date-fns';
 
 // Validation schema for updating class instance
 const classInstanceUpdateSchema = z.object({
   name: z.string().min(3).max(100).optional(),
-  description: z.string().optional(),
   classType: z.enum(['MMA', 'BJJ', 'Boxing', 'Muay Thai', 'Wrestling', 'Judo', 'Kickboxing', 'Fitness', 'Yoga', 'Kids Martial Arts']).optional(),
   instructorId: z.string().min(1).optional(),
   maxParticipants: z.number().int().min(1).max(100).optional(),
-  duration: z.number().int().min(15).max(240).optional(),
+  duration: z.number().int().min(15).max(240).optional(), // in minutes
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   startTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
-  status: z.enum(['scheduled', 'ongoing', 'completed', 'cancelled']).optional(),
+  price: z.number().nonnegative().optional(), // Price for this specific instance
   location: z.string().optional(),
   notes: z.string().optional(),
   actualDuration: z.number().int().min(0).optional(),
@@ -64,8 +64,9 @@ export const GET = requireStaffOrTrainer(async (request: NextRequest, context: R
       actualDuration: data.actualDuration,
       createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
       updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-      duration: 0,
-      description: undefined
+      duration: data.duration,
+      price: data.price,
+      description: data.description,
     };
 
     return successResponse(instance);
@@ -114,9 +115,52 @@ export const PUT = requireStaffOrTrainer(async (request: NextRequest, context: R
       updatePayload.instructorName = newInstructorDoc.data()?.fullName || 'Unknown';
     }
 
+    // Recalculate endTime if startTime or duration changed
+    if (validatedData.startTime || validatedData.duration) {
+        const newStartTime = validatedData.startTime || currentInstance.startTime;
+        const newDuration = validatedData.duration || currentInstance.duration;
+        
+        const [hours, minutes] = newStartTime.split(':').map(Number);
+        const dummyDate = new Date(); // Use a dummy date for time calculations
+        dummyDate.setHours(hours, minutes, 0, 0);
+        
+        const endTimeDate = addMinutes(dummyDate, newDuration);
+        updatePayload.endTime = formatFns(endTimeDate, 'HH:mm');
+    }
+
+
     await instanceRef.update(updatePayload);
 
-    return successResponse({ id: params.id, ...currentInstance, ...updatePayload }, 'Class instance updated successfully');
+    // Fetch the updated document to return the most current state
+    const updatedDoc = await instanceRef.get();
+    const updatedInstanceData = updatedDoc.data();
+
+    const updatedInstance: ClassInstance = {
+        id: updatedDoc.id,
+        scheduleId: updatedInstanceData?.scheduleId,
+        name: updatedInstanceData?.name,
+        classType: updatedInstanceData?.classType,
+        instructorId: updatedInstanceData?.instructorId,
+        instructorName: updatedInstanceData?.instructorName,
+        date: updatedInstanceData?.date,
+        startTime: updatedInstanceData?.startTime,
+        endTime: updatedInstanceData?.endTime,
+        maxParticipants: updatedInstanceData?.maxParticipants,
+        registeredParticipants: updatedInstanceData?.registeredParticipants || [],
+        waitlist: updatedInstanceData?.waitlist || [],
+        status: updatedInstanceData?.status,
+        location: updatedInstanceData?.location || '',
+        notes: updatedInstanceData?.notes || '',
+        actualDuration: updatedInstanceData?.actualDuration,
+        createdAt: updatedInstanceData?.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+        updatedAt: updatedInstanceData?.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+        duration: updatedInstanceData?.duration,
+        price: updatedInstanceData?.price,
+        description: updatedInstanceData?.description
+    };
+
+
+    return successResponse(updatedInstance, 'Class instance updated successfully');
   } catch (error) {
     if (error instanceof z.ZodError) {
       return errorResponse('Validation failed', 400, error.errors);

@@ -18,5 +18,5 @@ export default async function ClassesPage() {
 
   // All authenticated users can access classes page
   // but different roles see different content
-  return <ClassesPageClient session={session} />;
+  return <ClassesPageClient />;
 }

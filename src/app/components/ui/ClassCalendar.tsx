@@ -1,4 +1,4 @@
-// src/app/components/ui/ClassCalendar.tsx - Takvim Görünümü (Güncellendi)
+// src/app/components/ui/ClassCalendar.tsx (Updated - Minor text adjustment)
 'use client';
 
 import React, { useState, useMemo } from 'react';
@@ -41,9 +41,9 @@ interface ClassCalendarProps {
   onClassClick?: (classInstance: ClassInstance) => void;
   onDateClick?: (date: Date) => void;
   selectedDate?: Date;
-  userRole: 'admin' | 'trainer' | 'staff';
+  userRole: 'admin' | 'trainer' | 'staff' | 'member'; // Added 'member' as a possible role
   onEditClass: (data: ClassSchedule | ClassInstance) => void;
-  onDeleteClass: (data: ClassInstance, type: 'instance') => void; // DÜZELTME: classData objesini kabul et
+  onDeleteClass: (data: ClassInstance, type: 'instance') => void;
   onStartClass?: (instanceId: string) => void;
   onEndClass?: (instanceId: string) => void;
   onCancelClass?: (instanceId: string) => void;
@@ -129,17 +129,17 @@ export default function ClassCalendar({
     if (viewMode === 'day') {
       return { start, end };
     } else if (viewMode === 'week') {
-      const dayOfWeek = start.getDay();
-      const diff = start.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+      const dayOfWeek = start.getDay(); // 0 for Sunday, 1 for Monday
+      const diff = start.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // Go to Monday of current week
       start.setDate(diff);
       start.setHours(0, 0, 0, 0);
-      end.setDate(start.getDate() + 6);
+      end.setDate(start.getDate() + 6); // End on Sunday
       end.setHours(23, 59, 59, 999);
-    } else {
+    } else { // Month view
       start.setDate(1);
       start.setHours(0, 0, 0, 0);
       end.setMonth(end.getMonth() + 1);
-      end.setDate(0);
+      end.setDate(0); // Last day of the current month
       end.setHours(23, 59, 59, 999);
     }
 
@@ -150,8 +150,10 @@ export default function ClassCalendar({
 
   const filteredEvents = events.filter(event => {
     const eventDate = new Date(event.date);
-    eventDate.setHours(parseInt(event.startTime.split(':')[0]), parseInt(event.startTime.split(':')[1]), 0, 0);
-    return eventDate >= rangeStart && eventDate <= rangeEnd;
+    // Normalize eventDate to start of day for comparison
+    eventDate.setHours(0, 0, 0, 0);
+    return eventDate >= new Date(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate()) &&
+           eventDate <= new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), rangeEnd.getDate(), 23, 59, 59, 999);
   });
 
   const handleEventClick = (event: CalendarEvent, anchorEl?: HTMLElement) => {
@@ -196,10 +198,10 @@ export default function ClassCalendar({
           }}
           onClick={() => onDateClick?.(currentDate)}
           >
-            <Typography variant="body1">Bu gün için planlanmış ders bulunmamaktadır</Typography>
+            <Typography variant="body1">No classes scheduled for this day.</Typography>
             {userRole === 'admin' && (
               <Typography variant="body2" sx={{ mt: 1 }}>
-                Ders planlamak için tıklayın
+                Click to schedule a class
               </Typography>
             )}
           </Box>
@@ -281,7 +283,7 @@ export default function ClassCalendar({
     return (
       <Box sx={{ p: 2 }}>
         <Box sx={{ display: 'grid', gridTemplateColumns: '60px repeat(7, 1fr)', gap: 1, mb: 2 }}>
-          <Box />
+          <Box /> {/* Empty corner for time labels */}
           {weekDays.map(day => (
             <Box
               key={day.toISOString()}
@@ -388,25 +390,25 @@ export default function ClassCalendar({
     const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
     const lastDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
     const startDate = new Date(firstDayOfMonth);
-    startDate.setDate(startDate.getDate() - firstDayOfMonth.getDay());
+    startDate.setDate(startDate.getDate() - firstDayOfMonth.getDay()); // Adjust to Sunday of the first week
 
     const weeks = [];
     const currentWeekDate = new Date(startDate);
 
-    while (currentWeekDate <= lastDayOfMonth || weeks.length < 6) {
+    while (currentWeekDate <= lastDayOfMonth || weeks.length < 6) { // Ensure at least 4-6 rows
       const week = [];
       for (let i = 0; i < 7; i++) {
         week.push(new Date(currentWeekDate));
         currentWeekDate.setDate(currentWeekDate.getDate() + 1);
       }
       weeks.push(week);
-      if (currentWeekDate > lastDayOfMonth && weeks.length >= 4) break;
+      if (currentWeekDate > lastDayOfMonth && weeks.length >= 4) break; // Stop after current month if enough weeks
     }
 
     return (
       <Box sx={{ p: 2 }}>
         <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1, mb: 2 }}>
-          {['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt'].map(day => (
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
             <Typography
               key={day}
               variant="subtitle2"
@@ -481,7 +483,7 @@ export default function ClassCalendar({
                   ))}
                   {dayEvents.length > 2 && (
                     <Typography variant="caption" color="text.secondary">
-                      +{dayEvents.length - 2} daha
+                      +{dayEvents.length - 2} more
                     </Typography>
                   )}
                 </Box>
@@ -514,7 +516,7 @@ export default function ClassCalendar({
               variant="outlined"
               size="small"
             >
-              Bugün
+              Today
             </Button>
             <IconButton onClick={() => navigateDate('next')} size="small">
               <ChevronRightIcon />
@@ -591,7 +593,7 @@ export default function ClassCalendar({
             onClassClick(selectedEvent.classInstance);
             handleEventMenuClose();
           }}>
-            Detayları Görüntüle
+            View Details
           </MenuItem>
         )}
         {selectedEvent && showManagementButtons && (
@@ -602,18 +604,18 @@ export default function ClassCalendar({
             <ListItemIcon>
               <EditIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText>Dersi Düzenle</ListItemText>
+            <ListItemText>Edit Class</ListItemText>
           </MenuItem>
         )}
         {selectedEvent && (userRole === 'admin' || isInstructorOfSelectedEvent) && selectedEvent.classInstance.status !== 'completed' && selectedEvent.classInstance.status !== 'cancelled' && (
           <MenuItem onClick={() => {
-            onDeleteClass(selectedEvent.classInstance, 'instance'); // DÜZELTME: Tam objeyi ve tipi geçir
+            onCancelClass?.(selectedEvent.classInstance.id);
             handleEventMenuClose();
           }} sx={{ color: 'error.main' }}>
             <ListItemIcon>
               <CancelIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText>Dersi İptal Et</ListItemText>
+            <ListItemText>Cancel Class</ListItemText>
           </MenuItem>
         )}
         {selectedEvent && (userRole === 'admin' || isInstructorOfSelectedEvent) && selectedEvent.classInstance.status === 'scheduled' && onStartClass && (
@@ -624,7 +626,7 @@ export default function ClassCalendar({
             <ListItemIcon>
               <PlayArrowIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText>Dersi Başlat</ListItemText>
+            <ListItemText>Start Class</ListItemText>
           </MenuItem>
         )}
         {selectedEvent && (userRole === 'admin' || isInstructorOfSelectedEvent) && selectedEvent.classInstance.status === 'ongoing' && onEndClass && (
@@ -635,7 +637,7 @@ export default function ClassCalendar({
             <ListItemIcon>
               <StopIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText>Dersi Bitir</ListItemText>
+            <ListItemText>End Class</ListItemText>
           </MenuItem>
         )}
       </Menu>

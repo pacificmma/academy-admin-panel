@@ -1,4 +1,4 @@
-// src/app/classes/ClassesPageClient.tsx (Güncellendi)
+// src/app/classes/ClassesPageClient.tsx (Updated)
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -10,10 +10,6 @@ import {
   Tabs,
   Tab,
   Button,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   TextField,
   InputAdornment,
   MenuItem,
@@ -21,31 +17,34 @@ import {
   InputLabel,
   Select,
   Grid,
+  ToggleButtonGroup,
+  ToggleButton,
 } from '@mui/material';
-import { Add as AddIcon, Search as SearchIcon } from '@mui/icons-material';
+import { Add as AddIcon, Search as SearchIcon, CalendarMonth as CalendarIcon, GridView as GridViewIcon } from '@mui/icons-material';
 import ClassCard from '@/app/components/ui/ClassCards';
 import ClassCalendar from '@/app/components/ui/ClassCalendar';
 import ClassFormDialog from '@/app/components/forms/ClassFormDialog';
 import DeleteConfirmationDialog from '@/app/components/ui/DeleteConfirmationDialog';
 import { ClassSchedule, ClassInstance, ClassFormData, ClassType, ClassFilters, CLASS_TYPE_OPTIONS } from '@/app/types/class';
 import { useAuth } from '@/app/contexts/AuthContext';
-import { format, startOfMonth, endOfMonth, parseISO } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 
 export default function ClassesPageClient() {
-  const { user } = useAuth(); // `user` is typed as AuthUser | null from AuthContextType
+  const { user } = useAuth();
   const [tabIndex, setTabIndex] = useState(0);
   const [schedules, setSchedules] = useState<ClassSchedule[]>([]);
   const [instances, setInstances] = useState<ClassInstance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isFormDialogOpen, setIsFormDialogOpen] = useState(false);
-  const [editingClass, setEditingClass] = useState<ClassSchedule | ClassInstance | null>(null);
+  const [editingClassData, setEditingClassData] = useState<ClassSchedule | ClassInstance | null>(null);
   const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [deleteTargetType, setDeleteTargetType] = useState<'schedule' | 'instance' | null>(null);
   const [instructors, setInstructors] = useState<Array<{ id: string; name: string; specialties?: string[] }>>([]);
-  const [calendarViewMode, setCalendarViewMode] = useState<'day' | 'week' | 'month'>('week');
+  const [calendarViewMode, setCalendarViewMode] = useState<'day' | 'week' | 'month'>('week'); // For calendar component
+  const [instanceDisplayMode, setInstanceDisplayMode] = useState<'cards' | 'calendar'>('cards'); // For Upcoming Classes tab
 
   const [filters, setFilters] = useState<ClassFilters>({
     classType: undefined,
@@ -57,12 +56,12 @@ export default function ClassesPageClient() {
   const loadInstructors = useCallback(async () => {
     try {
       const res = await fetch('/api/staff');
-      if (!res.ok) throw new Error('Eğitmenler getirilemedi');
+      if (!res.ok) throw new Error('Failed to fetch instructors');
       const data = await res.json();
       setInstructors(data.data.map((staff: any) => ({ id: staff.uid, name: staff.fullName, specialties: staff.specializations || [] })));
     } catch (err: any) {
-      console.error('Eğitmenler yüklenemedi:', err);
-      setError(err.message || 'Eğitmenler yüklenemedi.');
+      console.error('Failed to load instructors:', err);
+      setError(err.message || 'Failed to load instructors.');
     }
   }, []);
 
@@ -71,12 +70,12 @@ export default function ClassesPageClient() {
     setError(null);
     try {
       const res = await fetch('/api/classes/schedules');
-      if (!res.ok) throw new Error('Ders programları getirilemedi');
+      if (!res.ok) throw new Error('Failed to fetch class schedules');
       const data = await res.json();
       setSchedules(data.data || []);
     } catch (err: any) {
-      console.error('Ders programları yüklenemedi:', err);
-      setError(err.message || 'Ders programları yüklenemedi.');
+      console.error('Failed to load class schedules:', err);
+      setError(err.message || 'Failed to load class schedules.');
     } finally {
       setLoading(false);
     }
@@ -98,20 +97,20 @@ export default function ClassesPageClient() {
       if (filters.classType) queryParams.append('classType', filters.classType);
       if (filters.instructorId) queryParams.append('instructorId', filters.instructorId);
       if (filters.searchTerm) queryParams.append('search', filters.searchTerm);
-      if (tabIndex === 2 && user?.uid) {
+      if (tabIndex === 2 && user?.uid) { // "My Schedule" tab
         queryParams.append('instructorId', user.uid);
       }
 
       const res = await fetch(`/api/classes/instances?${queryParams.toString()}`);
       if (!res.ok) {
           const errorData = await res.json();
-          throw new Error(errorData.error || 'Ders örnekleri getirilemedi');
+          throw new Error(errorData.error || 'Failed to fetch class instances');
       }
       const data = await res.json();
       setInstances(data.data || []);
     } catch (err: any) {
-      console.error('Ders örnekleri yüklenemedi:', err);
-      setError(err.message || 'Ders örnekleri yüklenemedi.');
+      console.error('Failed to load class instances:', err);
+      setError(err.message || 'Failed to load class instances.');
     } finally {
       setLoading(false);
     }
@@ -119,54 +118,55 @@ export default function ClassesPageClient() {
 
   useEffect(() => {
     loadInstructors();
-    if (tabIndex === 0) {
+    if (tabIndex === 0) { // Class Schedules tab
       loadClassSchedules();
-    } else if (tabIndex === 1 || (tabIndex === 2 && user?.role === 'trainer')) {
+    } else if (tabIndex === 1 || (tabIndex === 2 && user?.role === 'trainer')) { // Upcoming Classes or My Schedule
       loadClassInstances();
     }
   }, [tabIndex, loadClassSchedules, loadClassInstances, loadInstructors, user]);
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabIndex(newValue);
-    if (newValue === 1) {
+    // Reset filters and display mode when changing tabs
+    if (newValue === 1) { // Upcoming Classes
       setFilters({
         classType: undefined,
         instructorId: undefined,
         date: format(new Date(), 'yyyy-MM-dd'),
         searchTerm: '',
       });
-      setCalendarViewMode('week');
-    } else if (newValue === 0) {
+      setInstanceDisplayMode('cards'); // Default to cards for upcoming
+    } else if (newValue === 0) { // Class Schedules
         setFilters({
             classType: undefined,
             instructorId: undefined,
-            date: undefined,
+            date: undefined, // No date filter for schedules
             searchTerm: '',
         });
-    } else if (newValue === 2) {
+    } else if (newValue === 2) { // My Schedule
         setFilters(prev => ({ ...prev, instructorId: user?.uid, date: format(new Date(), 'yyyy-MM-dd') }));
-        setCalendarViewMode('week');
+        setInstanceDisplayMode('calendar'); // Default to calendar for My Schedule
     }
   };
 
   const handleCreateClassClick = () => {
-    setEditingClass(null);
+    setEditingClassData(null);
     setFormMode('create');
     setIsFormDialogOpen(true);
   };
 
   const handleEditClass = (data: ClassSchedule | ClassInstance) => {
-    setEditingClass(data);
+    setEditingClassData(data);
     setFormMode('edit');
     setIsFormDialogOpen(true);
   };
 
   const handleCloseFormDialog = () => {
     setIsFormDialogOpen(false);
-    setEditingClass(null);
+    setEditingClassData(null);
   };
 
-  const handleSubmitForm = async (formData: ClassFormData) => {
+  const handleSubmitForm = async (formData: ClassFormData, scheduleId?: string) => {
     setLoading(true);
     try {
       let res: Response;
@@ -177,33 +177,28 @@ export default function ClassesPageClient() {
           body: JSON.stringify(formData),
           credentials: 'include',
         });
-      } else {
-        if (!editingClass) throw new Error('Düzenlenecek ders seçilmedi.');
+      } else { // mode === 'edit'
+        if (!editingClassData) throw new Error('No class selected for editing.');
 
-        if ('recurrence' in editingClass) {
-          res = await fetch(`/api/classes/schedules/${editingClass.id}`, {
+        if ('recurrence' in editingClassData) { // It's a ClassSchedule
+          res = await fetch(`/api/classes/schedules/${editingClassData.id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(formData),
             credentials: 'include',
           });
-        } else {
+        } else { // It's a ClassInstance
           const instanceUpdateData = {
             name: formData.name,
-            description: formData.description,
             classType: formData.classType,
             instructorId: formData.instructorId,
             maxParticipants: formData.maxParticipants,
             duration: formData.duration,
             date: formData.startDate,
             startTime: formData.startTime,
-            location: formData.location,
-            requirements: formData.requirements,
-            price: formData.price,
-            level: formData.level,
-            tags: formData.tags,
+            price: formData.price, // Update instance price
           };
-          res = await fetch(`/api/classes/instances/${editingClass.id}`, {
+          res = await fetch(`/api/classes/instances/${editingClassData.id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(instanceUpdateData),
@@ -214,7 +209,7 @@ export default function ClassesPageClient() {
 
       if (!res.ok) {
         const errorData = await res.json();
-        throw new Error(errorData.error || `Ders ${formMode} işlemi başarısız oldu`);
+        throw new Error(errorData.error || `Class ${formMode} operation failed`);
       }
 
       if (tabIndex === 0) {
@@ -224,8 +219,8 @@ export default function ClassesPageClient() {
       }
       handleCloseFormDialog();
     } catch (err: any) {
-      console.error(`Ders ${formMode} işlemi hatası:`, err);
-      setError(err.message || `Ders ${formMode} işlemi başarısız oldu.`);
+      console.error(`Class ${formMode} operation error:`, err);
+      setError(err.message || `Class ${formMode} operation failed.`);
     } finally {
       setLoading(false);
     }
@@ -234,7 +229,7 @@ export default function ClassesPageClient() {
   const handleDeleteClass = (data: ClassSchedule | ClassInstance, type: 'schedule' | 'instance') => {
     setDeleteTargetId(data.id);
     setDeleteTargetType(type);
-    setEditingClass(data);
+    setEditingClassData(data); // Store the full object for display in dialog
     setIsDeleteDialogOpen(true);
   };
 
@@ -246,14 +241,18 @@ export default function ClassesPageClient() {
       const endpoint = deleteTargetType === 'schedule'
         ? `/api/classes/schedules/${deleteTargetId}`
         : `/api/classes/instances/${deleteTargetId}`;
+
       const res = await fetch(endpoint, {
         method: 'DELETE',
         credentials: 'include',
+        body: deleteTargetType === 'instance' ? JSON.stringify({ reason: 'Admin/Trainer initiated cancellation' }) : undefined,
+        headers: deleteTargetType === 'instance' ? { 'Content-Type': 'application/json' } : undefined,
       });
+
 
       if (!res.ok) {
         const errorData = await res.json();
-        throw new Error(errorData.error || `${deleteTargetType} silme başarısız oldu`);
+        throw new Error(errorData.error || `${deleteTargetType} deletion failed`);
       }
 
       if (tabIndex === 0) {
@@ -264,10 +263,10 @@ export default function ClassesPageClient() {
       setIsDeleteDialogOpen(false);
       setDeleteTargetId(null);
       setDeleteTargetType(null);
-      setEditingClass(null);
+      setEditingClassData(null);
     } catch (err: any) {
-      console.error(`${deleteTargetType} silme hatası:`, err);
-      setError(err.message || `${deleteTargetType} silme başarısız oldu.`);
+      console.error(`${deleteTargetType} deletion error:`, err);
+      setError(err.message || `${deleteTargetType} deletion failed.`);
     } finally {
       setLoading(false);
     }
@@ -277,7 +276,7 @@ export default function ClassesPageClient() {
     setIsDeleteDialogOpen(false);
     setDeleteTargetId(null);
     setDeleteTargetType(null);
-    setEditingClass(null);
+    setEditingClassData(null);
   };
 
   const handleInstanceAction = useCallback(async (instanceId: string, action: 'start' | 'end' | 'cancel') => {
@@ -286,16 +285,17 @@ export default function ClassesPageClient() {
       const res = await fetch(`/api/classes/instances/${instanceId}/${action}`, {
         method: 'POST',
         credentials: 'include',
-        body: JSON.stringify({ /* payload if any needed, e.g., for 'end' */ }),
+        body: JSON.stringify({ reason: 'Action initiated from admin panel' }),
+        headers: { 'Content-Type': 'application/json' },
       });
       if (!res.ok) {
         const errorData = await res.json();
-        throw new Error(errorData.error || `Ders ${action} işlemi başarısız oldu`);
+        throw new Error(errorData.error || `Class ${action} operation failed`);
       }
       loadClassInstances();
     } catch (err: any) {
-      console.error(`Ders örneği ${action} işlemi hatası:`, err);
-      setError(err.message || `Ders ${action} işlemi başarısız oldu.`);
+      console.error(`Class instance ${action} operation error:`, err);
+      setError(err.message || `Class ${action} operation failed.`);
     } finally {
       setLoading(false);
     }
@@ -308,7 +308,8 @@ export default function ClassesPageClient() {
 
   const handleCalendarDateClick = (date: Date) => {
     setFilters(prev => ({ ...prev, date: format(date, 'yyyy-MM-dd') }));
-    handleCreateClassClick();
+    // Optionally, open form on date click if needed for quick scheduling
+    // handleCreateClassClick();
   };
 
   const handleCalendarViewModeChange = (mode: 'day' | 'week' | 'month') => {
@@ -320,7 +321,7 @@ export default function ClassesPageClient() {
     <Box sx={{ p: 3 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4" component="h1">
-          Ders Yönetimi
+          Class Management
         </Typography>
         {(user?.role === 'admin' || user?.role === 'staff') && (
           <Button
@@ -328,15 +329,15 @@ export default function ClassesPageClient() {
             startIcon={<AddIcon />}
             onClick={handleCreateClassClick}
           >
-            Yeni Ders Planla
+            Schedule New Class
           </Button>
         )}
       </Box>
 
       <Tabs value={tabIndex} onChange={handleTabChange} sx={{ mb: 3 }}>
-        <Tab label="Ders Programları" />
-        <Tab label="Yaklaşan Dersler" />
-        {user?.role === 'trainer' && <Tab label="Benim Programım" />}
+        <Tab label="Class Schedules" />
+        <Tab label="Upcoming Classes" />
+        {user?.role === 'trainer' && <Tab label="My Schedule" />}
       </Tabs>
 
       {error && (
@@ -357,7 +358,7 @@ export default function ClassesPageClient() {
             <Grid container spacing={3}>
               {schedules.length === 0 ? (
                 <Grid item xs={12}>
-                  <Alert severity="info">Ders programı bulunamadı. Başlamak için bir tane oluşturun!</Alert>
+                  <Alert severity="info">No class schedules found. Create one to get started!</Alert>
                 </Grid>
               ) : (
                 schedules.map((schedule) => (
@@ -380,7 +381,7 @@ export default function ClassesPageClient() {
                 <Grid item xs={12} sm={4}>
                   <TextField
                     fullWidth
-                    label="Dersleri Ara"
+                    label="Search Classes"
                     value={filters.searchTerm}
                     onChange={(e) => handleFilterChange('searchTerm', e.target.value)}
                     InputProps={{
@@ -394,13 +395,13 @@ export default function ClassesPageClient() {
                 </Grid>
                 <Grid item xs={12} sm={3}>
                   <FormControl fullWidth>
-                    <InputLabel>Ders Tipi</InputLabel>
+                    <InputLabel>Class Type</InputLabel>
                     <Select
                       value={filters.classType || ''}
                       onChange={(e) => handleFilterChange('classType', e.target.value as ClassType)}
-                      label="Ders Tipi"
+                      label="Class Type"
                     >
-                      <MenuItem value=""><em>Herhangi</em></MenuItem>
+                      <MenuItem value=""><em>Any</em></MenuItem>
                       {CLASS_TYPE_OPTIONS.map((type) => (
                         <MenuItem key={type} value={type}>{type}</MenuItem>
                       ))}
@@ -409,13 +410,13 @@ export default function ClassesPageClient() {
                 </Grid>
                 <Grid item xs={12} sm={3}>
                   <FormControl fullWidth>
-                    <InputLabel>Eğitmen</InputLabel>
+                    <InputLabel>Instructor</InputLabel>
                     <Select
                       value={filters.instructorId || ''}
                       onChange={(e) => handleFilterChange('instructorId', e.target.value as string)}
-                      label="Eğitmen"
+                      label="Instructor"
                     >
-                      <MenuItem value=""><em>Herhangi</em></MenuItem>
+                      <MenuItem value=""><em>Any</em></MenuItem>
                       {instructors.map((instructor) => (
                         <MenuItem key={instructor.id} value={instructor.id}>{instructor.name}</MenuItem>
                       ))}
@@ -426,53 +427,91 @@ export default function ClassesPageClient() {
                   <TextField
                     fullWidth
                     type="date"
-                    label="Tarih"
+                    label="Date"
                     value={filters.date}
                     onChange={(e) => handleFilterChange('date', e.target.value)}
                     InputLabelProps={{ shrink: true }}
                   />
                 </Grid>
+                <Grid item xs={12} sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <ToggleButtonGroup
+                    value={instanceDisplayMode}
+                    exclusive
+                    onChange={(event, newMode) => {
+                      if (newMode !== null) {
+                        setInstanceDisplayMode(newMode);
+                      }
+                    }}
+                    aria-label="class display mode"
+                    size="small"
+                  >
+                    <ToggleButton value="cards" aria-label="cards view">
+                      <GridViewIcon /> Cards
+                    </ToggleButton>
+                    <ToggleButton value="calendar" aria-label="calendar view">
+                      <CalendarIcon /> Calendar
+                    </ToggleButton>
+                  </ToggleButtonGroup>
+                </Grid>
               </Grid>
 
-              <Grid container spacing={3}>
-                {instances.length === 0 ? (
-                  <Grid item xs={12}>
-                    <Alert severity="info">Seçilen filtrelere göre yaklaşan ders bulunamadı.</Alert>
-                  </Grid>
-                ) : (
-                  instances
-                    .sort((a, b) => {
-                      const dateA = parseISO(a.date);
-                      const dateB = parseISO(b.date);
-                      if (dateA.getTime() !== dateB.getTime()) {
-                        return dateA.getTime() - dateB.getTime();
-                      }
-                      const [hA, mA] = a.startTime.split(':').map(Number);
-                      const [hB, mB] = b.startTime.split(':').map(Number);
-                      return (hA * 60 + mA) - (hB * 60 + mB);
-                    })
-                    .map((instance) => (
-                      <Grid item xs={12} sm={6} md={4} lg={3} key={instance.id}>
-                        <ClassCard
-                          classData={instance}
-                          type="instance"
-                          onEdit={handleEditClass}
-                          onDelete={(id, type) => handleDeleteClass(instance, type)}
-                          onStartClass={(id) => handleInstanceAction(id, 'start')} // DÜZELTME
-                          onEndClass={(id) => handleInstanceAction(id, 'end')}     // DÜZELTME
-                          onCancelClass={(id) => handleInstanceAction(id, 'cancel')} // DÜZELTME
-                        />
-                      </Grid>
-                    ))
-                )}
-              </Grid>
+              {instanceDisplayMode === 'cards' ? (
+                <Grid container spacing={3}>
+                  {instances.length === 0 ? (
+                    <Grid item xs={12}>
+                      <Alert severity="info">No upcoming classes found for selected filters.</Alert>
+                    </Grid>
+                  ) : (
+                    instances
+                      .sort((a, b) => {
+                        const dateA = parseISO(a.date);
+                        const dateB = parseISO(b.date);
+                        if (dateA.getTime() !== dateB.getTime()) {
+                          return dateA.getTime() - dateB.getTime();
+                        }
+                        const [hA, mA] = a.startTime.split(':').map(Number);
+                        const [hB, mB] = b.startTime.split(':').map(Number);
+                        return (hA * 60 + mA) - (hB * 60 + mB);
+                      })
+                      .map((instance) => (
+                        <Grid item xs={12} sm={6} md={4} lg={3} key={instance.id}>
+                          <ClassCard
+                            classData={instance}
+                            type="instance"
+                            onEdit={handleEditClass}
+                            onDelete={(id, type) => handleDeleteClass(instance, type)}
+                            onStartClass={(id) => handleInstanceAction(id, 'start')}
+                            onEndClass={(id) => handleInstanceAction(id, 'end')}
+                            onCancelClass={(id) => handleInstanceAction(id, 'cancel')}
+                          />
+                        </Grid>
+                      ))
+                  )}
+                </Grid>
+              ) : (
+                <ClassCalendar
+                  classes={instances}
+                  viewMode={calendarViewMode}
+                  onViewModeChange={handleCalendarViewModeChange}
+                  onClassClick={handleEditClass}
+                  onDateClick={handleCalendarDateClick}
+                  selectedDate={parseISO(filters.date || format(new Date(), 'yyyy-MM-dd'))}
+                  onEditClass={handleEditClass}
+                  onDeleteClass={(data, type) => handleDeleteClass(data, type)}
+                  onStartClass={(id) => handleInstanceAction(id, 'start')}
+                  onEndClass={(id) => handleInstanceAction(id, 'end')}
+                  onCancelClass={(id) => handleInstanceAction(id, 'cancel')}
+                  userRole={user?.role || 'member'}
+                  userId={user?.uid || ''}
+                />
+              )}
             </Box>
           )}
 
           {tabIndex === 2 && user?.role === 'trainer' && (
             <Box>
               <Typography variant="h6" sx={{ mb: 2 }}>
-                Benim Planlanmış Derslerim
+                My Scheduled Classes
               </Typography>
               {loading ? (
                 <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
@@ -487,10 +526,10 @@ export default function ClassesPageClient() {
                   onDateClick={handleCalendarDateClick}
                   selectedDate={parseISO(filters.date || format(new Date(), 'yyyy-MM-dd'))}
                   onEditClass={handleEditClass}
-                  onDeleteClass={(data) => handleDeleteClass(data, 'instance')} // DÜZELTME
-                  onStartClass={(id) => handleInstanceAction(id, 'start')} // DÜZELTME
-                  onEndClass={(id) => handleInstanceAction(id, 'end')}     // DÜZELTME
-                  onCancelClass={(id) => handleInstanceAction(id, 'cancel')} // DÜZELTME
+                  onDeleteClass={(data, type) => handleDeleteClass(data, type)}
+                  onStartClass={(id) => handleInstanceAction(id, 'start')}
+                  onEndClass={(id) => handleInstanceAction(id, 'end')}
+                  onCancelClass={(id) => handleInstanceAction(id, 'cancel')}
                   userRole={user.role}
                   userId={user.uid}
                 />
@@ -504,27 +543,7 @@ export default function ClassesPageClient() {
         open={isFormDialogOpen}
         onClose={handleCloseFormDialog}
         onSubmit={handleSubmitForm}
-        classSchedule={editingClass && 'recurrence' in editingClass ? editingClass : null}
-        initialClassDataForInstanceEdit={
-          editingClass && !('recurrence' in editingClass)
-            ? {
-                name: editingClass.name,
-                description: editingClass.notes || editingClass.description || '',
-                classType: editingClass.classType,
-                instructorId: editingClass.instructorId,
-                maxParticipants: editingClass.maxParticipants,
-                duration: editingClass.actualDuration || editingClass.duration,
-                startDate: editingClass.date,
-                startTime: editingClass.startTime,
-                recurrence: { type: 'none', interval: 1 },
-                location: editingClass.location || '',
-                requirements: [],
-                price: 0,
-                level: 'All Levels',
-                tags: [],
-              }
-            : undefined
-        }
+        classDataForEdit={editingClassData}
         mode={formMode}
         instructors={instructors}
       />
@@ -533,15 +552,15 @@ export default function ClassesPageClient() {
         open={isDeleteDialogOpen}
         onClose={handleCancelDelete}
         onConfirm={handleConfirmDelete}
-        title={`Onayı ${deleteTargetType === 'schedule' ? 'Program Silme' : 'Ders İptali'}`}
-        itemName={editingClass?.name || ''}
-        itemType={deleteTargetType === 'schedule' ? 'ders programı' : 'ders örneği'}
+        title={`Confirm ${deleteTargetType === 'schedule' ? 'Schedule Deletion' : 'Class Instance Cancellation'}`}
+        itemName={editingClassData?.name || ''}
+        itemType={deleteTargetType === 'schedule' ? 'class schedule' : 'class instance'}
         loading={loading}
-        warningMessage={deleteTargetType === 'schedule' ? "Bu işlem ders programını VE İLGİLİ TÜM ÖRNEKLERİNİ silecek." : "Bu işlem bu belirli ders örneğini iptal edecek."}
-        additionalInfo={editingClass && !('recurrence' in editingClass) ? [
-          { label: 'Tarih', value: format(parseISO(editingClass.date), 'PPP') },
-          { label: 'Saat', value: editingClass.startTime },
-          { label: 'Eğitmen', value: editingClass.instructorName }
+        warningMessage={deleteTargetType === 'schedule' ? "This action will delete the class schedule AND ALL RELATED INSTANCES." : "This action will cancel this specific class instance."}
+        additionalInfo={editingClassData && !('recurrence' in editingClassData) ? [
+          { label: 'Date', value: format(parseISO((editingClassData as ClassInstance).date), 'PPP') },
+          { label: 'Time', value: (editingClassData as ClassInstance).startTime },
+          { label: 'Instructor', value: (editingClassData as ClassInstance).instructorName }
         ] : []}
       />
     </Box>

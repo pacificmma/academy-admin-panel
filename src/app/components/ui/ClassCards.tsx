@@ -1,4 +1,4 @@
-// src/app/components/ui/ClassCards.tsx (Modified to use fixed User type)
+// src/app/components/ui/ClassCards.tsx (Updated - Minor text adjustment)
 import React, { useState } from 'react';
 import {
   Card,
@@ -60,11 +60,13 @@ export default function ClassCard({
     setAnchorEl(null);
   };
 
-  // User.role now correctly exists due to the fix in src/app/types/auth.ts
   const isInstructor = user?.role === 'trainer' && user.uid === classData.instructorId;
   const isAdmin = user?.role === 'admin';
 
-  const showManagementButtons = type === 'instance' && (isAdmin || isInstructor);
+  const showInstanceManagementButtons = type === 'instance' && (isAdmin || isInstructor);
+
+  const canEditOrDelete = isAdmin || (type === 'instance' && isInstructor);
+
 
   return (
     <Card sx={{ borderRadius: 2, boxShadow: 3, transition: '0.3s', '&:hover': { boxShadow: 6 } }}>
@@ -104,7 +106,7 @@ export default function ClassCard({
             }}
           >
             {/* Edit Option */}
-            {(isAdmin || isInstructor) && (
+            {canEditOrDelete && (
               <MenuItem onClick={() => { onEdit(classData); handleMenuClose(); }}>
                 <ListItemIcon>
                   <EditIcon fontSize="small" />
@@ -114,7 +116,7 @@ export default function ClassCard({
             )}
 
             {/* Delete/Cancel Option */}
-            {isAdmin && ( // Only admin can delete/cancel schedules or instances
+            {isAdmin && (
               <MenuItem onClick={() => { onDelete(classData.id, type); handleMenuClose(); }}>
                 <ListItemIcon>
                   <DeleteIcon fontSize="small" />
@@ -175,7 +177,7 @@ export default function ClassCard({
           />
         )}
 
-        {showManagementButtons && (
+        {showInstanceManagementButtons && (
           <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
             {(classData as ClassInstance).status === 'scheduled' && onStartClass && (
               <Button
