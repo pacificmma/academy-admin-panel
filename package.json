@@ -25,6 +25,7 @@
     "bcryptjs": "^3.0.2",
     "clsx": "^2.1.1",
     "crypto-js": "^4.2.0",
+    "date-fns": "^2.30.0",
     "firebase": "^11.9.1",
     "firebase-admin": "^13.4.0",
     "framer-motion": "^12.19.2",
