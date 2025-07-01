@@ -1,75 +1,89 @@
-// src/app/api/staff/route.ts - Secure Staff API
+// src/app/api/staff/route.ts - Staff List API (Updated)
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/app/lib/firebase/admin';
-import { withSecurity, handleError, sanitizeOutput, validatePagination } from '@/app/lib/security/api-security';
-import { validateStaffInput } from '@/app/lib/security/validation';
+import { withSecurity, handleError, sanitizeOutput } from '@/app/lib/security/api-security';
 
-// GET /api/staff - List all staff with pagination and filtering
+// GET /api/staff - List all staff members
 export async function GET(request: NextRequest) {
   try {
-    // Apply security checks
+    // Apply security checks - only admins can list all staff
     const { session, error } = await withSecurity(request, {
-      requiredRoles: ['admin', 'staff'],
+      requiredRoles: ['admin'],
       rateLimit: { maxRequests: 100, windowMs: 15 * 60 * 1000 }
     });
 
     if (error) return error;
 
-    // Validate pagination
-    const { page, limit, offset } = validatePagination(request);
-
-    // Extract query parameters
     const url = new URL(request.url);
-    const search = url.searchParams.get('search')?.trim();
+    const search = url.searchParams.get('search');
     const role = url.searchParams.get('role');
-    const isActive = url.searchParams.get('isActive');
+    const status = url.searchParams.get('status');
+    const limit = parseInt(url.searchParams.get('limit') || '50');
+    const offset = parseInt(url.searchParams.get('offset') || '0');
 
     try {
       // Build query
-      let query = adminDb.collection('staff');
+      let query = adminDb.collection('staff').orderBy('createdAt', 'desc');
 
       // Apply filters
       if (role && ['admin', 'trainer', 'staff'].includes(role)) {
         query = query.where('role', '==', role);
       }
 
-      if (isActive !== null && (isActive === 'true' || isActive === 'false')) {
-        query = query.where('isActive', '==', isActive === 'true');
+      if (status) {
+        const isActive = status === 'active';
+        query = query.where('isActive', '==', isActive);
       }
 
-      // Apply ordering and pagination
-      query = query.orderBy('createdAt', 'desc').limit(limit).offset(offset);
+      // Execute query
+      const snapshot = await query.limit(limit + 1).get(); // +1 to check if there are more results
 
-      const snapshot = await query.get();
-      let staff = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      let staffList: any[] = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        staffList.push({
+          uid: doc.id,
+          email: data.email,
+          fullName: data.fullName,
+          phoneNumber: data.phoneNumber,
+          role: data.role,
+          isActive: data.isActive,
+          createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+          updatedAt: data.updatedAt?.toDate?.()?.toISOString(),
+          lastLoginAt: data.lastLoginAt,
+          emergencyContact: data.emergencyContact,
+          specializations: data.specializations || [],
+          certifications: data.certifications || [],
+          // Exclude sensitive fields
+        });
+      });
 
-      // Apply text search filter (client-side filtering for Firestore)
+      // Apply search filter (client-side for simplicity)
       if (search) {
-        const searchLower = search.toLowerCase();
-        staff = staff.filter(member => 
-          member.fullName?.toLowerCase().includes(searchLower) ||
-          member.email?.toLowerCase().includes(searchLower)
+        const searchTerm = search.toLowerCase();
+        staffList = staffList.filter(staff =>
+          staff.fullName.toLowerCase().includes(searchTerm) ||
+          staff.email.toLowerCase().includes(searchTerm) ||
+          staff.role.toLowerCase().includes(searchTerm)
         );
       }
 
-      // Get total count for pagination
-      const totalSnapshot = await adminDb.collection('staff').get();
-      const total = totalSnapshot.size;
+      // Apply pagination
+      const hasMore = staffList.length > limit;
+      if (hasMore) {
+        staffList = staffList.slice(0, limit);
+      }
 
-      // Sanitize output
-      const sanitizedStaff = sanitizeOutput(staff);
+      const paginatedList = staffList.slice(offset, offset + limit);
 
       return NextResponse.json({
         success: true,
-        data: sanitizedStaff,
+        data: paginatedList,
         pagination: {
-          page,
+          total: staffList.length,
           limit,
-          total,
-          pages: Math.ceil(total / limit)
+          offset,
+          hasMore: hasMore && (offset + limit < staffList.length)
         }
       });
 
@@ -82,74 +96,17 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/staff - Create new staff member
-export async function POST(request: NextRequest) {
-  try {
-    // Apply security checks (only admins can create staff)
-    const { session, error } = await withSecurity(request, {
-      requiredRoles: ['admin'],
-      rateLimit: { maxRequests: 20, windowMs: 15 * 60 * 1000 }
-    });
-
-    if (error) return error;
-
-    // Parse and validate request body
-    let body;
-    try {
-      body = await request.json();
-    } catch (parseError) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid JSON format' },
-        { status: 400 }
-      );
-    }
-
-    const validation = validateStaffInput(body);
-    if (!validation.isValid) {
-      return NextResponse.json(
-        { success: false, error: validation.errors[0] },
-        { status: 400 }
-      );
-    }
-
-    const { sanitizedData } = validation;
-
-    try {
-      // Check if email already exists
-      const existingStaff = await adminDb.collection('staff')
-        .where('email', '==', sanitizedData.email)
-        .get();
-
-      if (!existingStaff.empty) {
-        return NextResponse.json(
-          { success: false, error: 'Email already exists' },
-          { status: 409 }
-        );
-      }
-
-      // Add audit fields
-      const staffData = {
-        ...sanitizedData,
-        createdBy: session!.uid,
-        createdAt: new Date(),
-        updatedBy: session!.uid,
-        updatedAt: new Date(),
-      };
-
-      // Create staff document
-      const docRef = await adminDb.collection('staff').add(staffData);
-      const result = { id: docRef.id, ...staffData };
-
-      return NextResponse.json({
-        success: true,
-        data: sanitizeOutput(result)
-      }, { status: 201 });
-
-    } catch (dbError: any) {
-      throw new Error('Failed to create staff member');
-    }
-
-  } catch (error: any) {
-    return handleError(error);
-  }
+// Handle OPTIONS for CORS
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': process.env.NODE_ENV === 'production' 
+        ? process.env.NEXT_PUBLIC_APP_DOMAIN || 'https://yourdomain.com'
+        : 'http://localhost:3000',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Credentials': 'true',
+    },
+  });
 }
