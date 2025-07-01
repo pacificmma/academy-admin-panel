@@ -174,8 +174,8 @@ export default function ClassCard({
                   variant="outlined"
                 />
               )}
-              {schedule && recurrence.type !== 'none' && (
-                <Tooltip title={`Repeats ${recurrence.type}`}>
+              {schedule && recurrence?.type !== 'none' && (
+                <Tooltip title={`Repeats ${recurrence?.type}`}>
                   <Chip
                     icon={<RepeatIcon />}
                     label="Recurring"
@@ -218,8 +218,8 @@ export default function ClassCard({
               {instance && date ? (
                 `${new Date(date).toLocaleDateString()} • ${formatClassTime(startTime!, duration!)}`
               ) : schedule ? (
-                `${formatClassTime(startTime!, duration!)} • ${recurrence.type !== 'none' ? 
-                  `${recurrence.type}${recurrence.daysOfWeek?.length ? 
+                `${formatClassTime(startTime!, duration!)} • ${recurrence?.type !== 'none' ? 
+                  `${recurrence?.type}${recurrence?.daysOfWeek?.length ? 
                     ` (${recurrence.daysOfWeek.map(d => 
                       ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]
                     ).join(', ')})` : ''}` : 'One-time'}`

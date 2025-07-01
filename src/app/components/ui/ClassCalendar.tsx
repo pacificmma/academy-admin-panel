@@ -240,7 +240,7 @@ export default function ClassCalendar({
   };
 
   const renderWeekView = () => {
-    const weekDays = [];
+    const weekDays: Date[] = [];
     const startOfWeek = new Date(rangeStart);
     
     for (let i = 0; i < 7; i++) {
