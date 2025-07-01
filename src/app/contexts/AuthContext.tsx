@@ -58,12 +58,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      console.log('Auth state changed:', { 
-        userExists: !!firebaseUser, 
-        sessionProtected,
-        uid: firebaseUser?.uid 
-      }); // Debug log
-
       // Session protection logic
       if (sessionProtected && protectedUserRef.current) {
         if (!firebaseUser || firebaseUser.uid !== protectedUserRef.current.uid) {        
