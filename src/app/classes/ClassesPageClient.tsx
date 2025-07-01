@@ -181,9 +181,9 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
 
       const data = await response.json();
       setInstructors(data.data?.map((staff: any) => ({
-        id: staff.id,
+        id: staff.uid, // Use uid as the id
         name: staff.fullName,
-        specialties: staff.specialties || [],
+        specialties: staff.specializations || [], // Correctly map 'specializations'
       })) || []);
     } catch (error) {
       console.error('Load instructors error:', error);

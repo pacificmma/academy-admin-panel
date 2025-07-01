@@ -486,53 +486,6 @@ export default function ClassFormDialog({
                 </Alert>
               </Grid>
             )}
-
-            {/* Additional Settings */}
-            <Grid item xs={12}>
-              <Divider sx={{ my: 2 }} />
-              <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
-                Additional Settings
-              </Typography>
-            </Grid>
-
-            <Grid item xs={12} md={6}>
-              <FormControl fullWidth>
-                <InputLabel>Level</InputLabel>
-                <Select
-                  value={formData.level}
-                  onChange={(e) => handleInputChange('level', e.target.value)}
-                  label="Level"
-                >
-                  {LEVEL_OPTIONS.map((level) => (
-                    <MenuItem key={level} value={level}>
-                      {level}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                label="Location"
-                value={formData.location}
-                onChange={(e) => handleInputChange('location', e.target.value)}
-                placeholder="e.g., Main Training Room, Upstairs Studio"
-              />
-            </Grid>
-
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                label="Price (Optional)"
-                type="number"
-                value={formData.price}
-                onChange={(e) => handleInputChange('price', parseFloat(e.target.value) || 0)}
-                inputProps={{ min: 0, step: 0.01 }}
-                helperText="Leave 0 for included in membership"
-              />
-            </Grid>
           </Grid>
         </DialogContent>
 
