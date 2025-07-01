@@ -1,4 +1,4 @@
-// src/app/classes/page.tsx - Server Component for Classes Page
+// src/app/classes/page.tsx
 import { Metadata } from 'next';
 import { getServerSession } from '@/app/lib/auth/session';
 import { redirect } from 'next/navigation';
@@ -16,7 +16,6 @@ export default async function ClassesPage() {
     redirect('/login');
   }
 
-  // All authenticated users can access classes page
-  // but different roles see different content
-  return <ClassesPageClient />;
+  // Pass session to the client component
+  return <ClassesPageClient session={session} />;
 }
