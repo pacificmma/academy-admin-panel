@@ -1,178 +1,145 @@
-// src/app/api/memberships/[id]/route.ts - Individual Operations
+// src/app/api/memberships/[id]/route.ts - Secure and consistent individual membership plan operations
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/app/lib/auth/session';
 import { adminDb } from '@/app/lib/firebase/admin';
+import { MembershipPlan, DurationType } from '@/app/types/membership';
 import { z } from 'zod';
+import { requireAdmin, RequestContext } from '@/app/lib/api/middleware';
+import { successResponse, errorResponse, notFoundResponse, badRequestResponse } from '@/app/lib/api/response-utils';
 
+// Validation schema for membership plan updates - NOW ALIGNED WITH FRONTEND
 const updateMembershipPlanSchema = z.object({
-  name: z.string().min(2).max(100).optional(),
+  name: z.string().min(3).max(100).optional(),
   description: z.string().optional(),
-  durationValue: z.number().min(1).optional(),
+  durationValue: z.number().int().positive().optional(),
   durationType: z.enum(['days', 'weeks', 'months', 'years']).optional(),
-  price: z.number().min(0).optional(),
-  currency: z.string().length(3).optional(),
-  classTypes: z.array(z.string()).min(1).optional(),
-  status: z.enum(['active', 'inactive']).optional(),
+  price: z.number().min(0.01).max(10000).optional(),
+  classTypes: z.array(z.enum(['mma', 'bjj', 'boxing', 'muay_thai', 'kickboxing', 'wrestling', 'judo', 'fitness', 'yoga', 'all_access'])).min(1).optional(),
+  status: z.enum(['active', 'inactive', 'draft']).optional(),
+  currency: z.string().optional(),
 });
 
-// GET /api/memberships/[id]
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const session = await getSession(request);
-    if (!session || session.role !== 'admin' || !session.isActive) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized - Admin access required' },
-        { status: 401 }
-      );
-    }
-
-    const membershipDoc = await adminDb.collection('membershipPlans').doc(params.id).get();
-    
-    if (!membershipDoc.exists) {
-      return NextResponse.json(
-        { success: false, error: 'Membership plan not found' },
-        { status: 404 }
-      );
-    }
-
-    const data = membershipDoc.data();
-    const membership = {
-      id: membershipDoc.id,
-      ...data,
-      createdAt: data?.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-      updatedAt: data?.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-    };
-
-    return NextResponse.json({
-      success: true,
-      data: membership
-    });
-
-  } catch (error) {
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch membership plan' },
-      { status: 500 }
-    );
+// GET /api/memberships/[id] - Get specific membership plan
+export const GET = requireAdmin(async (request: NextRequest, context: RequestContext) => {
+  const { params } = context;
+  if (!params?.id) {
+    return notFoundResponse('Membership plan');
   }
-}
-
-// PUT /api/memberships/[id]
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
   try {
-    const session = await getSession(request);
-    if (!session || session.role !== 'admin' || !session.isActive) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized - Admin access required' },
-        { status: 401 }
-      );
+    const planDoc = await adminDb.collection('membershipPlans').doc(params.id).get();
+    
+    if (!planDoc.exists) {
+      return notFoundResponse('Membership plan');
     }
 
+    const plan: MembershipPlan = {
+      id: planDoc.id,
+      ...planDoc.data(),
+      createdAt: planDoc.data()?.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+      updatedAt: planDoc.data()?.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+    } as MembershipPlan;
+
+    return successResponse(plan);
+  } catch (err) {
+    console.error('Failed to fetch membership plan:', err);
+    return errorResponse('Failed to fetch membership plan', 500);
+  }
+});
+
+// PUT /api/memberships/[id] - Update membership plan
+export const PUT = requireAdmin(async (request: NextRequest, context: RequestContext) => {
+  const { params } = context;
+  if (!params?.id) {
+    return notFoundResponse('Membership plan');
+  }
+  try {
     const body = await request.json();
     const validation = updateMembershipPlanSchema.safeParse(body);
 
     if (!validation.success) {
-      return NextResponse.json(
-        { 
-          success: false,
-          error: 'Validation failed', 
-          details: validation.error.issues 
-        },
-        { status: 400 }
-      );
-    }
-
-    const membershipDoc = await adminDb.collection('membershipPlans').doc(params.id).get();
-    if (!membershipDoc.exists) {
-      return NextResponse.json(
-        { success: false, error: 'Membership plan not found' },
-        { status: 404 }
-      );
+      return errorResponse('Validation failed', 400, { validationErrors: validation.error.issues });
     }
 
     const updateData = validation.data;
 
-    // Check name uniqueness if being changed
-    if (updateData.name) {
+    // Check if plan exists
+    const planDoc = await adminDb.collection('membershipPlans').doc(params.id).get();
+    
+    if (!planDoc.exists) {
+      return notFoundResponse('Membership plan');
+    }
+
+    // If updating name, check for duplicates
+    if (updateData.name && updateData.name !== planDoc.data()?.name) {
       const existingPlan = await adminDb
         .collection('membershipPlans')
         .where('name', '==', updateData.name)
         .get();
 
       if (!existingPlan.empty && existingPlan.docs[0].id !== params.id) {
-        return NextResponse.json(
-          { success: false, error: 'A membership plan with this name already exists' },
-          { status: 409 }
-        );
+        return errorResponse('A membership plan with this name already exists', 409);
       }
     }
 
-    await adminDb.collection('membershipPlans').doc(params.id).update({
+    // Update the membership plan
+    const updatedData = {
       ...updateData,
-      updatedAt: new Date(),
-    });
-
-    const updatedDoc = await adminDb.collection('membershipPlans').doc(params.id).get();
-    const data = updatedDoc.data();
-    const updatedMembership = {
-      id: updatedDoc.id,
-      ...data,
-      createdAt: data?.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-      updatedAt: data?.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+      updatedAt: adminDb.firestore.FieldValue.serverTimestamp(), // FIXED: Use consistent server timestamp
+      updatedBy: context.session.uid,
     };
 
-    return NextResponse.json({
-      success: true,
-      data: updatedMembership,
-      message: 'Membership plan updated successfully'
-    });
+    await adminDb.collection('membershipPlans').doc(params.id).update(updatedData);
+    
+    // Get the updated plan
+    const updatedDoc = await adminDb.collection('membershipPlans').doc(params.id).get();
+    const updatedPlan: MembershipPlan = {
+      id: updatedDoc.id,
+      ...updatedDoc.data(),
+      createdAt: updatedDoc.data()?.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+      updatedAt: updatedDoc.data()?.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+    } as MembershipPlan;
 
-  } catch (error) {
-    return NextResponse.json(
-      { success: false, error: 'Failed to update membership plan' },
-      { status: 500 }
-    );
+    return successResponse(updatedPlan, 'Membership plan updated successfully');
+  } catch (err) {
+    console.error('Failed to update membership plan:', err);
+    return errorResponse('Failed to update membership plan', 500);
   }
-}
+});
 
-// DELETE /api/memberships/[id]
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+// DELETE /api/memberships/[id] - Hard delete membership plan
+export const DELETE = requireAdmin(async (request: NextRequest, context: RequestContext) => {
+  const { params } = context;
+  if (!params?.id) {
+    return notFoundResponse('Membership plan');
+  }
   try {
-    const session = await getSession(request);
-    if (!session || session.role !== 'admin' || !session.isActive) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized - Admin access required' },
-        { status: 401 }
+    // Check if plan exists
+    const planDoc = await adminDb.collection('membershipPlans').doc(params.id).get();
+    
+    if (!planDoc.exists) {
+      return notFoundResponse('Membership plan');
+    }
+
+    // Check if plan is currently used by any active memberships
+    const activeMemberships = await adminDb
+      .collection('memberMemberships')
+      .where('membershipPlanId', '==', params.id)
+      .where('status', 'in', ['active', 'pending'])
+      .get();
+
+    if (!activeMemberships.empty) {
+      return errorResponse(
+        'Cannot delete membership plan that has active memberships',
+        409,
+        { details: `This plan is currently used by ${activeMemberships.size} active memberships` }
       );
     }
 
-    const membershipDoc = await adminDb.collection('membershipPlans').doc(params.id).get();
-    if (!membershipDoc.exists) {
-      return NextResponse.json(
-        { success: false, error: 'Membership plan not found' },
-        { status: 404 }
-      );
-    }
-
+    // PERMANENTLY DELETE THE DOCUMENT
     await adminDb.collection('membershipPlans').doc(params.id).delete();
 
-    return NextResponse.json({
-      success: true,
-      message: 'Membership plan deleted successfully'
-    });
-
-  } catch (error) {
-    return NextResponse.json(
-      { success: false, error: 'Failed to delete membership plan' },
-      { status: 500 }
-    );
+    return successResponse(null, 'Membership plan deleted successfully');
+  } catch (err) {
+    console.error('Failed to delete membership plan:', err);
+    return errorResponse('Failed to delete membership plan', 500);
   }
-}
+});

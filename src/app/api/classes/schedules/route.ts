@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/app/lib/firebase/admin';
 import { ClassSchedule, ClassFormData, getNextOccurrences } from '@/app/types/class';
 import { z } from 'zod';
-import { requireAuth, RequestContext } from '@/app/lib/api/middleware';
+import { requireAdmin, requireStaffOrTrainer, RequestContext } from '@/app/lib/api/middleware';
 import { createdResponse, successResponse, errorResponse } from '@/app/lib/api/response-utils';
 
 // Validation schema for class schedule
@@ -31,7 +31,7 @@ const classScheduleSchema = z.object({
 });
 
 // GET /api/classes/schedules - Get all class schedules
-export const GET = requireAuth(async (request: NextRequest, context: RequestContext) => {
+export const GET = requireStaffOrTrainer(async (request: NextRequest, context: RequestContext) => {
   try {
     const { session } = context;
     const url = new URL(request.url);
@@ -39,7 +39,7 @@ export const GET = requireAuth(async (request: NextRequest, context: RequestCont
     const classType = url.searchParams.get('classType');
     const instructorId = url.searchParams.get('instructorId');
 
-    let query = adminDb.collection('classSchedules')
+    let query: any = adminDb.collection('classSchedules')
       .where('isActive', '==', true)
       .orderBy('createdAt', 'desc');
 
@@ -102,14 +102,9 @@ export const GET = requireAuth(async (request: NextRequest, context: RequestCont
 });
 
 // POST /api/classes/schedules - Create new class schedule
-export const POST = requireAuth(async (request: NextRequest, context: RequestContext) => {
+export const POST = requireAdmin(async (request: NextRequest, context: RequestContext) => {
   try {
     const { session } = context;
-
-    // Only admins can create schedules
-    if (session.role !== 'admin') {
-      return errorResponse('Unauthorized', 403);
-    }
 
     const body = await request.json();
     const validatedData = classScheduleSchema.parse(body);
@@ -124,27 +119,27 @@ export const POST = requireAuth(async (request: NextRequest, context: RequestCon
     const instructorName = instructorData?.fullName || 'Unknown';
 
     // Create the schedule document
-    const scheduleData: Omit<ClassSchedule, 'id'> = {
+    const scheduleData: Omit<ClassSchedule, 'id' | 'createdAt' | 'updatedAt'> = {
       ...validatedData,
       instructorName,
       isActive: true,
       createdBy: session.uid,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
     };
 
     const scheduleRef = await adminDb.collection('classSchedules').add({
       ...scheduleData,
-      createdAt: adminDb.collection('classSchedules').doc().firestore.FieldValue.serverTimestamp(),
-      updatedAt: adminDb.collection('classSchedules').doc().firestore.FieldValue.serverTimestamp(),
+      createdAt: adminDb.firestore.FieldValue.serverTimestamp(),
+      updatedAt: adminDb.firestore.FieldValue.serverTimestamp(),
     });
 
     // Generate class instances based on recurrence
-    await generateClassInstances(scheduleRef.id, scheduleData);
+    await generateClassInstances(scheduleRef.id, scheduleData as any);
 
     const newSchedule: ClassSchedule = {
       id: scheduleRef.id,
       ...scheduleData,
+      createdAt: new Date().toISOString(), // Use ISO string for client
+      updatedAt: new Date().toISOString(), // Use ISO string for client
     };
 
     return createdResponse(newSchedule);
@@ -157,7 +152,10 @@ export const POST = requireAuth(async (request: NextRequest, context: RequestCon
   }
 });
 
-// Helper function to generate class instances
+/**
+ * FIXED: Helper function to generate class instances.
+ * Use correct `FieldValue.serverTimestamp()` syntax.
+ */
 async function generateClassInstances(scheduleId: string, schedule: Omit<ClassSchedule, 'id'>) {
   try {
     const occurrences = getNextOccurrences(
@@ -194,8 +192,8 @@ async function generateClassInstances(scheduleId: string, schedule: Omit<ClassSc
         status: 'scheduled',
         location: schedule.location || '',
         notes: '',
-        createdAt: adminDb.collection('classInstances').doc().firestore.FieldValue.serverTimestamp(),
-        updatedAt: adminDb.collection('classInstances').doc().firestore.FieldValue.serverTimestamp(),
+        createdAt: adminDb.firestore.FieldValue.serverTimestamp(),
+        updatedAt: adminDb.firestore.FieldValue.serverTimestamp(),
       };
 
       batch.set(instanceRef, instanceData);

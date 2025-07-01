@@ -50,7 +50,7 @@ import {
 } from '@mui/icons-material';
 import Layout from '../components/layout/Layout';
 import ClassFormDialog from '../components/forms/ClassFormDialog';
-import ClassCard from '../components/ui/ClassCard';
+import ClassCard from '../components/ui/ClassCards'; // Corrected import file name
 import ClassCalendar from '../components/ui/ClassCalendar';
 import DeleteConfirmationDialog from '../components/ui/DeleteConfirmationDialog';
 import {
@@ -131,6 +131,8 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
   const loadClassSchedules = useCallback(async (): Promise<void> => {
     try {
       setLoading(true);
+      setError(null);
+
       const params = new URLSearchParams();
       if (searchTerm.trim()) params.append('search', searchTerm.trim());
       if (classTypeFilter) params.append('classType', classTypeFilter);
