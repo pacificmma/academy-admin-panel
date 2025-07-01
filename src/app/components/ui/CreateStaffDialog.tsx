@@ -1,4 +1,4 @@
-// src/app/components/ui/CreateStaffDialog.tsx - (Comprehensively Fixed)
+// src/app/components/ui/CreateStaffDialog.tsx
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -16,12 +16,11 @@ import {
   Box,
   Typography,
   Grid,
-  Switch, // Keep Switch for isActive, remove optional fields toggle
+  Switch,
   FormControlLabel,
   IconButton,
   Alert,
 } from '@mui/material';
-// Removed DatePicker, LocalizationProvider, AdapterDateFns as dateOfBirth is removed from UI
 import {
   Save as SaveIcon,
   Close as CloseIcon,
@@ -29,23 +28,48 @@ import {
   VisibilityOff as VisibilityOffIcon,
 } from '@mui/icons-material';
 import { z } from 'zod';
-import { toZod } from 'tozod'; // Keep tozod, but add a note about installation
 import { UserRole } from '../../types/auth';
-import { CreateStaffRequest, StaffRecord, UpdateStaffRequest } from '../../types/staff';
+import { CreateStaffRequest, StaffRecord, UpdateStaffRequest, StaffData } from '../../types/staff';
 
-// NOTE: If you encounter "Cannot find module 'tozod'", please install it: npm install tozod
-// For TypeScript, you might also need to install types for it if they are not bundled: npm install @types/tozod
-
-// Simplified StaffMember interface for local use in dialog, reflecting removed fields from UI
-interface StaffMember {
-  uid?: string; // Optional for creation mode
-  fullName: string;
-  email: string;
-  role: UserRole;
-  isActive?: boolean; // Optional for creation, relevant for edit
-  password?: string; // Only for creation/password reset, not part of fetched StaffRecord
-  // Removed phoneNumber, dateOfBirth, emergencyContact, specializations, certifications from the form's internal state
+// Define the form-specific interface directly, composing from StaffData
+// This avoids the 'Omit' conflict with 'uid' and correctly represents form state.
+interface StaffMemberForm extends StaffData {
+  uid?: string; // UID is optional for creation, required for edit (handled by initialStaffData)
+  password?: string; // Password input field, optional for edit, required for create in UI
+  isActive?: boolean; // Managed by the form in edit mode, default for create
 }
+
+const staffFormSchema = z.object({
+  uid: z.string().optional(),
+  fullName: z.string().min(3, 'Full name is required').max(100, 'Full name is too long'),
+  email: z.string().email('Invalid email address'),
+  role: z.enum(['admin', 'trainer', 'staff'], { message: 'Please select a valid role' }),
+  isActive: z.boolean().optional(),
+  password: z.string().min(6, 'Password must be at least 6 characters').optional(),
+  // These fields are part of StaffData, and their optionality is handled there.
+  phoneNumber: z.string().optional(),
+  dateOfBirth: z.string().optional(),
+  emergencyContact: z.object({
+    name: z.string().min(2).max(100).optional(),
+    phone: z.string().regex(/^[\+]?[0-9\s\-\(\)]{10,20}$/, 'Invalid phone number format').optional(),
+    relationship: z.string().min(2).max(50).optional()
+  }).optional(),
+  specializations: z.array(z.string()).optional(),
+  certifications: z.array(z.string()).optional(),
+});
+
+const DEFAULT_FORM_DATA: StaffMemberForm = {
+  fullName: '',
+  email: '',
+  role: 'staff',
+  password: '',
+  isActive: true, // Default for new staff
+  phoneNumber: undefined,
+  dateOfBirth: undefined,
+  emergencyContact: undefined,
+  specializations: [],
+  certifications: [],
+};
 
 interface CreateStaffDialogProps {
   open: boolean;
@@ -56,29 +80,6 @@ interface CreateStaffDialogProps {
   initialStaffData?: StaffRecord | null;
 }
 
-// Updated schema reflecting removed fields from UI
-const staffFormSchema = toZod<StaffMember>(
-  z.object({
-    uid: z.string().optional(),
-    fullName: z.string().min(3, 'Full name is required').max(100, 'Full name is too long'),
-    email: z.string().email('Invalid email address'),
-    role: z.enum(['admin', 'trainer', 'staff'], { message: 'Please select a valid role' }),
-    isActive: z.boolean().optional(),
-    password: z.string().min(6, 'Password must be at least 6 characters').optional(),
-    // Removed validation for phoneNumber, dateOfBirth, emergencyContact, specializations, certifications
-  })
-);
-
-// Updated DEFAULT_FORM_DATA reflecting removed fields from UI
-const DEFAULT_FORM_DATA: StaffMember = {
-  fullName: '',
-  email: '',
-  role: 'staff',
-  password: '',
-  isActive: true,
-  // Removed phoneNumber, dateOfBirth, emergencyContact, specializations, certifications
-};
-
 export default function CreateStaffDialog({
   open,
   onClose,
@@ -87,11 +88,10 @@ export default function CreateStaffDialog({
   mode,
   initialStaffData,
 }: CreateStaffDialogProps) {
-  const [formData, setFormData] = useState<StaffMember>(DEFAULT_FORM_DATA);
+  const [formData, setFormData] = useState<StaffMemberForm>(DEFAULT_FORM_DATA);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
-  // Removed showOptionalFields state as there are no optional fields to toggle
   const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
@@ -100,12 +100,21 @@ export default function CreateStaffDialog({
       setErrors({});
       if (mode === 'edit' && initialStaffData) {
         setFormData({
-          uid: initialStaffData.uid,
+          uid: initialStaffData.uid, // initialStaffData.uid (string) maps to formData.uid (string | undefined) -> OK
           fullName: initialStaffData.fullName,
           email: initialStaffData.email,
           role: initialStaffData.role,
           isActive: initialStaffData.isActive,
-          // Removed initial assignments for phoneNumber, dateOfBirth, emergencyContact, specializations, certifications
+          phoneNumber: initialStaffData.phoneNumber || undefined,
+          dateOfBirth: initialStaffData.dateOfBirth || undefined,
+          emergencyContact: initialStaffData.emergencyContact ? {
+            name: initialStaffData.emergencyContact.name || undefined,
+            phone: initialStaffData.emergencyContact.phone || undefined,
+            relationship: initialStaffData.emergencyContact.relationship || undefined,
+          } : undefined,
+          specializations: initialStaffData.specializations || [],
+          certifications: initialStaffData.certifications || [],
+          password: '', // Password is never pre-filled in edit mode
         });
       } else {
         setFormData(DEFAULT_FORM_DATA);
@@ -113,31 +122,38 @@ export default function CreateStaffDialog({
     }
   }, [open, mode, initialStaffData]);
 
-  const handleInputChange = (field: keyof StaffMember, value: any) => {
+  const handleInputChange = (field: keyof StaffMemberForm, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
   };
 
-  // Removed handleEmergencyContactChange and handleArrayChange as related fields are removed from UI
-
   const handleSubmit = async () => {
     setApiError(null);
     setErrors({});
 
-    let dataToValidate: StaffMember = { ...formData };
-    if (mode === 'edit') {
-      // For edit, remove password from validation if not being changed
-      const { password, ...rest } = dataToValidate;
-      dataToValidate = rest;
-    }
+    let dataToValidate: any = { ...formData }; // Use 'any' for Zod parsing flexibility
 
+    if (mode === 'create') {
+      // Password is required for create, ensure it's not optional for validation
+      if (!dataToValidate.password) {
+        setErrors(prev => ({ ...prev, password: 'Password is required' }));
+        return;
+      }
+    } else { // mode === 'edit'
+      // For edit, remove password from validation if not being changed (empty string)
+      if (dataToValidate.password === '') {
+        delete dataToValidate.password;
+      }
+    }
+    
+    // Validate against the Zod schema
     const validationResult = staffFormSchema.safeParse(dataToValidate);
 
     if (!validationResult.success) {
       const newErrors: Record<string, string> = {};
-      validationResult.error.errors.forEach((err: { path: (string | number)[]; message: string; }) => {
+      validationResult.error.errors.forEach((err: any) => { // Use 'any' for ZodError.errors
         if (err.path[0]) {
           newErrors[err.path[0]] = err.message;
         }
@@ -150,12 +166,17 @@ export default function CreateStaffDialog({
     try {
       let response;
       if (mode === 'create') {
+        // Ensure that only fields expected by CreateStaffRequest are sent
         const createData: CreateStaffRequest = {
           fullName: formData.fullName,
           email: formData.email,
           role: formData.role,
-          password: formData.password || '', // Password is required for creation
-          // Removed phone, dateOfBirth, emergencyContact, specializations, certifications from the request
+          password: formData.password!, // Password is required here due to client-side validation
+          phoneNumber: formData.phoneNumber,
+          dateOfBirth: formData.dateOfBirth,
+          emergencyContact: formData.emergencyContact,
+          specializations: formData.specializations,
+          certifications: formData.certifications,
         };
         response = await fetch('/api/staff/create', {
           method: 'POST',
@@ -164,11 +185,19 @@ export default function CreateStaffDialog({
           credentials: 'include',
         });
       } else { // mode === 'edit'
+        // Ensure that only fields expected by UpdateStaffRequest are sent
         const updateData: UpdateStaffRequest = {
           fullName: formData.fullName,
           role: formData.role,
           isActive: formData.isActive,
-          // Removed phone, dateOfBirth, emergencyContact, specializations, certifications from the request
+          phoneNumber: formData.phoneNumber,
+          dateOfBirth: formData.dateOfBirth,
+          emergencyContact: formData.emergencyContact,
+          specializations: formData.specializations,
+          certifications: formData.certifications,
+          // Password field is omitted from UpdateStaffRequest in types/staff.ts.
+          // If password update is needed, it would require a separate flow or
+          // a specific field like `newPassword` and an oldPassword for security.
         };
         response = await fetch(`/api/staff/${formData.uid}`, {
           method: 'PUT',
@@ -287,6 +316,7 @@ export default function CreateStaffDialog({
                     </IconButton>
                   ),
                 }}
+                required // Password is required for creation
               />
             </Grid>
           )}
@@ -305,9 +335,6 @@ export default function CreateStaffDialog({
               />
             </Grid>
           )}
-
-          {/* Removed Optional Fields Toggle as all optional fields are removed from UI */}
-          {/* Removed Optional Fields Section for phone, date of birth, emergency contact, specializations, certifications */}
         </Grid>
       </DialogContent>
       <DialogActions sx={{ p: 3, gap: 2 }}>

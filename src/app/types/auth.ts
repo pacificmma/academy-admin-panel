@@ -1,3 +1,4 @@
+// src/app/types/auth.ts (Updated for consistency)
 // src/app/types/auth.ts - FIXED Authentication types with better security
 export type UserRole = 'admin' | 'trainer' | 'staff';
 
@@ -14,7 +15,7 @@ export interface SessionData {
 
 export interface LoginCredentials {
   email: string;
-  password: string;
+  password: string; // Send plaintext password over HTTPS
 }
 
 export interface AuthUser {
@@ -26,8 +27,6 @@ export interface AuthUser {
   createdAt: string;
   updatedAt?: string;
   lastLoginAt?: string;
-  // ✅ SECURITY: Remove sensitive fields from client-side types
-  // lastLoginIP and lastLoginUserAgent should only exist in backend
 }
 
 export interface PermissionCheck {
@@ -49,7 +48,6 @@ export interface AuthContextType {
 export interface LoginResponse {
   success: boolean;
   data?: {
-    // ✅ SECURITY: Only return minimal data needed for redirect
     role: UserRole;
     redirectTo: string;
   };
@@ -65,7 +63,6 @@ export interface SessionResponse {
     role: UserRole;
     fullName: string;
     isActive: boolean;
-    // ✅ SECURITY: Don't expose timestamp data in API responses
   };
   error?: string;
 }
@@ -93,18 +90,18 @@ export interface SecurityEvent {
 
 // Enhanced security types
 export interface SecureUserData {
-  // Server-side only fields
   lastLoginIP?: string;
   lastLoginUserAgent?: string;
   failedLoginAttempts?: number;
   lastFailedLoginAt?: string;
   accountLockoutUntil?: string;
   securityFlags?: string[];
+  // Assuming 'password' (bcrypt hash) is stored here for backend comparison
+  password?: string; // This field should only exist in the database, not in client-side types
 }
 
 export interface UserDocument extends AuthUser, SecureUserData {
   // Complete user document structure for Firestore
-  password?: never; // Passwords should never be in the document
 }
 
 // Client-safe user data (excludes sensitive server-side fields)

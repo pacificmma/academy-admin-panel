@@ -1,4 +1,4 @@
-// src/app/staff/StaffPageClient.tsx (Updated)
+// src/app/staff/StaffPageClient.tsx (Updated to use StaffRecord)
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -28,7 +28,7 @@ import {
   Card,
   CardContent,
   Grid,
-  Snackbar, // Added for success message
+  Snackbar,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -44,54 +44,40 @@ import {
   People as StaffIcon,
 } from '@mui/icons-material';
 import Layout from '../components/layout/Layout';
-import { SessionData, UserRole } from '../types';
-import CreateStaffDialog from '../components/ui/CreateStaffDialog'; // Reused for edit
-import DeleteConfirmationDialog from '../components/ui/DeleteConfirmationDialog'; // New import
+import { SessionData } from '../types';
+import { StaffRecord, UserRole } from '../types/staff'; // Import StaffRecord and UserRole
+import CreateStaffDialog from '../components/ui/CreateStaffDialog';
+import DeleteConfirmationDialog from '../components/ui/DeleteConfirmationDialog';
 
-interface StaffMember {
-  uid: string;
-  email: string;
-  fullName: string;
-  phoneNumber: string;
-  role: UserRole;
-  isActive: boolean;
-  createdAt: string;
-  lastLoginAt?: string;
-  emergencyContact?: {
-    name: string;
-    phone: string;
-    relationship: string;
-  };
-  specializations?: string[];
-  certifications?: string[];
-}
+// Use StaffRecord directly from types/staff.ts for consistency
+// interface StaffMember removed, now using StaffRecord
 
 interface StaffPageClientProps {
   session: SessionData;
 }
 
 export default function StaffPageClient({ session }: StaffPageClientProps) {
-  const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
+  const [staffMembers, setStaffMembers] = useState<StaffRecord[]>([]); // Use StaffRecord
   const [loading, setLoading] = useState(true);
-  const [submitLoading, setSubmitLoading] = useState(false); // For submit actions
+  const [submitLoading, setSubmitLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null); // For success messages
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [editDialogOpen, setEditDialogOpen] = useState(false); // New state for edit dialog
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false); // New state for delete dialog
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [actionMenuAnchor, setActionMenuAnchor] = useState<null | HTMLElement>(null);
-  const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
+  const [selectedStaff, setSelectedStaff] = useState<StaffRecord | null>(null); // Use StaffRecord
 
   // Fetch staff members
   const fetchStaffMembers = async () => {
     try {
       setLoading(true);
-      setError(null); // Clear previous errors
+      setError(null);
       const response = await fetch('/api/staff', {
         credentials: 'include',
       });
@@ -118,14 +104,14 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
   }, []);
 
   // Handle staff creation success
-  const handleStaffCreated = (newStaff: StaffMember) => {
+  const handleStaffCreated = (newStaff: StaffRecord) => { // Use StaffRecord
     setStaffMembers(prev => [newStaff, ...prev]);
     setCreateDialogOpen(false);
     setSuccessMessage('Staff member created successfully!');
   };
 
   // Handle staff update success
-  const handleStaffUpdated = (updatedStaff: StaffMember) => {
+  const handleStaffUpdated = (updatedStaff: StaffRecord) => { // Use StaffRecord
     setStaffMembers(prev => prev.map(staff => staff.uid === updatedStaff.uid ? updatedStaff : staff));
     setEditDialogOpen(false);
     setSelectedStaff(null);
@@ -147,14 +133,10 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
       const result = await response.json();
 
       if (response.ok && result.success) {
-        // If deactivating, update the member's status locally, but keep them in the list.
-        // If the 'GET /api/staff' filters out inactive users, you might remove them from the state.
-        // For now, let's refetch to ensure consistent state after deactivation.
         setDeleteDialogOpen(false);
         setSelectedStaff(null);
         setSuccessMessage('Staff member status updated successfully!');
-        // Refresh full list to get updated 'isActive' status
-        fetchStaffMembers();
+        fetchStaffMembers(); // Refresh full list to get updated 'isActive' status
       } else {
         throw new Error(result.error || `Failed to ${selectedStaff.isActive ? 'deactivate' : 'activate'} staff member`);
       }
@@ -190,14 +172,13 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
   };
 
   // Handle action menu
-  const handleActionMenuClick = (event: React.MouseEvent<HTMLElement>, staff: StaffMember) => {
+  const handleActionMenuClick = (event: React.MouseEvent<HTMLElement>, staff: StaffRecord) => { // Use StaffRecord
     setActionMenuAnchor(event.currentTarget);
     setSelectedStaff(staff);
   };
 
   const handleActionMenuClose = () => {
     setActionMenuAnchor(null);
-    // setSelectedStaff(null); // Keep selectedStaff until dialog is handled
   };
 
   const handleEditClick = () => {
@@ -259,7 +240,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
       value: staffMembers.filter(s => s.role === 'trainer').length,
       icon: TrainerIcon,
       color: 'primary',
-      bgColor: 'primary.50', // Reusing primary.50
+      bgColor: 'primary.50',
     },
     {
       title: 'Staff Members',
@@ -366,7 +347,6 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
               </TableHead>
               <TableBody>
                 {loading ? (
-                  // Loading skeletons
                   Array.from(new Array(5)).map((_, index) => (
                     <TableRow key={index}>
                       <TableCell><Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}><Skeleton variant="circular" width={40} height={40} /><Box><Skeleton width={120} height={20} /><Skeleton width={80} height={16} /></Box></Box></TableCell>
@@ -433,10 +413,12 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
                             <EmailIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
                             <Typography variant="body2">{staff.email}</Typography>
                           </Box>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <PhoneIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-                            <Typography variant="body2">{staff.phoneNumber}</Typography>
-                          </Box>
+                          {staff.phoneNumber && ( // Only show if phone number exists
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <PhoneIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                              <Typography variant="body2">{staff.phoneNumber}</Typography>
+                            </Box>
+                          )}
                         </Box>
                       </TableCell>
                       
@@ -472,7 +454,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
                           <IconButton
                             onClick={(e) => handleActionMenuClick(e, staff)}
                             size="small"
-                            disabled={session.uid === staff.uid && staff.role === 'admin'} // Disable delete/edit for own admin account
+                            disabled={session.uid === staff.uid && staff.role === 'admin'}
                           >
                             <MoreVertIcon />
                           </IconButton>
@@ -513,7 +495,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
                 <EditIcon sx={{ mr: 1, fontSize: 20 }} />
                 Edit Staff
               </MenuItem>
-              {session.uid !== selectedStaff.uid && ( // Prevent admin from deactivating self
+              {session.uid !== selectedStaff.uid && (
                 <MenuItem 
                   onClick={handleDeleteClick} 
                   sx={{ color: 'error.main' }} 
