@@ -3,7 +3,9 @@
 import { RequestContext, requireStaffOrTrainer } from "@/app/lib/api/middleware";
 import { errorResponse, successResponse } from "@/app/lib/api/response-utils";
 import { adminDb } from "@/app/lib/firebase/admin";
+import { FieldPath } from "firebase-admin/firestore";
 import { NextRequest } from "next/server";
+
 
 // FIXED: Changed function name and export style to fit Next.js API routes
 export const GET_PARTICIPANTS = requireStaffOrTrainer(async (request: NextRequest, context: RequestContext) => {
@@ -27,7 +29,7 @@ export const GET_PARTICIPANTS = requireStaffOrTrainer(async (request: NextReques
   
       // Get participant details
       const membersSnapshot = await adminDb.collection('members')
-        .where(adminDb.FieldValue.documentId(), 'in', participantIds) // FIXED: Corrected FieldPath usage
+      .where(FieldPath.documentId(), 'in', participantIds) // FIXED: Corrected FieldPath usage
         .get();
   
       const memberMap = new Map();

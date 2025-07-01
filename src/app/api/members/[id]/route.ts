@@ -5,6 +5,7 @@ import { MembershipPlan, DurationType } from '@/app/types/membership';
 import { z } from 'zod';
 import { requireAdmin, RequestContext } from '@/app/lib/api/middleware';
 import { successResponse, errorResponse, notFoundResponse, badRequestResponse } from '@/app/lib/api/response-utils';
+import { FieldValue } from 'firebase-admin/firestore';
 
 // Validation schema for membership plan updates - NOW ALIGNED WITH FRONTEND
 const updateMembershipPlanSchema = z.object({
@@ -83,7 +84,7 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
     // Update the membership plan
     const updatedData = {
       ...updateData,
-      updatedAt: adminDb.firestore.FieldValue.serverTimestamp(), // FIXED: Use consistent server timestamp
+      updatedAt: FieldValue.serverTimestamp(), // FIXED: Use consistent server timestamp
       updatedBy: context.session.uid,
     };
 

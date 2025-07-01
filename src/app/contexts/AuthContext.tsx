@@ -166,15 +166,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // FIXED: Add debug info to context value
-  console.log('AuthContext render:', {
-    userExists: !!user,
-    sessionExists: !!sessionData,
-    loading,
-    sessionRole: sessionData?.role,
-    sessionActive: sessionData?.isActive
-  });
-
   return (
     <AuthContext.Provider value={{ 
       user, 

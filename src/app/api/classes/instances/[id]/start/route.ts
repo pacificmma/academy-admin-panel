@@ -3,6 +3,7 @@
 import { RequestContext, requireTrainer } from "@/app/lib/api/middleware";
 import { errorResponse, successResponse } from "@/app/lib/api/response-utils";
 import { adminDb } from "@/app/lib/firebase/admin";
+import { FieldValue } from "firebase-admin/firestore";
 import { NextRequest } from "next/server";
 
 // FIXED: Changed function name and export style to fit Next.js API routes
@@ -34,7 +35,7 @@ export const POST_START_CLASS = requireTrainer(async (request: NextRequest, cont
       await instanceRef.update({
         status: 'ongoing',
         // FIXED: Corrected FieldValue.serverTimestamp() usage
-        updatedAt: adminDb.FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       });
   
       return successResponse({ message: 'Class started successfully' });

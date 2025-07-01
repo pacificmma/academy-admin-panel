@@ -5,6 +5,7 @@ import { ClassSchedule, ClassFormData, getNextOccurrences } from '@/app/types/cl
 import { z } from 'zod';
 import { requireAdmin, requireStaffOrTrainer, RequestContext } from '@/app/lib/api/middleware';
 import { createdResponse, successResponse, errorResponse } from '@/app/lib/api/response-utils';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 
 // Validation schema for class schedule
 const classScheduleSchema = z.object({
@@ -128,8 +129,8 @@ export const POST = requireAdmin(async (request: NextRequest, context: RequestCo
 
     const scheduleRef = await adminDb.collection('classSchedules').add({
       ...scheduleData,
-      createdAt: adminDb.FieldValue.serverTimestamp(),
-      updatedAt: adminDb.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
 
     // Generate class instances based on recurrence
@@ -192,8 +193,8 @@ async function generateClassInstances(scheduleId: string, schedule: Omit<ClassSc
         status: 'scheduled',
         location: schedule.location || '',
         notes: '',
-        createdAt: adminDb.FieldValue.serverTimestamp(),
-        updatedAt: adminDb.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       };
 
       batch.set(instanceRef, instanceData);

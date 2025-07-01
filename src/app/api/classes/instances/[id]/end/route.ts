@@ -3,6 +3,7 @@
 import { RequestContext, requireTrainer } from "@/app/lib/api/middleware";
 import { errorResponse, successResponse } from "@/app/lib/api/response-utils";
 import { adminDb } from "@/app/lib/firebase/admin";
+import { FieldValue } from "firebase-admin/firestore";
 import { NextRequest } from "next/server";
 
 // FIXED: Changed function name and export style to fit Next.js API routes
@@ -37,7 +38,7 @@ export const POST_END_CLASS = requireTrainer(async (request: NextRequest, contex
       const updateData: any = {
         status: 'completed',
         // FIXED: Corrected FieldValue.serverTimestamp() usage
-        updatedAt: adminDb.FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       };
   
       if (actualDuration) {

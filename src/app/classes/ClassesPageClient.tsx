@@ -267,7 +267,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
 
     try {
       const isSchedule = 'recurrence' in selectedClass;
-      const endpoint = isSchedule 
+      const endpoint = isSchedule
         ? `/api/classes/schedules/${selectedClass.id}`
         : `/api/classes/instances/${selectedClass.id}`;
 
@@ -318,10 +318,10 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
 
   // Filtered data
   const filteredSchedules = classSchedules.filter(schedule => {
-    const matchesSearch = !searchTerm || 
+    const matchesSearch = !searchTerm ||
       schedule.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       schedule.instructorName.toLowerCase().includes(searchTerm.toLowerCase());
-    
+
     const matchesClassType = !classTypeFilter || schedule.classType === classTypeFilter;
     const matchesInstructor = !instructorFilter || schedule.instructorId === instructorFilter;
 
@@ -424,7 +424,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
         );
 
       case 2: // My Classes (Trainer/Staff only)
-        const myInstances = filteredInstances.filter(instance => 
+        const myInstances = filteredInstances.filter(instance =>
           instance.instructorId === session.uid
         );
 
@@ -633,7 +633,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
             <Typography variant="h6" sx={{ fontWeight: 600 }}>
               {tabs[activeTab]?.label}
             </Typography>
-            
+
             {activeTab === 1 && (
               <Chip
                 label={`${filteredSchedules.length} schedules`}
@@ -762,10 +762,16 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
         {/* Delete Confirmation Dialog */}
         <DeleteConfirmationDialog
           open={deleteDialogOpen}
-          onClose={() => setDeleteDialogOpen(false)}
+          onClose={() => {
+            setDeleteDialogOpen(false);
+            setSelectedClass(null);
+          }}
           onConfirm={handleDeleteClass}
           title={`Delete ${selectedClass && 'recurrence' in selectedClass ? 'Class Schedule' : 'Class Instance'}`}
-          message={`Are you sure you want to delete this ${selectedClass && 'recurrence' in selectedClass ? 'class schedule' : 'class instance'}? This action cannot be undone.`}
+          itemName={selectedClass?.name || ''}
+          itemType={selectedClass && 'recurrence' in selectedClass ? 'class schedule' : 'class instance'}
+          warningMessage="This action cannot be undone."
+          additionalInfo={[]} // You can add relevant info here if needed
         />
 
         {/* Filter Menu */}
