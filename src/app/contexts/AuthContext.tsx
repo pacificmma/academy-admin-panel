@@ -1,13 +1,13 @@
 // src/app/contexts/AuthContext.tsx - FIXED VERSION
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
-import { User, onAuthStateChanged, signOut } from 'firebase/auth';
+import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
+import { onAuthStateChanged, signOut } from 'firebase/auth'; // Removed 'User' import from firebase/auth
 import { auth } from '@/app/lib/firebase/config';
-import { SessionData } from '../types';
+import { AuthUser, SessionData } from '../types/auth'; // Import AuthUser and SessionData
 
 interface AuthContextType {
-  user: User | null;
+  user: AuthUser | null; // Changed to AuthUser
   sessionData: SessionData | null;
   loading: boolean;
   logout: () => Promise<void>;
@@ -19,42 +19,60 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null); // Changed to AuthUser
   const [sessionData, setSessionData] = useState<SessionData | null>(null);
   const [loading, setLoading] = useState(true);
   const [sessionProtected, setSessionProtected] = useState(false);
-  const protectedUserRef = useRef<User | null>(null);
+  // protectedUserRef should also be AuthUser
+  const protectedUserRef = useRef<AuthUser | null>(null); // Changed to AuthUser
   const protectedSessionRef = useRef<SessionData | null>(null);
 
-  // FIXED: Fetch session data from server with better error handling
-  const fetchSessionData = async () => {
+  const fetchSessionData = useCallback(async () => {
     try {
-      console.log('🔍 fetchSessionData çağrıldı'); // EKLE
+      console.log('🔍 fetchSessionData called');
       
       const response = await fetch('/api/auth/session', {
         method: 'GET',
         credentials: 'include',
       });
       
-      console.log('📡 Response status:', response.status); // EKLE
+      console.log('📡 Response status:', response.status);
       
       if (response.ok) {
         const data = await response.json();
-        console.log('📦 Response data:', data); // EKLE
+        console.log('📦 Response data:', data);
         
+        // Assuming data.session is of type SessionData, which includes 'role'
         setSessionData(data.session);
+        
+        // Construct AuthUser from sessionData
+        if (data.session) {
+          setUser({
+            uid: data.session.uid,
+            email: data.session.email,
+            fullName: data.session.fullName,
+            role: data.session.role,
+            isActive: data.session.isActive,
+            createdAt: '', // createdAt might not be directly from sessionData, adjust if needed
+            // Other AuthUser fields like updatedAt, lastLoginAt are optional and can be omitted
+          });
+        } else {
+          setUser(null);
+        }
         return data.session;
       } else {
-        console.log('❌ Response not ok'); // EKLE
+        console.log('❌ Response not ok');
         setSessionData(null);
+        setUser(null); // Clear user if session is not ok
         return null;
       }
     } catch (error) {
-      console.log('💥 Fetch error:', error); // EKLE
+      console.log('💥 Fetch error:', error);
       setSessionData(null);
+      setUser(null); // Clear user on fetch error
       return null;
     }
-  };
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -70,14 +88,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setSessionProtected(false);
             protectedUserRef.current = null;
             protectedSessionRef.current = null;
-            setUser(firebaseUser);
+            // When falling back, explicitly fetch session to set the AuthUser with role
             if (firebaseUser) {
-              console.log('Fetching session data for user:', firebaseUser.uid);
+              console.log('Attempting to re-fetch session data after failed restore for Firebase user:', firebaseUser.uid);
               await fetchSessionData();
             } else {
-              console.log('No Firebase user, but checking session anyway');
-              // Firebase user yoksa da session kontrolü yap
-              await fetchSessionData();
+              console.log('No Firebase user after failed restore, clearing user state.');
+              setUser(null); // Clear user if no firebaseUser
+              setSessionData(null); // Clear session data
             }
           }
           setLoading(false);
@@ -85,17 +103,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      // Normal auth state change
+      // Normal auth state change or after session protection is lifted
       if (!sessionProtected) {
-        setUser(firebaseUser);
-        
         if (firebaseUser) {
-          console.log('Fetching session data for user:', firebaseUser.uid);
-          await fetchSessionData();
+          console.log('Fetching session data for Firebase user:', firebaseUser.uid);
+          await fetchSessionData(); // This will now correctly set the AuthUser state
         } else {
-          console.log('No Firebase user, but checking session anyway');
-          // Firebase user yoksa da session kontrolü yap
-          await fetchSessionData();
+          console.log('No Firebase user, attempting to fetch session anyway to confirm logout or no session.');
+          await fetchSessionData(); // This will clear user/session if no active session
         }
       }
       
@@ -103,7 +118,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     return () => unsubscribe();
-  }, [sessionProtected]);
+  }, [sessionProtected, fetchSessionData]);
 
   const restoreProtectedUser = async () => {
     if (protectedUserRef.current && protectedSessionRef.current) {
@@ -129,11 +144,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     protectedUserRef.current = null;
     protectedSessionRef.current = null;
     
-    // Re-check auth state
+    // Re-check auth state to properly re-fetch user and session data
     const currentUser = auth.currentUser;
     if (currentUser) {
-      setUser(currentUser);
-      fetchSessionData();
+        fetchSessionData();
+    } else {
+        setUser(null);
+        setSessionData(null);
     }
   };
 

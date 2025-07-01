@@ -1,4 +1,4 @@
-// src/app/components/ui/ClassCalendar.tsx - Calendar View for Classes
+// src/app/components/ui/ClassCalendar.tsx - Takvim Görünümü (Güncellendi)
 'use client';
 
 import React, { useState, useMemo } from 'react';
@@ -15,6 +15,8 @@ import {
   MenuItem,
   useTheme,
   alpha,
+  ListItemIcon,
+  ListItemText,
 } from '@mui/material';
 import {
   ChevronLeft as ChevronLeftIcon,
@@ -24,8 +26,13 @@ import {
   ViewModule as MonthIcon,
   ViewDay as DayIcon,
   MoreVert as MoreVertIcon,
+  Edit as EditIcon,
+  Delete as DeleteIcon,
+  PlayArrow as PlayArrowIcon,
+  Stop as StopIcon,
+  Cancel as CancelIcon,
 } from '@mui/icons-material';
-import { ClassInstance, getClassTypeColor, formatClassTime } from '../../types/class';
+import { ClassInstance, getClassTypeColor, formatClassTime, ClassSchedule } from '../../types/class';
 
 interface ClassCalendarProps {
   classes: ClassInstance[];
@@ -35,6 +42,12 @@ interface ClassCalendarProps {
   onDateClick?: (date: Date) => void;
   selectedDate?: Date;
   userRole: 'admin' | 'trainer' | 'staff';
+  onEditClass: (data: ClassSchedule | ClassInstance) => void;
+  onDeleteClass: (data: ClassInstance, type: 'instance') => void; // DÜZELTME: classData objesini kabul et
+  onStartClass?: (instanceId: string) => void;
+  onEndClass?: (instanceId: string) => void;
+  onCancelClass?: (instanceId: string) => void;
+  userId: string;
 }
 
 interface CalendarEvent {
@@ -55,13 +68,18 @@ export default function ClassCalendar({
   onDateClick,
   selectedDate = new Date(),
   userRole,
+  onEditClass,
+  onDeleteClass,
+  onStartClass,
+  onEndClass,
+  onCancelClass,
+  userId,
 }: ClassCalendarProps) {
   const theme = useTheme();
   const [currentDate, setCurrentDate] = useState(selectedDate);
   const [eventMenuAnchor, setEventMenuAnchor] = useState<null | HTMLElement>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
 
-  // Convert classes to calendar events
   const events = useMemo(() => {
     return classes.map(classInstance => ({
       id: classInstance.id,
@@ -76,7 +94,7 @@ export default function ClassCalendar({
 
   const navigateDate = (direction: 'prev' | 'next' | 'today') => {
     const newDate = new Date(currentDate);
-    
+
     switch (direction) {
       case 'prev':
         if (viewMode === 'day') {
@@ -100,7 +118,7 @@ export default function ClassCalendar({
         setCurrentDate(new Date());
         return;
     }
-    
+
     setCurrentDate(newDate);
   };
 
@@ -111,16 +129,18 @@ export default function ClassCalendar({
     if (viewMode === 'day') {
       return { start, end };
     } else if (viewMode === 'week') {
-      // Get start of week (Monday)
       const dayOfWeek = start.getDay();
       const diff = start.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
       start.setDate(diff);
+      start.setHours(0, 0, 0, 0);
       end.setDate(start.getDate() + 6);
+      end.setHours(23, 59, 59, 999);
     } else {
-      // Month view
       start.setDate(1);
+      start.setHours(0, 0, 0, 0);
       end.setMonth(end.getMonth() + 1);
       end.setDate(0);
+      end.setHours(23, 59, 59, 999);
     }
 
     return { start, end };
@@ -130,6 +150,7 @@ export default function ClassCalendar({
 
   const filteredEvents = events.filter(event => {
     const eventDate = new Date(event.date);
+    eventDate.setHours(parseInt(event.startTime.split(':')[0]), parseInt(event.startTime.split(':')[1]), 0, 0);
     return eventDate >= rangeStart && eventDate <= rangeEnd;
   });
 
@@ -147,35 +168,38 @@ export default function ClassCalendar({
     setSelectedEvent(null);
   };
 
+  const isInstructorOfSelectedEvent = selectedEvent?.classInstance.instructorId === userId;
+  const showManagementButtons = userRole === 'admin' || isInstructorOfSelectedEvent;
+
   const renderDayView = () => {
-    const dayEvents = filteredEvents.filter(event => 
+    const dayEvents = filteredEvents.filter(event =>
       new Date(event.date).toDateString() === currentDate.toDateString()
     ).sort((a, b) => a.startTime.localeCompare(b.startTime));
 
     return (
       <Box sx={{ p: 3 }}>
         <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-          {currentDate.toLocaleDateString('en-US', { 
-            weekday: 'long', 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric' 
+          {currentDate.toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
           })}
         </Typography>
-        
+
         {dayEvents.length === 0 ? (
-          <Box sx={{ 
-            textAlign: 'center', 
-            py: 8, 
+          <Box sx={{
+            textAlign: 'center',
+            py: 8,
             color: 'text.secondary',
             cursor: onDateClick ? 'pointer' : 'default'
           }}
           onClick={() => onDateClick?.(currentDate)}
           >
-            <Typography variant="body1">No classes scheduled for this day</Typography>
+            <Typography variant="body1">Bu gün için planlanmış ders bulunmamaktadır</Typography>
             {userRole === 'admin' && (
               <Typography variant="body2" sx={{ mt: 1 }}>
-                Click to schedule a class
+                Ders planlamak için tıklayın
               </Typography>
             )}
           </Box>
@@ -198,8 +222,8 @@ export default function ClassCalendar({
                         {event.title}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        {formatClassTime(event.startTime, 
-                          event.classInstance.actualDuration || 60)}
+                        {formatClassTime(event.startTime,
+                          event.classInstance.actualDuration || event.classInstance.duration)}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
                         {event.classInstance.instructorName}
@@ -242,7 +266,7 @@ export default function ClassCalendar({
   const renderWeekView = () => {
     const weekDays: Date[] = [];
     const startOfWeek = new Date(rangeStart);
-    
+
     for (let i = 0; i < 7; i++) {
       const day = new Date(startOfWeek);
       day.setDate(startOfWeek.getDate() + i);
@@ -256,9 +280,8 @@ export default function ClassCalendar({
 
     return (
       <Box sx={{ p: 2 }}>
-        {/* Week header */}
         <Box sx={{ display: 'grid', gridTemplateColumns: '60px repeat(7, 1fr)', gap: 1, mb: 2 }}>
-          <Box /> {/* Empty cell for time column */}
+          <Box />
           {weekDays.map(day => (
             <Box
               key={day.toISOString()}
@@ -282,10 +305,9 @@ export default function ClassCalendar({
           ))}
         </Box>
 
-        {/* Week grid */}
-        <Box sx={{ 
-          display: 'grid', 
-          gridTemplateColumns: '60px repeat(7, 1fr)', 
+        <Box sx={{
+          display: 'grid',
+          gridTemplateColumns: '60px repeat(7, 1fr)',
           gap: 1,
           maxHeight: '60vh',
           overflow: 'auto',
@@ -300,7 +322,7 @@ export default function ClassCalendar({
                   const eventDate = new Date(event.date);
                   const eventHour = parseInt(event.startTime.split(':')[0]);
                   const timeHour = parseInt(time.split(':')[0]);
-                  return eventDate.toDateString() === day.toDateString() && 
+                  return eventDate.toDateString() === day.toDateString() &&
                          eventHour === timeHour;
                 });
 
@@ -383,9 +405,8 @@ export default function ClassCalendar({
 
     return (
       <Box sx={{ p: 2 }}>
-        {/* Month header */}
         <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1, mb: 2 }}>
-          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+          {['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt'].map(day => (
             <Typography
               key={day}
               variant="subtitle2"
@@ -396,7 +417,6 @@ export default function ClassCalendar({
           ))}
         </Box>
 
-        {/* Month grid */}
         <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1 }}>
           {weeks.flat().map(date => {
             const dayEvents = filteredEvents.filter(event =>
@@ -461,7 +481,7 @@ export default function ClassCalendar({
                   ))}
                   {dayEvents.length > 2 && (
                     <Typography variant="caption" color="text.secondary">
-                      +{dayEvents.length - 2} more
+                      +{dayEvents.length - 2} daha
                     </Typography>
                   )}
                 </Box>
@@ -475,10 +495,9 @@ export default function ClassCalendar({
 
   return (
     <Card sx={{ height: 'fit-content' }}>
-      {/* Calendar Header */}
-      <Box sx={{ 
-        p: 2, 
-        borderBottom: '1px solid', 
+      <Box sx={{
+        p: 2,
+        borderBottom: '1px solid',
         borderColor: 'divider',
         display: 'flex',
         justifyContent: 'space-between',
@@ -495,7 +514,7 @@ export default function ClassCalendar({
               variant="outlined"
               size="small"
             >
-              Today
+              Bugün
             </Button>
             <IconButton onClick={() => navigateDate('next')} size="small">
               <ChevronRightIcon />
@@ -503,15 +522,14 @@ export default function ClassCalendar({
           </Box>
 
           <Typography variant="h6" sx={{ fontWeight: 600 }}>
-            {currentDate.toLocaleDateString('en-US', { 
-              month: 'long', 
+            {currentDate.toLocaleDateString('en-US', {
+              month: 'long',
               year: 'numeric',
               ...(viewMode === 'day' && { day: 'numeric', weekday: 'long' })
             })}
           </Typography>
         </Box>
 
-        {/* View Mode Selector */}
         <Box sx={{ display: 'flex', bgcolor: 'background.paper', borderRadius: 1, p: 0.5, border: 1, borderColor: 'divider' }}>
           <IconButton
             size="small"
@@ -555,14 +573,12 @@ export default function ClassCalendar({
         </Box>
       </Box>
 
-      {/* Calendar Content */}
       <Box sx={{ minHeight: 400 }}>
         {viewMode === 'day' && renderDayView()}
         {viewMode === 'week' && renderWeekView()}
         {viewMode === 'month' && renderMonthView()}
       </Box>
 
-      {/* Event Context Menu */}
       <Menu
         anchorEl={eventMenuAnchor}
         open={Boolean(eventMenuAnchor)}
@@ -575,17 +591,51 @@ export default function ClassCalendar({
             onClassClick(selectedEvent.classInstance);
             handleEventMenuClose();
           }}>
-            View Details
+            Detayları Görüntüle
           </MenuItem>
         )}
-        {selectedEvent && userRole === 'admin' && (
-          <MenuItem onClick={handleEventMenuClose}>
-            Edit Class
+        {selectedEvent && showManagementButtons && (
+          <MenuItem onClick={() => {
+            onEditClass(selectedEvent.classInstance);
+            handleEventMenuClose();
+          }}>
+            <ListItemIcon>
+              <EditIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Dersi Düzenle</ListItemText>
           </MenuItem>
         )}
-        {selectedEvent && userRole === 'admin' && (
-          <MenuItem onClick={handleEventMenuClose} sx={{ color: 'error.main' }}>
-            Cancel Class
+        {selectedEvent && (userRole === 'admin' || isInstructorOfSelectedEvent) && selectedEvent.classInstance.status !== 'completed' && selectedEvent.classInstance.status !== 'cancelled' && (
+          <MenuItem onClick={() => {
+            onDeleteClass(selectedEvent.classInstance, 'instance'); // DÜZELTME: Tam objeyi ve tipi geçir
+            handleEventMenuClose();
+          }} sx={{ color: 'error.main' }}>
+            <ListItemIcon>
+              <CancelIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Dersi İptal Et</ListItemText>
+          </MenuItem>
+        )}
+        {selectedEvent && (userRole === 'admin' || isInstructorOfSelectedEvent) && selectedEvent.classInstance.status === 'scheduled' && onStartClass && (
+          <MenuItem onClick={() => {
+            onStartClass(selectedEvent.classInstance.id);
+            handleEventMenuClose();
+          }}>
+            <ListItemIcon>
+              <PlayArrowIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Dersi Başlat</ListItemText>
+          </MenuItem>
+        )}
+        {selectedEvent && (userRole === 'admin' || isInstructorOfSelectedEvent) && selectedEvent.classInstance.status === 'ongoing' && onEndClass && (
+          <MenuItem onClick={() => {
+            onEndClass(selectedEvent.classInstance.id);
+            handleEventMenuClose();
+          }}>
+            <ListItemIcon>
+              <StopIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Dersi Bitir</ListItemText>
           </MenuItem>
         )}
       </Menu>

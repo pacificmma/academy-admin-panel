@@ -64,6 +64,8 @@ export const GET = requireStaffOrTrainer(async (request: NextRequest, context: R
       actualDuration: data.actualDuration,
       createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
       updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+      duration: 0,
+      description: undefined
     };
 
     return successResponse(instance);

@@ -1,4 +1,4 @@
-// src/app/components/forms/ClassFormDialog.tsx (No functional changes from previous iteration, providing for completeness)
+// src/app/components/forms/ClassFormDialog.tsx (Güncellendi)
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -25,6 +25,7 @@ import {
   IconButton,
   Tooltip,
   Alert,
+  InputAdornment,
 } from '@mui/material';
 import {
   Save as SaveIcon,
@@ -47,13 +48,15 @@ import {
   LEVEL_OPTIONS,
   getClassTypeColor,
   getNextOccurrences,
+  ClassInstance,
 } from '../../types/class';
 
 interface ClassFormDialogProps {
   open: boolean;
   onClose: () => void;
   onSubmit: (data: ClassFormData) => Promise<void>;
-  classSchedule?: ClassSchedule | null; // Changed to classSchedule as it's primarily for schedules
+  classSchedule?: ClassSchedule | null; // Programları düzenlemek için
+  initialClassDataForInstanceEdit?: ClassFormData; // Örnekleri düzenlemek için, ClassFormData uyumlu formata dönüştürülmüş
   mode: 'create' | 'edit';
   instructors: Array<{ id: string; name: string; specialties?: string[] }>;
 }
@@ -72,17 +75,22 @@ const DEFAULT_FORM_DATA: ClassFormData = {
     interval: 1,
     daysOfWeek: [],
   },
-  // Removed location, requirements, price, level, tags from default form data
+  // Varsayılan form verilerine isteğe bağlı alanlar eklendi
+  location: '',
+  requirements: [],
+  price: 0,
+  level: 'All Levels',
+  tags: [],
 };
 
 const DAYS_OF_WEEK = [
-  { value: 1, label: 'Monday', short: 'Mon' },
-  { value: 2, label: 'Tuesday', short: 'Tue' },
-  { value: 3, label: 'Wednesday', short: 'Wed' },
-  { value: 4, label: 'Thursday', short: 'Thu' },
-  { value: 5, label: 'Friday', short: 'Fri' },
-  { value: 6, label: 'Saturday', short: 'Sat' },
-  { value: 0, label: 'Sunday', short: 'Sun' },
+  { value: 1, label: 'Pazartesi', short: 'Pzt' },
+  { value: 2, label: 'Salı', short: 'Sal' },
+  { value: 3, label: 'Çarşamba', short: 'Çar' },
+  { value: 4, label: 'Perşembe', short: 'Per' },
+  { value: 5, label: 'Cuma', short: 'Cum' },
+  { value: 6, label: 'Cumartesi', short: 'Cmt' },
+  { value: 0, label: 'Pazar', short: 'Paz' },
 ];
 
 export default function ClassFormDialog({
@@ -90,6 +98,7 @@ export default function ClassFormDialog({
   onClose,
   onSubmit,
   classSchedule,
+  initialClassDataForInstanceEdit,
   mode,
   instructors,
 }: ClassFormDialogProps) {
@@ -100,41 +109,56 @@ export default function ClassFormDialog({
 
   useEffect(() => {
     if (open) {
-      if (mode === 'edit' && classSchedule) {
-        // When editing, populate form with existing class schedule data
-        setFormData({
-          name: classSchedule.name,
-          description: classSchedule.description || '',
-          classType: classSchedule.classType,
-          instructorId: classSchedule.instructorId,
-          maxParticipants: classSchedule.maxParticipants,
-          duration: classSchedule.duration,
-          startDate: classSchedule.startDate,
-          startTime: classSchedule.startTime,
-          recurrence: classSchedule.recurrence,
-          // Removed location, requirements, price, level, tags assignments when editing
-        });
+      if (mode === 'edit') {
+        if (classSchedule) {
+          // Bir program düzenleniyor
+          setFormData({
+            name: classSchedule.name,
+            description: classSchedule.description || '',
+            classType: classSchedule.classType,
+            instructorId: classSchedule.instructorId,
+            maxParticipants: classSchedule.maxParticipants,
+            duration: classSchedule.duration,
+            startDate: classSchedule.startDate,
+            startTime: classSchedule.startTime,
+            recurrence: classSchedule.recurrence,
+            location: classSchedule.location || '',
+            requirements: classSchedule.requirements || [],
+            price: classSchedule.price || 0,
+            level: classSchedule.level || 'All Levels',
+            tags: classSchedule.tags || [],
+          });
+        } else if (initialClassDataForInstanceEdit) {
+          // Bir örnek düzenleniyor
+          setFormData(initialClassDataForInstanceEdit);
+        } else {
+          setFormData(DEFAULT_FORM_DATA);
+        }
       } else {
         setFormData(DEFAULT_FORM_DATA);
       }
       setErrors({});
     }
-  }, [open, mode, classSchedule]);
+  }, [open, mode, classSchedule, initialClassDataForInstanceEdit]);
 
   useEffect(() => {
-    // Update preview when recurrence changes
-    if (formData.recurrence.type !== 'none') {
-      const occurrences = getNextOccurrences(
-        formData.startDate,
-        formData.startTime,
-        formData.recurrence,
-        5
-      );
-      setPreviewOccurrences(occurrences);
+    // Yalnızca programlar için önizleme oluştur, örnekler için değil
+    if (mode === 'create' || (mode === 'edit' && classSchedule)) {
+        if (formData.recurrence.type !== 'none') {
+            const occurrences = getNextOccurrences(
+                formData.startDate,
+                formData.startTime,
+                formData.recurrence,
+                5
+            );
+            setPreviewOccurrences(occurrences);
+        } else {
+            setPreviewOccurrences([]);
+        }
     } else {
-      setPreviewOccurrences([]);
+        setPreviewOccurrences([]);
     }
-  }, [formData.startDate, formData.startTime, formData.recurrence]);
+  }, [formData.startDate, formData.startTime, formData.recurrence, mode, classSchedule]);
 
   const handleInputChange = (field: keyof ClassFormData, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -154,8 +178,8 @@ export default function ClassFormDialog({
     const currentDays = formData.recurrence.daysOfWeek || [];
     const newDays = currentDays.includes(day)
       ? currentDays.filter(d => d !== day)
-      : [...currentDays, day].sort((a, b) => a - b); // Ensure days are sorted
-    
+      : [...currentDays, day].sort((a, b) => a - b);
+
     handleRecurrenceChange('daysOfWeek', newDays);
   };
 
@@ -163,47 +187,49 @@ export default function ClassFormDialog({
     const newErrors: Record<string, string> = {};
 
     if (!formData.name.trim()) {
-      newErrors.name = 'Class name is required';
+      newErrors.name = 'Ders adı gerekli';
     }
 
     if (!formData.instructorId) {
-      newErrors.instructorId = 'Instructor is required';
+      newErrors.instructorId = 'Eğitmen gerekli';
     }
 
     if (formData.maxParticipants < 1 || formData.maxParticipants > 100) {
-      newErrors.maxParticipants = 'Participants must be between 1 and 100';
+      newErrors.maxParticipants = 'Katılımcılar 1 ile 100 arasında olmalı';
     }
 
     if (formData.duration < 15 || formData.duration > 240) {
-      newErrors.duration = 'Duration must be between 15 and 240 minutes';
+      newErrors.duration = 'Süre 15 ile 240 dakika arasında olmalı';
     }
 
     if (!formData.startDate) {
-      newErrors.startDate = 'Start date is required';
+      newErrors.startDate = 'Başlangıç tarihi gerekli';
     }
 
     if (!formData.startTime) {
-      newErrors.startTime = 'Start time is required';
+      newErrors.startTime = 'Başlangıç saati gerekli';
     }
 
-    if (formData.recurrence.type === 'weekly' && (!formData.recurrence.daysOfWeek || formData.recurrence.daysOfWeek.length === 0)) {
-      newErrors.recurrence = 'Please select at least one day for weekly recurrence';
+    // Yalnızca program oluştururken veya düzenlerken tekrarlama doğrulaması yap
+    if (mode === 'create' || (mode === 'edit' && classSchedule)) {
+      if (formData.recurrence.type === 'weekly' && (!formData.recurrence.daysOfWeek || formData.recurrence.daysOfWeek.length === 0)) {
+        newErrors.recurrence = 'Haftalık tekrarlama için en az bir gün seçin';
+      }
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault(); // Formun varsayılan gönderimini engelle
     if (!validateForm()) return;
 
     setLoading(true);
     try {
       await onSubmit(formData);
-      // onClose handled by onSubmit in parent component
     } catch (error) {
-      console.error('Failed to save class:', error);
-      // Error handling will be done by the parent component (ClassesPageClient)
+      console.error('Ders kaydedilemedi:', error);
     } finally {
       setLoading(false);
     }
@@ -222,280 +248,364 @@ export default function ClassFormDialog({
           sx: { borderRadius: 2, maxHeight: '90vh' }
         }}
       >
-        <DialogTitle>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              {mode === 'create' ? 'Schedule New Class' : 'Edit Class Schedule'}
-            </Typography>
-            <IconButton onClick={onClose} size="small">
-              <CloseIcon />
-            </IconButton>
-          </Box>
-        </DialogTitle>
-
-        <DialogContent sx={{ p: 3 }}>
-          <Grid container spacing={3}>
-            {/* Basic Information */}
-            <Grid item xs={12}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
-                Basic Information
+        <form onSubmit={handleSubmit}> {/* onSubmit ile form etiketi */}
+          <DialogTitle>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                {mode === 'create' ? 'Yeni Ders Planla' : 'Dersi Düzenle'}
               </Typography>
-            </Grid>
+              <IconButton onClick={onClose} size="small">
+                <CloseIcon />
+              </IconButton>
+            </Box>
+          </DialogTitle>
 
-            <Grid item xs={12} md={8}>
-              <TextField
-                fullWidth
-                label="Class Name"
-                value={formData.name}
-                onChange={(e) => handleInputChange('name', e.target.value)}
-                error={!!errors.name}
-                helperText={errors.name}
-                placeholder="e.g., Morning BJJ Fundamentals"
-              />
-            </Grid>
+          <DialogContent sx={{ p: 3 }}>
+            <Grid container spacing={3}>
+              {/* Temel Bilgiler */}
+              <Grid item xs={12}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
+                  Temel Bilgiler
+                </Typography>
+              </Grid>
 
-            <Grid item xs={12} md={4}>
-              <FormControl fullWidth error={!!errors.classType}>
-                <InputLabel>Class Type</InputLabel>
-                <Select
-                  value={formData.classType}
-                  onChange={(e) => handleInputChange('classType', e.target.value)}
-                  label="Class Type"
-                >
-                  {CLASS_TYPE_OPTIONS.map((type) => (
-                    <MenuItem key={type} value={type}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }>
-                        <Box
-                          sx={{
-                            width: 12,
-                            height: 12,
-                            borderRadius: '50%',
-                            bgcolor: getClassTypeColor(type),
+              <Grid item xs={12} md={8}>
+                <TextField
+                  fullWidth
+                  label="Ders Adı"
+                  value={formData.name}
+                  onChange={(e) => handleInputChange('name', e.target.value)}
+                  error={!!errors.name}
+                  helperText={errors.name}
+                  placeholder="örn: Sabah BJJ Temelleri"
+                />
+              </Grid>
+
+              <Grid item xs={12} md={4}>
+                <FormControl fullWidth error={!!errors.classType}>
+                  <InputLabel>Ders Tipi</InputLabel>
+                  <Select
+                    value={formData.classType}
+                    onChange={(e) => handleInputChange('classType', e.target.value as ClassType)}
+                    label="Ders Tipi"
+                  >
+                    {CLASS_TYPE_OPTIONS.map((type) => (
+                      <MenuItem key={type} value={type}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Box
+                            sx={{
+                              width: 12,
+                              height: 12,
+                              borderRadius: '50%',
+                              bgcolor: getClassTypeColor(type),
+                            }}
+                          />
+                          {type}
+                        </Box>
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Açıklama"
+                  value={formData.description}
+                  onChange={(e) => handleInputChange('description', e.target.value)}
+                  multiline
+                  rows={2}
+                  placeholder="Ders içeriği ve hedefleri hakkında kısa açıklama..."
+                />
+              </Grid>
+
+              {/* Eğitmen ve Kapasite */}
+              <Grid item xs={12} md={6}>
+                <FormControl fullWidth error={!!errors.instructorId}>
+                  <InputLabel>Eğitmen</InputLabel>
+                  <Select
+                    value={formData.instructorId}
+                    onChange={(e) => handleInputChange('instructorId', e.target.value)}
+                    label="Eğitmen"
+                  >
+                    {instructors.map((instructor) => (
+                      <MenuItem key={instructor.id} value={instructor.id}>
+                        <Box>
+                          <Typography variant="body1">{instructor.name}</Typography>
+                          {instructor.specialties && (
+                            <Typography variant="caption" color="text.secondary">
+                              {instructor.specialties.join(', ')}
+                            </Typography>
+                          )}
+                        </Box>
+                      </MenuItem>
+                    ))}
+                  </Select>
+                  {errors.instructorId && <FormHelperText>{errors.instructorId}</FormHelperText>}
+                </FormControl>
+              </Grid>
+
+              <Grid item xs={12} md={6}>
+                <TextField
+                  fullWidth
+                  label="Maksimum Katılımcı"
+                  type="number"
+                  value={formData.maxParticipants}
+                  onChange={(e) => handleInputChange('maxParticipants', parseInt(e.target.value) || 0)}
+                  error={!!errors.maxParticipants}
+                  helperText={errors.maxParticipants}
+                  inputProps={{ min: 1, max: 100 }}
+                />
+              </Grid>
+
+              {/* Program Bilgileri */}
+              <Grid item xs={12}>
+                <Divider sx={{ my: 2 }} />
+                <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
+                  Program & Zamanlama
+                </Typography>
+              </Grid>
+
+              <Grid item xs={12} md={4}>
+                <DatePicker
+                  label="Başlangıç Tarihi"
+                  value={new Date(formData.startDate)}
+                  onChange={(date) => handleInputChange('startDate', date?.toISOString().split('T')[0] || '')}
+                  slotProps={{
+                    textField: {
+                      fullWidth: true,
+                      error: !!errors.startDate,
+                      helperText: errors.startDate,
+                    }
+                  }}
+                />
+              </Grid>
+
+              <Grid item xs={12} md={4}>
+                <TimePicker
+                  label="Başlangıç Saati"
+                  value={new Date(`2000-01-01T${formData.startTime}`)}
+                  onChange={(time) => {
+                    if (time) {
+                      const hours = time.getHours().toString().padStart(2, '0');
+                      const minutes = time.getMinutes().toString().padStart(2, '0');
+                      handleInputChange('startTime', `${hours}:${minutes}`);
+                    }
+                  }}
+                  slotProps={{
+                    textField: {
+                      fullWidth: true,
+                      error: !!errors.startTime,
+                      helperText: errors.startTime,
+                    }
+                  }}
+                />
+              </Grid>
+
+              <Grid item xs={12} md={4}>
+                <TextField
+                  fullWidth
+                  label="Süre (dakika)"
+                  type="number"
+                  value={formData.duration}
+                  onChange={(e) => handleInputChange('duration', parseInt(e.target.value) || 0)}
+                  error={!!errors.duration}
+                  helperText={errors.duration}
+                  inputProps={{ min: 15, max: 240, step: 15 }}
+                />
+              </Grid>
+
+              {/* Tekrarlama Ayarları - Örnek düzenlenirken gizli */}
+              {(mode === 'create' || (mode === 'edit' && classSchedule)) && (
+                <>
+                  <Grid item xs={12}>
+                    <FormControl fullWidth>
+                      <InputLabel>Tekrarlama</InputLabel>
+                      <Select
+                        value={formData.recurrence.type}
+                        onChange={(e) => handleRecurrenceChange('type', e.target.value)}
+                        label="Tekrarlama"
+                      >
+                        <MenuItem value="none">Tek seferlik Etkinlik</MenuItem>
+                        <MenuItem value="daily">Günlük</MenuItem>
+                        <MenuItem value="weekly">Haftalık</MenuItem>
+                        <MenuItem value="monthly">Aylık</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+
+                  {formData.recurrence.type === 'weekly' && (
+                    <Grid item xs={12}>
+                      <Typography variant="body2" sx={{ mb: 1 }}>
+                        Haftanın Günlerini Seçin:
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                        {DAYS_OF_WEEK.map((day) => (
+                          <Chip
+                            key={day.value}
+                            label={day.short}
+                            onClick={() => handleDayOfWeekToggle(day.value)}
+                            color={formData.recurrence.daysOfWeek?.includes(day.value) ? 'primary' : 'default'}
+                            variant={formData.recurrence.daysOfWeek?.includes(day.value) ? 'filled' : 'outlined'}
+                            size="small"
+                          />
+                        ))}
+                      </Box>
+                      {errors.recurrence && (
+                        <Typography variant="caption" color="error" sx={{ mt: 1, display: 'block' }}>
+                          {errors.recurrence}
+                        </Typography>
+                      )}
+                    </Grid>
+                  )}
+
+                  {formData.recurrence.type !== 'none' && (
+                    <>
+                      <Grid item xs={12} md={6}>
+                        <TextField
+                          fullWidth
+                          label="Her"
+                          type="number"
+                          value={formData.recurrence.interval}
+                          onChange={(e) => handleRecurrenceChange('interval', parseInt(e.target.value) || 1)}
+                          inputProps={{ min: 1, max: 12 }}
+                          helperText={`Her ${formData.recurrence.interval} ${formData.recurrence.type === 'daily' ? 'gün' : formData.recurrence.type === 'weekly' ? 'hafta' : 'ay'}`}
+                        />
+                      </Grid>
+
+                      <Grid item xs={12} md={6}>
+                        <DatePicker
+                          label="Bitiş Tarihi (İsteğe Bağlı)"
+                          value={formData.recurrence.endDate ? new Date(formData.recurrence.endDate) : null}
+                          onChange={(date) => handleRecurrenceChange('endDate', date?.toISOString().split('T')[0] || undefined)}
+                          slotProps={{
+                            textField: {
+                              fullWidth: true,
+                            }
                           }}
                         />
-                        {type}
-                      </Box>
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
-                label="Description"
-                value={formData.description}
-                onChange={(e) => handleInputChange('description', e.target.value)}
-                multiline
-                rows={2}
-                placeholder="Brief description of the class content and goals..."
-              />
-            </Grid>
-
-            {/* Instructor and Capacity */}
-            <Grid item xs={12} md={6}>
-              <FormControl fullWidth error={!!errors.instructorId}>
-                <InputLabel>Instructor</InputLabel>
-                <Select
-                  value={formData.instructorId}
-                  onChange={(e) => handleInputChange('instructorId', e.target.value)}
-                  label="Instructor"
-                >
-                  {instructors.map((instructor) => (
-                    <MenuItem key={instructor.id} value={instructor.id}>
-                      <Box>
-                        <Typography variant="body1">{instructor.name}</Typography>
-                        {instructor.specialties && (
-                          <Typography variant="caption" color="text.secondary">
-                            {instructor.specialties.join(', ')}
-                          </Typography>
-                        )}
-                      </Box>
-                    </MenuItem>
-                  ))}
-                </Select>
-                {errors.instructorId && <FormHelperText>{errors.instructorId}</FormHelperText>}
-              </FormControl>
-            </Grid>
-
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                label="Max Participants"
-                type="number"
-                value={formData.maxParticipants}
-                onChange={(e) => handleInputChange('maxParticipants', parseInt(e.target.value) || 0)}
-                error={!!errors.maxParticipants}
-                helperText={errors.maxParticipants}
-                inputProps={{ min: 1, max: 100 }}
-              />
-            </Grid>
-
-            {/* Schedule Information */}
-            <Grid item xs={12}>
-              <Divider sx={{ my: 2 }} />
-              <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
-                Schedule & Timing
-              </Typography>
-            </Grid>
-
-            <Grid item xs={12} md={4}>
-              <DatePicker
-                label="Start Date"
-                value={new Date(formData.startDate)}
-                onChange={(date) => handleInputChange('startDate', date?.toISOString().split('T')[0] || '')}
-                slotProps={{
-                  textField: {
-                    fullWidth: true,
-                    error: !!errors.startDate,
-                    helperText: errors.startDate,
-                  }
-                }}
-              />
-            </Grid>
-
-            <Grid item xs={12} md={4}>
-              <TimePicker
-                label="Start Time"
-                value={new Date(`2000-01-01T${formData.startTime}`)}
-                onChange={(time) => {
-                  if (time) {
-                    const hours = time.getHours().toString().padStart(2, '0');
-                    const minutes = time.getMinutes().toString().padStart(2, '0');
-                    handleInputChange('startTime', `${hours}:${minutes}`);
-                  }
-                }}
-                slotProps={{
-                  textField: {
-                    fullWidth: true,
-                    error: !!errors.startTime,
-                    helperText: errors.startTime,
-                  }
-                }}
-              />
-            </Grid>
-
-            <Grid item xs={12} md={4}>
-              <TextField
-                fullWidth
-                label="Duration (minutes)"
-                type="number"
-                value={formData.duration}
-                onChange={(e) => handleInputChange('duration', parseInt(e.target.value) || 0)}
-                error={!!errors.duration}
-                helperText={errors.duration}
-                inputProps={{ min: 15, max: 240, step: 15 }}
-              />
-            </Grid>
-
-            {/* Recurrence Settings */}
-            <Grid item xs={12}>
-              <FormControl fullWidth>
-                <InputLabel>Recurrence</InputLabel>
-                <Select
-                  value={formData.recurrence.type}
-                  onChange={(e) => handleRecurrenceChange('type', e.target.value)}
-                  label="Recurrence"
-                >
-                  <MenuItem value="none">One-time Event</MenuItem>
-                  <MenuItem value="daily">Daily</MenuItem>
-                  <MenuItem value="weekly">Weekly</MenuItem>
-                  <MenuItem value="monthly">Monthly</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-
-            {formData.recurrence.type === 'weekly' && (
-              <Grid item xs={12}>
-                <Typography variant="body2" sx={{ mb: 1 }}>
-                  Select Days of Week:
-                </Typography>
-                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                  {DAYS_OF_WEEK.map((day) => (
-                    <Chip
-                      key={day.value}
-                      label={day.short}
-                      onClick={() => handleDayOfWeekToggle(day.value)}
-                      color={formData.recurrence.daysOfWeek?.includes(day.value) ? 'primary' : 'default'}
-                      variant={formData.recurrence.daysOfWeek?.includes(day.value) ? 'filled' : 'outlined'}
-                      size="small"
-                    />
-                  ))}
-                </Box>
-                {errors.recurrence && (
-                  <Typography variant="caption" color="error" sx={{ mt: 1, display: 'block' }}>
-                    {errors.recurrence}
-                  </Typography>
-                )}
+                      </Grid>
+                    </>
+                  )}
+                  {/* Yaklaşan derslerin önizlemesi */}
+                  {previewOccurrences.length > 0 && (
+                    <Grid item xs={12}>
+                      <Alert severity="info" sx={{ mt: 2 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
+                          Sonraki 5 planlanmış ders:
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                          {previewOccurrences.map((occurrence, index) => (
+                            <Chip
+                              key={index}
+                              label={`${new Date(occurrence.date).toLocaleDateString()} ${occurrence.time}`}
+                              size="small"
+                              variant="outlined"
+                            />
+                          ))}
+                        </Box>
+                      </Alert>
+                    </Grid>
+                  )}
+                </>
+              )}
+              {/* İsteğe bağlı alanlar: Konum, Gereksinimler, Fiyat, Seviye, Etiketler */}
+              <Grid item xs={12} md={6}>
+                <TextField
+                  fullWidth
+                  label="Konum (İsteğe Bağlı)"
+                  value={formData.location}
+                  onChange={(e) => handleInputChange('location', e.target.value)}
+                  placeholder="örn: Ana Salon, Minder Alanı 1"
+                />
               </Grid>
-            )}
-
-            {formData.recurrence.type !== 'none' && (
-              <>
-                <Grid item xs={12} md={6}>
-                  <TextField
-                    fullWidth
-                    label="Repeat every"
-                    type="number"
-                    value={formData.recurrence.interval}
-                    onChange={(e) => handleRecurrenceChange('interval', parseInt(e.target.value) || 1)}
-                    inputProps={{ min: 1, max: 12 }}
-                    helperText={`Every ${formData.recurrence.interval} ${formData.recurrence.type === 'daily' ? 'day(s)' : formData.recurrence.type === 'weekly' ? 'week(s)' : 'month(s)'}`}
-                  />
-                </Grid>
-
-                <Grid item xs={12} md={6}>
-                  <DatePicker
-                    label="End Date (Optional)"
-                    value={formData.recurrence.endDate ? new Date(formData.recurrence.endDate) : null}
-                    onChange={(date) => handleRecurrenceChange('endDate', date?.toISOString().split('T')[0] || undefined)}
-                    slotProps={{
-                      textField: {
-                        fullWidth: true,
-                      }
-                    }}
-                  />
-                </Grid>
-              </>
-            )}
-
-            {/* Preview upcoming classes */}
-            {previewOccurrences.length > 0 && (
-              <Grid item xs={12}>
-                <Alert severity="info" sx={{ mt: 2 }}>
-                  <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
-                    Next 5 scheduled classes:
-                  </Typography>
-                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                    {previewOccurrences.map((occurrence, index) => (
-                      <Chip
-                        key={index}
-                        label={`${new Date(occurrence.date).toLocaleDateString()} at ${occurrence.time}`}
-                        size="small"
-                        variant="outlined"
-                      />
+              <Grid item xs={12} md={6}>
+                <TextField
+                  fullWidth
+                  type="number"
+                  label="Fiyat (İsteğe Bağlı)"
+                  value={formData.price}
+                  onChange={(e) => handleInputChange('price', parseFloat(e.target.value) || 0)}
+                  inputProps={{ min: 0, step: 0.01 }}
+                  InputProps={{
+                    startAdornment: <InputAdornment position="start">$</InputAdornment>,
+                  }}
+                />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <FormControl fullWidth>
+                  <InputLabel>Seviye (İsteğe Bağlı)</InputLabel>
+                  <Select
+                    value={formData.level}
+                    onChange={(e) => handleInputChange('level', e.target.value)}
+                    label="Seviye (İsteğe Bağlı)"
+                  >
+                    {LEVEL_OPTIONS.map((level) => (
+                      <MenuItem key={level} value={level}>{level}</MenuItem>
                     ))}
-                  </Box>
-                </Alert>
+                  </Select>
+                </FormControl>
               </Grid>
-            )}
-          </Grid>
-        </DialogContent>
+              <Grid item xs={12} md={6}>
+                <Autocomplete
+                  multiple
+                  freeSolo
+                  options={[]} // Serbest etiketlere izin ver
+                  value={formData.tags || []}
+                  onChange={(_, newValue) => handleInputChange('tags', newValue)}
+                  renderTags={(value, getTagProps) =>
+                    value.map((option, index) => (
+                      <Chip label={option} {...getTagProps({ index })} key={index} />
+                    ))
+                  }
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Etiketler (İsteğe Bağlı)"
+                      placeholder="örn: başlangıç-dostu, sparring"
+                    />
+                  )}
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <Autocomplete
+                  multiple
+                  freeSolo
+                  options={[]} // Serbest gereksinimlere izin ver
+                  value={formData.requirements || []}
+                  onChange={(_, newValue) => handleInputChange('requirements', newValue)}
+                  renderTags={(value, getTagProps) =>
+                    value.map((option, index) => (
+                      <Chip label={option} {...getTagProps({ index })} key={index} />
+                    ))
+                  }
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Gereksinimler (İsteğe Bağlı)"
+                      placeholder="örn: su şişesi getir, ağızlık"
+                    />
+                  )}
+                />
+              </Grid>
+            </Grid>
+          </DialogContent>
 
-        <DialogActions sx={{ p: 3, gap: 2 }}>
-          <Button onClick={onClose} disabled={loading}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            variant="contained"
-            startIcon={loading ? null : <SaveIcon />}
-            disabled={loading}
-          >
-            {loading ? 'Saving...' : mode === 'create' ? 'Schedule Class' : 'Update Class'}
-          </Button>
-        </DialogActions>
+          <DialogActions sx={{ p: 3, gap: 2 }}>
+            <Button onClick={onClose} disabled={loading}>
+              İptal
+            </Button>
+            <Button
+              type="submit"
+              variant="contained"
+              startIcon={loading ? null : <SaveIcon />}
+              disabled={loading}
+            >
+              {loading ? 'Kaydediliyor...' : mode === 'create' ? 'Ders Planla' : 'Dersi Güncelle'}
+            </Button>
+          </DialogActions>
+        </form>
       </Dialog>
     </LocalizationProvider>
   );

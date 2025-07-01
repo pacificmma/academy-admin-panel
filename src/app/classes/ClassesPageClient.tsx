@@ -1,4 +1,4 @@
-// src/app/classes/ClassesPageClient.tsx (Modified to use fixed User type and instance editing logic)
+// src/app/classes/ClassesPageClient.tsx (Güncellendi)
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -32,7 +32,7 @@ import { useAuth } from '@/app/contexts/AuthContext';
 import { format, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 
 export default function ClassesPageClient() {
-  const { user } = useAuth();
+  const { user } = useAuth(); // `user` is typed as AuthUser | null from AuthContextType
   const [tabIndex, setTabIndex] = useState(0);
   const [schedules, setSchedules] = useState<ClassSchedule[]>([]);
   const [instances, setInstances] = useState<ClassInstance[]>([]);
@@ -45,24 +45,24 @@ export default function ClassesPageClient() {
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [deleteTargetType, setDeleteTargetType] = useState<'schedule' | 'instance' | null>(null);
   const [instructors, setInstructors] = useState<Array<{ id: string; name: string; specialties?: string[] }>>([]);
+  const [calendarViewMode, setCalendarViewMode] = useState<'day' | 'week' | 'month'>('week');
 
-  // Filters for instances tab
   const [filters, setFilters] = useState<ClassFilters>({
     classType: undefined,
     instructorId: undefined,
-    date: format(new Date(), 'yyyy-MM-dd'), // Default to today
+    date: format(new Date(), 'yyyy-MM-dd'),
     searchTerm: '',
   });
 
   const loadInstructors = useCallback(async () => {
     try {
       const res = await fetch('/api/staff');
-      if (!res.ok) throw new Error('Failed to fetch instructors');
+      if (!res.ok) throw new Error('Eğitmenler getirilemedi');
       const data = await res.json();
-      setInstructors(data.data.map((staff: any) => ({ id: staff.id, name: staff.fullName, specialties: staff.specialties || [] })));
+      setInstructors(data.data.map((staff: any) => ({ id: staff.uid, name: staff.fullName, specialties: staff.specializations || [] })));
     } catch (err: any) {
-      console.error('Failed to load instructors:', err);
-      setError(err.message || 'Failed to load instructors.');
+      console.error('Eğitmenler yüklenemedi:', err);
+      setError(err.message || 'Eğitmenler yüklenemedi.');
     }
   }, []);
 
@@ -71,12 +71,12 @@ export default function ClassesPageClient() {
     setError(null);
     try {
       const res = await fetch('/api/classes/schedules');
-      if (!res.ok) throw new Error('Failed to fetch class schedules');
+      if (!res.ok) throw new Error('Ders programları getirilemedi');
       const data = await res.json();
       setSchedules(data.data || []);
     } catch (err: any) {
-      console.error('Failed to load class schedules:', err);
-      setError(err.message || 'Failed to load class schedules.');
+      console.error('Ders programları yüklenemedi:', err);
+      setError(err.message || 'Ders programları yüklenemedi.');
     } finally {
       setLoading(false);
     }
@@ -87,62 +87,65 @@ export default function ClassesPageClient() {
     setError(null);
     try {
       const queryParams = new URLSearchParams();
-      // Ensure date filter is for today and future for "Upcoming Classes"
       const today = format(new Date(), 'yyyy-MM-dd');
-      queryParams.append('date', filters.date || today); // Use filter date, or today
+
+      if (filters.date) {
+        queryParams.append('startDate', filters.date);
+      } else {
+        queryParams.append('startDate', today);
+      }
 
       if (filters.classType) queryParams.append('classType', filters.classType);
       if (filters.instructorId) queryParams.append('instructorId', filters.instructorId);
       if (filters.searchTerm) queryParams.append('search', filters.searchTerm);
+      if (tabIndex === 2 && user?.uid) {
+        queryParams.append('instructorId', user.uid);
+      }
 
       const res = await fetch(`/api/classes/instances?${queryParams.toString()}`);
-      if (!res.ok) throw new Error('Failed to fetch class instances');
+      if (!res.ok) {
+          const errorData = await res.json();
+          throw new Error(errorData.error || 'Ders örnekleri getirilemedi');
+      }
       const data = await res.json();
-      // Filter out past classes on the client-side if date filter is not specific to past dates
-      const upcoming = data.data.filter((instance: ClassInstance) => {
-        const instanceDateTime = parseISO(`${instance.date}T${instance.startTime}`);
-        return instanceDateTime >= new Date(); // Only show instances that are today or in the future
-      });
-      setInstances(upcoming || []);
+      setInstances(data.data || []);
     } catch (err: any) {
-      console.error('Failed to load class instances:', err);
-      setError(err.message || 'Failed to load class instances.');
+      console.error('Ders örnekleri yüklenemedi:', err);
+      setError(err.message || 'Ders örnekleri yüklenemedi.');
     } finally {
       setLoading(false);
     }
-  }, [filters]); // Depend on filters for reloading
+  }, [filters, tabIndex, user?.uid]);
 
   useEffect(() => {
     loadInstructors();
     if (tabIndex === 0) {
       loadClassSchedules();
-    } else if (tabIndex === 1) {
-      loadClassInstances();
-    } else if (tabIndex === 2 && user?.role === 'trainer') {
-      // For 'My Schedule' tab, load instances specific to the logged-in trainer
-      setFilters(prev => ({ ...prev, instructorId: user.uid, date: format(new Date(), 'yyyy-MM-dd') }));
+    } else if (tabIndex === 1 || (tabIndex === 2 && user?.role === 'trainer')) {
       loadClassInstances();
     }
-  }, [tabIndex, loadClassSchedules, loadClassInstances, loadInstructors, user]); // Added user to dependencies
+  }, [tabIndex, loadClassSchedules, loadClassInstances, loadInstructors, user]);
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabIndex(newValue);
-    // Reset filters when changing tabs, or set appropriate defaults
-    if (newValue === 1) { // Upcoming Classes tab
+    if (newValue === 1) {
       setFilters({
         classType: undefined,
         instructorId: undefined,
         date: format(new Date(), 'yyyy-MM-dd'),
         searchTerm: '',
       });
-    } else if (newValue === 0) { // Class Schedules tab
-        // No filters for schedules currently, but clear if any were applied
+      setCalendarViewMode('week');
+    } else if (newValue === 0) {
         setFilters({
             classType: undefined,
             instructorId: undefined,
             date: undefined,
             searchTerm: '',
         });
+    } else if (newValue === 2) {
+        setFilters(prev => ({ ...prev, instructorId: user?.uid, date: format(new Date(), 'yyyy-MM-dd') }));
+        setCalendarViewMode('week');
     }
   };
 
@@ -172,19 +175,19 @@ export default function ClassesPageClient() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(formData),
+          credentials: 'include',
         });
       } else {
-        // Handle editing either a schedule or an instance
-        if (!editingClass) throw new Error('No class selected for editing.');
+        if (!editingClass) throw new Error('Düzenlenecek ders seçilmedi.');
 
-        if ('recurrence' in editingClass) { // It's a ClassSchedule
+        if ('recurrence' in editingClass) {
           res = await fetch(`/api/classes/schedules/${editingClass.id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(formData),
+            credentials: 'include',
           });
-        } else { // It's a ClassInstance
-          // For instances, only specific fields can be updated, and recurrence is not applicable.
+        } else {
           const instanceUpdateData = {
             name: formData.name,
             description: formData.description,
@@ -194,40 +197,44 @@ export default function ClassesPageClient() {
             duration: formData.duration,
             date: formData.startDate,
             startTime: formData.startTime,
-            // location, requirements, price, level, tags are not part of ClassFormData for instance update
-            // if these fields were needed, they would need to be passed explicitly or part of the instanceUpdateSchema
+            location: formData.location,
+            requirements: formData.requirements,
+            price: formData.price,
+            level: formData.level,
+            tags: formData.tags,
           };
           res = await fetch(`/api/classes/instances/${editingClass.id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(instanceUpdateData),
+            credentials: 'include',
           });
         }
       }
 
       if (!res.ok) {
         const errorData = await res.json();
-        throw new Error(errorData.error || `Failed to ${formMode} class`);
+        throw new Error(errorData.error || `Ders ${formMode} işlemi başarısız oldu`);
       }
 
-      // Reload appropriate data based on the active tab
       if (tabIndex === 0) {
         loadClassSchedules();
       } else {
-        loadClassInstances(); // This will reload for tab 1 and 2 (My Schedule)
+        loadClassInstances();
       }
       handleCloseFormDialog();
     } catch (err: any) {
-      console.error(`Error ${formMode}ing class:`, err);
-      setError(err.message || `Failed to ${formMode} class.`);
+      console.error(`Ders ${formMode} işlemi hatası:`, err);
+      setError(err.message || `Ders ${formMode} işlemi başarısız oldu.`);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDeleteClass = (id: string, type: 'schedule' | 'instance') => {
-    setDeleteTargetId(id);
+  const handleDeleteClass = (data: ClassSchedule | ClassInstance, type: 'schedule' | 'instance') => {
+    setDeleteTargetId(data.id);
     setDeleteTargetType(type);
+    setEditingClass(data);
     setIsDeleteDialogOpen(true);
   };
 
@@ -238,17 +245,17 @@ export default function ClassesPageClient() {
     try {
       const endpoint = deleteTargetType === 'schedule'
         ? `/api/classes/schedules/${deleteTargetId}`
-        : `/api/classes/instances/${deleteTargetId}`; // DELETE for instance means cancellation (soft delete)
+        : `/api/classes/instances/${deleteTargetId}`;
       const res = await fetch(endpoint, {
         method: 'DELETE',
+        credentials: 'include',
       });
 
       if (!res.ok) {
         const errorData = await res.json();
-        throw new Error(errorData.error || `Failed to delete ${deleteTargetType}`);
+        throw new Error(errorData.error || `${deleteTargetType} silme başarısız oldu`);
       }
 
-      // Reload appropriate data
       if (tabIndex === 0) {
         loadClassSchedules();
       } else {
@@ -257,9 +264,10 @@ export default function ClassesPageClient() {
       setIsDeleteDialogOpen(false);
       setDeleteTargetId(null);
       setDeleteTargetType(null);
+      setEditingClass(null);
     } catch (err: any) {
-      console.error(`Error deleting ${deleteTargetType}:`, err);
-      setError(err.message || `Failed to delete ${deleteTargetType}.`);
+      console.error(`${deleteTargetType} silme hatası:`, err);
+      setError(err.message || `${deleteTargetType} silme başarısız oldu.`);
     } finally {
       setLoading(false);
     }
@@ -269,22 +277,25 @@ export default function ClassesPageClient() {
     setIsDeleteDialogOpen(false);
     setDeleteTargetId(null);
     setDeleteTargetType(null);
+    setEditingClass(null);
   };
 
   const handleInstanceAction = useCallback(async (instanceId: string, action: 'start' | 'end' | 'cancel') => {
     setLoading(true);
     try {
       const res = await fetch(`/api/classes/instances/${instanceId}/${action}`, {
-        method: 'PATCH', // Using PATCH for status updates
+        method: 'POST',
+        credentials: 'include',
+        body: JSON.stringify({ /* payload if any needed, e.g., for 'end' */ }),
       });
       if (!res.ok) {
         const errorData = await res.json();
-        throw new Error(errorData.error || `Failed to ${action} class`);
+        throw new Error(errorData.error || `Ders ${action} işlemi başarısız oldu`);
       }
-      loadClassInstances(); // Reload instances to reflect status change
+      loadClassInstances();
     } catch (err: any) {
-      console.error(`Error ${action}ing class instance:`, err);
-      setError(err.message || `Failed to ${action} class.`);
+      console.error(`Ders örneği ${action} işlemi hatası:`, err);
+      setError(err.message || `Ders ${action} işlemi başarısız oldu.`);
     } finally {
       setLoading(false);
     }
@@ -295,11 +306,21 @@ export default function ClassesPageClient() {
     setFilters(prev => ({ ...prev, [field]: value }));
   };
 
+  const handleCalendarDateClick = (date: Date) => {
+    setFilters(prev => ({ ...prev, date: format(date, 'yyyy-MM-dd') }));
+    handleCreateClassClick();
+  };
+
+  const handleCalendarViewModeChange = (mode: 'day' | 'week' | 'month') => {
+    setCalendarViewMode(mode);
+  };
+
+
   return (
     <Box sx={{ p: 3 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4" component="h1">
-          Class Management
+          Ders Yönetimi
         </Typography>
         {(user?.role === 'admin' || user?.role === 'staff') && (
           <Button
@@ -307,19 +328,19 @@ export default function ClassesPageClient() {
             startIcon={<AddIcon />}
             onClick={handleCreateClassClick}
           >
-            Schedule New Class
+            Yeni Ders Planla
           </Button>
         )}
       </Box>
 
       <Tabs value={tabIndex} onChange={handleTabChange} sx={{ mb: 3 }}>
-        <Tab label="Class Schedules" />
-        <Tab label="Upcoming Classes" />
-        {user?.role === 'trainer' && <Tab label="My Schedule" />}
+        <Tab label="Ders Programları" />
+        <Tab label="Yaklaşan Dersler" />
+        {user?.role === 'trainer' && <Tab label="Benim Programım" />}
       </Tabs>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
           {error}
         </Alert>
       )}
@@ -336,7 +357,7 @@ export default function ClassesPageClient() {
             <Grid container spacing={3}>
               {schedules.length === 0 ? (
                 <Grid item xs={12}>
-                  <Alert severity="info">No class schedules found. Create one to get started!</Alert>
+                  <Alert severity="info">Ders programı bulunamadı. Başlamak için bir tane oluşturun!</Alert>
                 </Grid>
               ) : (
                 schedules.map((schedule) => (
@@ -345,7 +366,7 @@ export default function ClassesPageClient() {
                       classData={schedule}
                       type="schedule"
                       onEdit={handleEditClass}
-                      onDelete={handleDeleteClass}
+                      onDelete={(id, type) => handleDeleteClass(schedule, type)}
                     />
                   </Grid>
                 ))
@@ -359,7 +380,7 @@ export default function ClassesPageClient() {
                 <Grid item xs={12} sm={4}>
                   <TextField
                     fullWidth
-                    label="Search Classes"
+                    label="Dersleri Ara"
                     value={filters.searchTerm}
                     onChange={(e) => handleFilterChange('searchTerm', e.target.value)}
                     InputProps={{
@@ -373,13 +394,13 @@ export default function ClassesPageClient() {
                 </Grid>
                 <Grid item xs={12} sm={3}>
                   <FormControl fullWidth>
-                    <InputLabel>Class Type</InputLabel>
+                    <InputLabel>Ders Tipi</InputLabel>
                     <Select
                       value={filters.classType || ''}
                       onChange={(e) => handleFilterChange('classType', e.target.value as ClassType)}
-                      label="Class Type"
+                      label="Ders Tipi"
                     >
-                      <MenuItem value=""><em>Any</em></MenuItem>
+                      <MenuItem value=""><em>Herhangi</em></MenuItem>
                       {CLASS_TYPE_OPTIONS.map((type) => (
                         <MenuItem key={type} value={type}>{type}</MenuItem>
                       ))}
@@ -388,13 +409,13 @@ export default function ClassesPageClient() {
                 </Grid>
                 <Grid item xs={12} sm={3}>
                   <FormControl fullWidth>
-                    <InputLabel>Instructor</InputLabel>
+                    <InputLabel>Eğitmen</InputLabel>
                     <Select
                       value={filters.instructorId || ''}
                       onChange={(e) => handleFilterChange('instructorId', e.target.value as string)}
-                      label="Instructor"
+                      label="Eğitmen"
                     >
-                      <MenuItem value=""><em>Any</em></MenuItem>
+                      <MenuItem value=""><em>Herhangi</em></MenuItem>
                       {instructors.map((instructor) => (
                         <MenuItem key={instructor.id} value={instructor.id}>{instructor.name}</MenuItem>
                       ))}
@@ -405,7 +426,7 @@ export default function ClassesPageClient() {
                   <TextField
                     fullWidth
                     type="date"
-                    label="Date"
+                    label="Tarih"
                     value={filters.date}
                     onChange={(e) => handleFilterChange('date', e.target.value)}
                     InputLabelProps={{ shrink: true }}
@@ -414,14 +435,13 @@ export default function ClassesPageClient() {
               </Grid>
 
               <Grid container spacing={3}>
-                {instances.length === 0 ? ( // Displaying 'instances' directly here now, as API handles filtering
+                {instances.length === 0 ? (
                   <Grid item xs={12}>
-                    <Alert severity="info">No upcoming classes found for the selected filters.</Alert>
+                    <Alert severity="info">Seçilen filtrelere göre yaklaşan ders bulunamadı.</Alert>
                   </Grid>
                 ) : (
                   instances
                     .sort((a, b) => {
-                      // Sort by date then by time
                       const dateA = parseISO(a.date);
                       const dateB = parseISO(b.date);
                       if (dateA.getTime() !== dateB.getTime()) {
@@ -437,10 +457,10 @@ export default function ClassesPageClient() {
                           classData={instance}
                           type="instance"
                           onEdit={handleEditClass}
-                          onDelete={handleDeleteClass}
-                          onStartClass={handleInstanceAction}
-                          onEndClass={handleInstanceAction}
-                          onCancelClass={handleInstanceAction}
+                          onDelete={(id, type) => handleDeleteClass(instance, type)}
+                          onStartClass={(id) => handleInstanceAction(id, 'start')} // DÜZELTME
+                          onEndClass={(id) => handleInstanceAction(id, 'end')}     // DÜZELTME
+                          onCancelClass={(id) => handleInstanceAction(id, 'cancel')} // DÜZELTME
                         />
                       </Grid>
                     ))
@@ -452,7 +472,7 @@ export default function ClassesPageClient() {
           {tabIndex === 2 && user?.role === 'trainer' && (
             <Box>
               <Typography variant="h6" sx={{ mb: 2 }}>
-                My Scheduled Classes
+                Benim Planlanmış Derslerim
               </Typography>
               {loading ? (
                 <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
@@ -460,13 +480,17 @@ export default function ClassesPageClient() {
                 </Box>
               ) : (
                 <ClassCalendar
-                  // When on 'My Schedule' tab, instances are already filtered by instructorId
                   classes={instances}
+                  viewMode={calendarViewMode}
+                  onViewModeChange={handleCalendarViewModeChange}
+                  onClassClick={handleEditClass}
+                  onDateClick={handleCalendarDateClick}
+                  selectedDate={parseISO(filters.date || format(new Date(), 'yyyy-MM-dd'))}
                   onEditClass={handleEditClass}
-                  onDeleteClass={handleDeleteClass}
-                  onStartClass={handleInstanceAction}
-                  onEndClass={handleInstanceAction}
-                  onCancelClass={handleInstanceAction}
+                  onDeleteClass={(data) => handleDeleteClass(data, 'instance')} // DÜZELTME
+                  onStartClass={(id) => handleInstanceAction(id, 'start')} // DÜZELTME
+                  onEndClass={(id) => handleInstanceAction(id, 'end')}     // DÜZELTME
+                  onCancelClass={(id) => handleInstanceAction(id, 'cancel')} // DÜZELTME
                   userRole={user.role}
                   userId={user.uid}
                 />
@@ -480,13 +504,27 @@ export default function ClassesPageClient() {
         open={isFormDialogOpen}
         onClose={handleCloseFormDialog}
         onSubmit={handleSubmitForm}
-        classSchedule={formMode === 'edit' && editingClass && 'recurrence' in editingClass ? editingClass : null}
-        // When editing an instance, pass relevant instance data to form data fields
-        // Note: ClassFormDialog is primarily for schedules. For instance-specific edits,
-        // it's populating schedule-related fields. This is acceptable for basic fields.
-        // If more complex instance-specific fields (e.g., actualDuration, notes)
-        // were to be edited, a dedicated instance form or more advanced ClassFormDialog
-        // would be needed.
+        classSchedule={editingClass && 'recurrence' in editingClass ? editingClass : null}
+        initialClassDataForInstanceEdit={
+          editingClass && !('recurrence' in editingClass)
+            ? {
+                name: editingClass.name,
+                description: editingClass.notes || editingClass.description || '',
+                classType: editingClass.classType,
+                instructorId: editingClass.instructorId,
+                maxParticipants: editingClass.maxParticipants,
+                duration: editingClass.actualDuration || editingClass.duration,
+                startDate: editingClass.date,
+                startTime: editingClass.startTime,
+                recurrence: { type: 'none', interval: 1 },
+                location: editingClass.location || '',
+                requirements: [],
+                price: 0,
+                level: 'All Levels',
+                tags: [],
+              }
+            : undefined
+        }
         mode={formMode}
         instructors={instructors}
       />
@@ -495,8 +533,16 @@ export default function ClassesPageClient() {
         open={isDeleteDialogOpen}
         onClose={handleCancelDelete}
         onConfirm={handleConfirmDelete}
-        title={`Confirm ${deleteTargetType === 'schedule' ? 'Schedule Deletion' : 'Class Cancellation'}`}
-        message={`Are you sure you want to ${deleteTargetType === 'schedule' ? 'delete this class schedule and all its associated instances' : 'cancel this class instance'}? This action cannot be undone.`}
+        title={`Onayı ${deleteTargetType === 'schedule' ? 'Program Silme' : 'Ders İptali'}`}
+        itemName={editingClass?.name || ''}
+        itemType={deleteTargetType === 'schedule' ? 'ders programı' : 'ders örneği'}
+        loading={loading}
+        warningMessage={deleteTargetType === 'schedule' ? "Bu işlem ders programını VE İLGİLİ TÜM ÖRNEKLERİNİ silecek." : "Bu işlem bu belirli ders örneğini iptal edecek."}
+        additionalInfo={editingClass && !('recurrence' in editingClass) ? [
+          { label: 'Tarih', value: format(parseISO(editingClass.date), 'PPP') },
+          { label: 'Saat', value: editingClass.startTime },
+          { label: 'Eğitmen', value: editingClass.instructorName }
+        ] : []}
       />
     </Box>
   );

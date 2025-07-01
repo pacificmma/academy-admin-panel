@@ -1,27 +1,24 @@
-// HIZLI GÜVENLİK DÜZELTMESİ - Mevcut sistemi minimum değişiklikle güvenli hale getirme
-
-// 1. Enhanced LoginForm with basic security
-// src/app/components/forms/LoginForm.tsx - SECURE VERSION
+// src/app/components/forms/LoginForm.tsx - GÜVENLİ VERSİYON (Güncellendi)
 'use client';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { 
-  Box, 
-  TextField, 
-  Button, 
+import {
+  Box,
+  TextField,
+  Button,
   InputAdornment,
   IconButton,
   Collapse
 } from '@mui/material';
-import { 
-  Email as EmailIcon, 
-  Lock as LockIcon, 
-  Visibility, 
+import {
+  Email as EmailIcon,
+  Lock as LockIcon,
+  Visibility,
   VisibilityOff,
   Login as LoginIcon
 } from '@mui/icons-material';
-import CryptoJS from 'crypto-js';
+// import CryptoJS from 'crypto-js'; // KALDIRILDI: Artık kullanılmıyor
 import Alert from '@/app/components/ui/Alert';
 import { useAuth } from '@/app/contexts/AuthContext';
 import { LoginCredentials } from '@/app/types';
@@ -52,41 +49,42 @@ export default function SecureLoginForm() {
     setError(null);
 
     try {
-      // Send plaintext password directly (over HTTPS)
+      // Şifreyi doğrudan gönder (HTTPS üzerinden)
       const payload = {
         email: formData.email,
         password: formData.password,
       };
 
-      // Clear password from memory immediately
+      // Şifreyi bellekten hemen temizle
       setFormData(prev => ({ ...prev, password: '' }));
 
-      const response = await fetch('/api/auth/secure-login', { // Or just '/api/auth/login' if you unify
+      const response = await fetch('/api/auth/secure-login', { // Güvenli API endpoint'i
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(payload), // Send payload directly
+        body: JSON.stringify(payload),
         credentials: 'include',
       });
 
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.error || 'Login failed');
+        throw new Error(result.error || 'Giriş başarısız oldu');
       }
 
       if (result.success) {
         await refreshSession();
+        // Oturumun istemci tarafında tamamen aktif olması için tam sayfa yenilemeyi zorla
         await new Promise(resolve => setTimeout(resolve, 100));
 
         const redirectTo = result.data?.redirectTo || '/dashboard';
         router.replace(redirectTo);
-        window.location.href = redirectTo; // Force full page reload for session to be fully active client-side
+        window.location.href = redirectTo;
       }
     } catch (err: any) {
-      setError(err.message || 'An error occurred during login');
-      // Reset password field on error
+      setError(err.message || 'Giriş sırasında bir hata oluştu');
+      // Hata durumunda şifre alanını sıfırla
       setFormData({ email: formData.email, password: '' });
     } finally {
       setIsLoading(false);
@@ -97,7 +95,7 @@ export default function SecureLoginForm() {
 
   return (
     <Box component="form" onSubmit={handleSubmit} sx={{ width: '100%' }}>
-      {/* Error Alert */}
+      {/* Hata Uyarısı */}
       <Collapse in={!!error}>
         <Box sx={{ mb: 3 }}>
           {error && (
@@ -110,11 +108,11 @@ export default function SecureLoginForm() {
         </Box>
       </Collapse>
 
-      {/* Email Field */}
+      {/* E-posta Alanı */}
       <Box sx={{ mb: 3 }}>
         <TextField
           fullWidth
-          label="Email"
+          label="E-posta"
           name="email"
           type="email"
           value={formData.email}
@@ -134,11 +132,11 @@ export default function SecureLoginForm() {
         />
       </Box>
 
-      {/* Password Field */}
+      {/* Şifre Alanı */}
       <Box sx={{ mb: 4 }}>
         <TextField
           fullWidth
-          label="Password"
+          label="Şifre"
           name="password"
           type={showPassword ? 'text' : 'password'}
           value={formData.password}
@@ -156,7 +154,7 @@ export default function SecureLoginForm() {
             endAdornment: (
               <InputAdornment position="end">
                 <IconButton
-                  aria-label="toggle password visibility"
+                  aria-label="şifre görünürlüğünü değiştir"
                   onClick={() => setShowPassword(!showPassword)}
                   edge="end"
                   disabled={isLoading}
@@ -170,7 +168,7 @@ export default function SecureLoginForm() {
         />
       </Box>
 
-      {/* Submit Button */}
+      {/* Gönder Butonu */}
       <Button
         type="submit"
         variant="contained"
@@ -215,10 +213,10 @@ export default function SecureLoginForm() {
                 },
               }}
             />
-            Signing In...
+            Giriş Yapılıyor...
           </Box>
         ) : (
-          'Sign In'
+          'Giriş Yap'
         )}
       </Button>
     </Box>

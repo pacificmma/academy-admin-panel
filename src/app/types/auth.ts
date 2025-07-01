@@ -1,6 +1,5 @@
-// src/app/types/auth.ts (Updated for consistency)
-// src/app/types/auth.ts - FIXED Authentication types with better security
-export type UserRole = 'admin' | 'staff' | 'trainer' | 'member'; // Defined UserRole here for direct access within this file
+// src/app/types/auth.ts (Updated to include 'role' in AuthUser)
+export type UserRole = 'admin' | 'staff' | 'trainer' | 'member';
 
 export interface AuthSession {
   uid: string;
@@ -14,7 +13,7 @@ export interface User {
   uid: string;
   email: string;
   fullName: string;
-  role: UserRole; // Added this property to resolve the compilation error
+  role: UserRole; // This was already here, keeping for consistency
   isActive: boolean;
 }
 
@@ -31,13 +30,13 @@ export interface SessionData {
 
 export interface LoginCredentials {
   email: string;
-  password: string; // Send plaintext password over HTTPS
+  password: string;
 }
 
 export interface AuthUser {
   uid: string;
   email: string;
-  role: UserRole;
+  role: UserRole; // Added this property to resolve the compilation error when using `user?.role`
   fullName: string;
   isActive: boolean;
   createdAt: string;
@@ -60,7 +59,7 @@ export interface AuthContextType {
   unprotectSession: () => void;
 }
 
-// API Response interfaces - SECURE VERSIONS
+// API Response interfaces
 export interface LoginResponse {
   success: boolean;
   data?: {
@@ -112,13 +111,10 @@ export interface SecureUserData {
   lastFailedLoginAt?: string;
   accountLockoutUntil?: string;
   securityFlags?: string[];
-  // Assuming 'password' (bcrypt hash) is stored here for backend comparison
-  password?: string; // This field should only exist in the database, not in client-side types
+  password?: string;
 }
 
 export interface UserDocument extends AuthUser, SecureUserData {
-  // Complete user document structure for Firestore
 }
 
-// Client-safe user data (excludes sensitive server-side fields)
 export type ClientSafeUser = Omit<UserDocument, keyof SecureUserData>;
