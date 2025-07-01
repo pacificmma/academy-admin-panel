@@ -45,29 +45,6 @@ export default function SecureLoginForm() {
     if (error) setError(null);
   };
 
-  // Create secure payload without exposing plain text password
-  const createSecurePayload = (email: string, password: string) => {
-    const timestamp = Date.now();
-    const nonce = CryptoJS.lib.WordArray.random(128/8).toString();
-    
-    // Hash password with timestamp and nonce for basic security
-    const saltedPassword = password + timestamp + nonce;
-    const hashedPassword = CryptoJS.SHA256(saltedPassword).toString();
-    
-    // Create signature to prevent tampering
-    const signature = CryptoJS.HmacSHA256(
-      `${email}${hashedPassword}${timestamp}${nonce}`,
-      process.env.NEXT_PUBLIC_APP_SECRET || 'pacific-mma-secret-2024'
-    ).toString();
-
-    return {
-      email,
-      passwordHash: hashedPassword,
-      timestamp,
-      nonce,
-      signature
-    };
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,18 +52,21 @@ export default function SecureLoginForm() {
     setError(null);
 
     try {
-      // Create secure payload
-      const securePayload = createSecurePayload(formData.email, formData.password);
-      
+      // Send plaintext password directly (over HTTPS)
+      const payload = {
+        email: formData.email,
+        password: formData.password,
+      };
+
       // Clear password from memory immediately
       setFormData(prev => ({ ...prev, password: '' }));
 
-      const response = await fetch('/api/auth/secure-login', {
+      const response = await fetch('/api/auth/secure-login', { // Or just '/api/auth/login' if you unify
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(securePayload),
+        body: JSON.stringify(payload), // Send payload directly
         credentials: 'include',
       });
 
@@ -99,14 +79,14 @@ export default function SecureLoginForm() {
       if (result.success) {
         await refreshSession();
         await new Promise(resolve => setTimeout(resolve, 100));
-        
+
         const redirectTo = result.data?.redirectTo || '/dashboard';
         router.replace(redirectTo);
-        window.location.href = redirectTo;
+        window.location.href = redirectTo; // Force full page reload for session to be fully active client-side
       }
     } catch (err: any) {
       setError(err.message || 'An error occurred during login');
-      // Reset form on error
+      // Reset password field on error
       setFormData({ email: formData.email, password: '' });
     } finally {
       setIsLoading(false);

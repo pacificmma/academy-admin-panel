@@ -7,7 +7,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { NextRequest } from "next/server";
 
 // FIXED: Changed function name and export style to fit Next.js API routes
-export const POST_START_CLASS = requireTrainer(async (request: NextRequest, context: RequestContext) => {
+export async function POST(request: NextRequest, context: RequestContext) {
     try {
       const { session, params } = context;
       if (!params?.id) {
@@ -43,4 +43,4 @@ export const POST_START_CLASS = requireTrainer(async (request: NextRequest, cont
       console.error('Start class error:', error);
       return errorResponse('Failed to start class');
     }
-  });
+  };

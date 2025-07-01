@@ -7,7 +7,7 @@ import { getClassTypeColor } from "@/app/types/class";
 import { NextRequest } from "next/server";
 
 // FIXED: Changed function name and export style to fit Next.js API routes
-export const GET_STATS = requireAdmin(async (request: NextRequest, context: RequestContext) => {
+export async function GET(request: NextRequest, context: RequestContext) {
     try {
       const { session } = context;
   
@@ -73,4 +73,4 @@ export const GET_STATS = requireAdmin(async (request: NextRequest, context: Requ
       console.error('Get stats error:', error);
       return errorResponse('Failed to load statistics');
     }
-  });
+  };

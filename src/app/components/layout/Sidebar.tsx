@@ -175,7 +175,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               mb: 1,
             }}
           >
-            PACIFIC MMA
+            PACIFIC MMA ACADEMY
           </Typography>
           <Chip
             label="Admin Panel"

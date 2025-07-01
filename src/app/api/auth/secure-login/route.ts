@@ -3,8 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/app/lib/firebase/admin';
 import { createSession, setSessionCookie } from '@/app/lib/auth/session';
 import { UserRole } from '@/app/types/auth';
-import CryptoJS from 'crypto-js';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcryptjs'; // Ensure bcrypt is imported. You might need to install 'bcryptjs' if not already present.
 
 // ============================================
 // TYPES & INTERFACES
@@ -15,7 +14,7 @@ interface UserDocument {
   fullName: string;
   isActive: boolean;
   email: string;
-  password: string; // Hashed password from Firestore
+  password: string; // Hashed password from Firestore (bcrypt hash)
   createdAt: string;
   updatedAt?: string;
   lastLoginAt?: string;
@@ -23,13 +22,7 @@ interface UserDocument {
   lastLoginUserAgent?: string;
 }
 
-interface SecureLoginPayload {
-  email: string;
-  passwordHash: string;
-  timestamp: number;
-  nonce: string;
-  signature: string;
-}
+// Removed SecureLoginPayload interface as client will send plaintext password
 
 interface FailedAttempt {
   count: number;
@@ -45,7 +38,7 @@ const SECURITY_CONFIG = {
   maxFailedAttempts: 5,
   lockoutDuration: 15 * 60 * 1000, // 15 minutes
   attemptWindow: 15 * 60 * 1000, // 15 minutes
-  maxRequestAge: 300000, // 5 minutes
+  // maxRequestAge is no longer relevant for password verification if plaintext is sent
 };
 
 const failedAttempts = new Map<string, FailedAttempt>();
@@ -57,26 +50,26 @@ const failedAttempts = new Map<string, FailedAttempt>();
 function getClientIP(request: NextRequest): string {
   const xForwardedFor = request.headers.get('x-forwarded-for');
   const xRealIp = request.headers.get('x-real-ip');
-  
+
   if (xForwardedFor) {
     return xForwardedFor.split(',')[0].trim();
   }
-  
+
   return xRealIp || 'unknown';
 }
 
 function validateSecureLoginInput(body: any): {
   isValid: boolean;
   errors: string[];
-  sanitizedData?: SecureLoginPayload;
+  sanitizedData?: { email: string; password: string }; // Changed to expect plaintext password
 } {
   const errors: string[] = [];
-  
+
   if (!body || typeof body !== 'object') {
     return { isValid: false, errors: ['Invalid request body'] };
   }
 
-  const { email, passwordHash, timestamp, nonce, signature } = body;
+  const { email, password } = body; // Expect plaintext password directly
 
   // Email validation
   if (!email || typeof email !== 'string') {
@@ -88,54 +81,28 @@ function validateSecureLoginInput(body: any): {
     }
   }
 
-  // Timestamp validation (prevent replay attacks)
-  if (!timestamp || typeof timestamp !== 'number') {
-    errors.push('Invalid request timestamp');
+  // Password validation (basic checks for plaintext)
+  if (!password || typeof password !== 'string') {
+    errors.push('Password is required');
   } else {
-    const now = Date.now();
-    if (Math.abs(now - timestamp) > SECURITY_CONFIG.maxRequestAge) {
-      errors.push('Request expired. Please try again.');
+    // Basic length validation for plaintext password, adjust as per your policy
+    if (password.length < 6 || password.length > 128) {
+      errors.push('Invalid password length');
     }
   }
 
-  // Validate required fields
-  if (!passwordHash || typeof passwordHash !== 'string') {
-    errors.push('Invalid password format');
-  }
-
-  if (!nonce || typeof nonce !== 'string') {
-    errors.push('Invalid request nonce');
-  }
-
-  if (!signature || typeof signature !== 'string') {
-    errors.push('Invalid request signature');
-  }
-
-  // Validate signature to prevent tampering
-  if (email && passwordHash && timestamp && nonce && signature) {
-    const expectedSignature = CryptoJS.HmacSHA256(
-      `${email.toLowerCase().trim()}${passwordHash}${timestamp}${nonce}`,
-      process.env.APP_SECRET || 'pacific-mma-secret-2024'
-    ).toString();
-    
-    if (signature !== expectedSignature) {
-      errors.push('Request signature verification failed');
-    }
-  }
+  // Removed timestamp, nonce, signature validation as they are no longer used for direct password verification
 
   if (errors.length > 0) {
     return { isValid: false, errors };
   }
 
-  return { 
-    isValid: true, 
-    errors: [], 
+  return {
+    isValid: true,
+    errors: [],
     sanitizedData: {
       email: email.toLowerCase().trim(),
-      passwordHash,
-      timestamp,
-      nonce,
-      signature
+      password: password // Store plaintext password here temporarily for bcrypt comparison
     }
   };
 }
@@ -145,23 +112,23 @@ function checkAccountLockout(ip: string): { allowed: boolean; remainingTime: num
   if (!attempts) return { allowed: true, remainingTime: 0 };
 
   const now = Date.now();
-  
+
   if (attempts.blockedUntil && attempts.blockedUntil > now) {
-    return { 
-      allowed: false, 
-      remainingTime: attempts.blockedUntil - now 
+    return {
+      allowed: false,
+      remainingTime: attempts.blockedUntil - now
     };
   }
 
-  if (attempts.count >= SECURITY_CONFIG.maxFailedAttempts && 
+  if (attempts.count >= SECURITY_CONFIG.maxFailedAttempts &&
       now - attempts.lastAttempt < SECURITY_CONFIG.attemptWindow) {
-    
+
     const blockedUntil = now + SECURITY_CONFIG.lockoutDuration;
     attempts.blockedUntil = blockedUntil;
-    
-    return { 
-      allowed: false, 
-      remainingTime: SECURITY_CONFIG.lockoutDuration 
+
+    return {
+      allowed: false,
+      remainingTime: SECURITY_CONFIG.lockoutDuration
     };
   }
 
@@ -171,22 +138,22 @@ function checkAccountLockout(ip: string): { allowed: boolean; remainingTime: num
 function recordFailedAttempt(ip: string, reason: string, details?: any) {
   const now = Date.now();
   const current = failedAttempts.get(ip) || { count: 0, lastAttempt: 0 };
-  
+
   if (now - current.lastAttempt > SECURITY_CONFIG.attemptWindow) {
     current.count = 0;
   }
-  
+
   current.count++;
   current.lastAttempt = now;
-  
+
   failedAttempts.set(ip, current);
 
   // Log security event (only in development)
   if (process.env.NODE_ENV === 'development') {
-    console.warn(`Failed secure login attempt: ${reason}`, { 
-      ip, 
+    console.warn(`Failed secure login attempt: ${reason}`, {
+      ip,
       details,
-      timestamp: new Date().toISOString() 
+      timestamp: new Date().toISOString()
     });
   }
 }
@@ -195,24 +162,18 @@ function clearFailedAttempts(ip: string) {
   failedAttempts.delete(ip);
 }
 
+// Updated verifyPassword function to use bcrypt.compare
 async function verifyPassword(
-  clientPasswordHash: string, 
-  storedPasswordHash: string, 
-  timestamp: number, 
-  nonce: string
+  plaintextPassword: string, // Expect plaintext password from client
+  storedHashedPassword: string // Expect bcrypt hashed password from Firestore
 ): Promise<boolean> {
   try {
-    // Since we don't have the original password, we need to reconstruct the client hash
-    // This is a simplified approach - in a real system, you'd want to use proper password verification
-    
-    // For now, we'll compare against a known admin password hash
-    // In production, you should migrate to proper password hashing
-    const testPassword = "132412Kry"; // Your current password
-    const saltedPassword = testPassword + timestamp + nonce;
-    const expectedHash = CryptoJS.SHA256(saltedPassword).toString();
-    
-    return clientPasswordHash === expectedHash;
+    if (!plaintextPassword || !storedHashedPassword) {
+      return false;
+    }
+    return await bcrypt.compare(plaintextPassword, storedHashedPassword);
   } catch (error) {
+    console.error("Bcrypt comparison failed:", error);
     return false;
   }
 }
@@ -222,11 +183,11 @@ function addSecurityHeaders(response: NextResponse): NextResponse {
   response.headers.set('X-Frame-Options', 'DENY');
   response.headers.set('X-XSS-Protection', '1; mode=block');
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-  
+
   if (process.env.NODE_ENV === 'production') {
     response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
-  
+
   return response;
 }
 
@@ -234,7 +195,7 @@ function addSecurityHeaders(response: NextResponse): NextResponse {
 // MAIN SECURE LOGIN ENDPOINT
 // ============================================
 
-export async function POST(request: NextRequest) {  
+export async function POST(request: NextRequest) {
   const clientIP = getClientIP(request);
   const userAgent = request.headers.get('user-agent') || 'unknown';
 
@@ -243,9 +204,9 @@ export async function POST(request: NextRequest) {
     const lockoutCheck = checkAccountLockout(clientIP);
     if (!lockoutCheck.allowed) {
       const response = NextResponse.json(
-        { 
-          success: false, 
-          error: `Account temporarily locked. Try again in ${Math.ceil(lockoutCheck.remainingTime / 60000)} minutes.` 
+        {
+          success: false,
+          error: `Account temporarily locked. Try again in ${Math.ceil(lockoutCheck.remainingTime / 60000)} minutes.`
         },
         { status: 429 }
       );
@@ -265,7 +226,7 @@ export async function POST(request: NextRequest) {
       return addSecurityHeaders(response);
     }
 
-    // Validate and sanitize input
+    // Validate and sanitize input (now expects plaintext password)
     const validation = validateSecureLoginInput(body);
     if (!validation.isValid) {
       recordFailedAttempt(clientIP, 'invalid_input');
@@ -276,7 +237,7 @@ export async function POST(request: NextRequest) {
       return addSecurityHeaders(response);
     }
 
-    const { email, passwordHash, timestamp, nonce } = validation.sanitizedData!;
+    const { email, password } = validation.sanitizedData!; // Get plaintext password
 
     // Get Firebase user
     let firebaseUser;
@@ -296,7 +257,7 @@ export async function POST(request: NextRequest) {
     try {
       const userDocRef = adminDb.collection('staff').doc(firebaseUser.uid);
       const userSnapshot = await userDocRef.get();
-      
+
       if (!userSnapshot.exists) {
         recordFailedAttempt(clientIP, 'user_document_not_found', { uid: firebaseUser.uid });
         const response = NextResponse.json(
@@ -305,7 +266,7 @@ export async function POST(request: NextRequest) {
         );
         return addSecurityHeaders(response);
       }
-      
+
       const userData = userSnapshot.data();
       if (!userData) {
         recordFailedAttempt(clientIP, 'user_document_empty', { uid: firebaseUser.uid });
@@ -315,7 +276,7 @@ export async function POST(request: NextRequest) {
         );
         return addSecurityHeaders(response);
       }
-      
+
       userDoc = userData as UserDocument;
     } catch (error: any) {
       recordFailedAttempt(clientIP, 'firestore_error');
@@ -346,12 +307,10 @@ export async function POST(request: NextRequest) {
       return addSecurityHeaders(response);
     }
 
-    // Verify password using secure hash comparison
+    // Verify password using bcrypt (NEW)
     const isPasswordValid = await verifyPassword(
-      passwordHash, 
-      userDoc.password || '', 
-      timestamp, 
-      nonce
+      password, // Pass plaintext password
+      userDoc.password || '' // This should be the bcrypt hash from Firestore
     );
 
     if (!isPasswordValid) {
@@ -413,12 +372,12 @@ export async function POST(request: NextRequest) {
 
     // Set secure session cookie
     setSessionCookie(response, sessionToken);
-    
+
     return addSecurityHeaders(response);
 
   } catch (error: unknown) {
     recordFailedAttempt(clientIP, 'unexpected_error');
-    
+
     // Log error in development only
     if (process.env.NODE_ENV === 'development') {
       console.error('Secure login error:', {
@@ -428,7 +387,7 @@ export async function POST(request: NextRequest) {
         ip: clientIP,
       });
     }
-    
+
     const response = NextResponse.json(
       { success: false, error: 'An unexpected error occurred' },
       { status: 500 }
@@ -439,7 +398,7 @@ export async function POST(request: NextRequest) {
 
 // Handle OPTIONS for CORS
 export async function OPTIONS() {
-  const origin = process.env.NODE_ENV === 'production' 
+  const origin = process.env.NODE_ENV === 'production'
     ? process.env.NEXT_PUBLIC_APP_URL || 'https://your-domain.com'
     : 'http://localhost:3000';
 

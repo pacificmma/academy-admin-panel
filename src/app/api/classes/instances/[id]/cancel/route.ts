@@ -7,7 +7,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { NextRequest } from "next/server";
 
 // FIXED: Changed function name and export style to fit Next.js API routes
-export const POST_CANCEL_CLASS = requireAdmin(async (request: NextRequest, context: RequestContext) => {
+export async function POST(request: NextRequest, context: RequestContext) { 
     try {
       const { session, params } = context;
       if (!params?.id) {
@@ -54,4 +54,4 @@ export const POST_CANCEL_CLASS = requireAdmin(async (request: NextRequest, conte
       console.error('Cancel class error:', error);
       return errorResponse('Failed to cancel class');
     }
-  });
+  };
