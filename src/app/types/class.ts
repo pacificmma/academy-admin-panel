@@ -20,7 +20,6 @@ export interface ClassSchedule {
   startDate: string; // ISO date string (for first occurrence)
   startTime: string; // HH:MM format
   recurrence: RecurrencePattern; // Changed to new pattern
-  price: number; // Price for single class or total package price (will be divided for instances)
   isActive: boolean;
   createdBy: string;
   createdAt: string;
@@ -50,7 +49,6 @@ export interface ClassInstance {
   duration: number; // Duration of this specific instance
   createdAt: string;
   updatedAt: string;
-  price?: number; // Price for this specific instance if overridden
   description?: string; // Description for this specific instance if overridden
 }
 
@@ -63,11 +61,8 @@ export interface ClassFormData {
   duration: number; // Duration of each session in minutes
   startDate: string; // Initial start date (for single or first recurring)
   startTime: string; // Start time of each session
-  price: number; // Single price field: for single session, or total package for recurring
   scheduleType: 'single' | 'recurring';
   daysOfWeek: number[]; // For recurring
-  // Removed recurrenceDurationValue and recurrenceDurationUnit as per user request
-  // Removed packagePrice as price field is now unified
 }
 
 export interface ClassFilters {

@@ -159,7 +159,6 @@ export const POST = requireAdmin(async (request: NextRequest, context: RequestCo
       startDate: validatedData.startDate,
       startTime: validatedData.startTime,
       recurrence: recurrencePattern, // Assign the explicitly typed recurrencePattern
-      price: schedulePrice,
       isActive: true, // New schedules are active by default
       createdBy: session.uid,
       // description and location are optional in ClassSchedule, and not expected from form
@@ -226,7 +225,6 @@ async function createSingleClassInstance(scheduleId: string, schedule: ClassSche
       location: schedule.location || '',
       notes: '',
       duration: schedule.duration,
-      price: schedule.price,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     };
@@ -283,7 +281,6 @@ async function generateClassInstances(scheduleId: string, schedule: ClassSchedul
         location: schedule.location || '',
         notes: '',
         duration: schedule.duration,
-        price: (schedule.price / occurrences.length) || 0, // Distribute total package price per session
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       };
@@ -337,7 +334,6 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
       };
 
       // Price is now the single field 'price' from validatedData
-      const schedulePrice = validatedData.price; 
   
       const updatePayload = {
         name: validatedData.name,
@@ -349,7 +345,6 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
         startDate: validatedData.startDate,
         startTime: validatedData.startTime,
         recurrence: recurrencePattern, // Assign the explicitly typed recurrencePattern
-        price: schedulePrice,
         updatedAt: FieldValue.serverTimestamp(),
       };
   
@@ -379,8 +374,6 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
             ...updatePayload, // Overlay updated fields
             instructorName, // Ensure updated instructor name is propagated
             recurrence: recurrencePattern, // Overlay new recurrence pattern (explicitly typed)
-            price: schedulePrice, // Overlay new price
-            // isActive and createdBy come from oldSchedule as they are not changed via updatePayload
         };
 
         if (validatedData.scheduleType === 'recurring') {

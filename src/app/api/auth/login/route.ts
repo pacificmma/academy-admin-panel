@@ -136,7 +136,6 @@ function recordFailedAttempt(ip: string, reason: string, details?: any) {
   
   failedAttempts.set(ip, current);
 
-  // Log security event (only in development to avoid console.log in production)
   if (process.env.NODE_ENV === 'development') {
     console.warn(`Failed login attempt: ${reason}`, { 
       ip, 

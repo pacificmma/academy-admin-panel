@@ -65,7 +65,6 @@ const DEFAULT_FORM_DATA: ClassFormData = {
   duration: 60, // in minutes
   startDate: formatFns(new Date(), 'yyyy-MM-dd'),
   startTime: '18:00',
-  price: 0, // No specific price field, just a single 'price'
   scheduleType: 'single', // Default to single event
   daysOfWeek: [],
 };
@@ -109,7 +108,6 @@ export default function ClassFormDialog({
           duration: schedule.duration,
           startDate: schedule.startDate,
           startTime: schedule.startTime,
-          price: schedule.price, // Schedule price is the total price if recurring
           scheduleType: schedule.recurrence.scheduleType,
           daysOfWeek: schedule.recurrence.daysOfWeek || [],
         });
@@ -124,7 +122,6 @@ export default function ClassFormDialog({
           duration: instance.duration,
           startDate: instance.date, // Instance date becomes start date for form
           startTime: instance.startTime,
-          price: instance.price || 0, // Instance might have its own price
           scheduleType: 'single', // An instance is always treated as a single event for editing
           daysOfWeek: [],
         });
@@ -196,10 +193,6 @@ export default function ClassFormDialog({
     }
     if (!formData.startTime) {
       newErrors.startTime = 'Start time is required.';
-    }
-    // Price validation: only check if non-negative for single event, or if recurring, price must be > 0
-    if (formData.price < 0) {
-      newErrors.price = 'Price cannot be negative.';
     }
     if (formData.scheduleType === 'recurring' && formData.daysOfWeek.length === 0) {
       newErrors.daysOfWeek = 'Select at least one day for weekly recurrence.';
@@ -414,24 +407,6 @@ export default function ClassFormDialog({
                   helperText={errors.duration}
                   inputProps={{ min: 15, max: 240, step: 15 }}
                   disabled={loading}
-                />
-              </Grid>
-
-              {/* Price Field - now always 'price', no distinction for single/package */}
-              <Grid item xs={12}>
-                <TextField
-                  fullWidth
-                  label="Price"
-                  type="number"
-                  value={formData.price}
-                  onChange={(e) => handleInputChange('price', parseFloat(e.target.value) || 0)}
-                  error={!!errors.price}
-                  helperText={errors.price || 'Price for this class (per session for single, total for recurring).'}
-                  inputProps={{ min: 0, step: 0.01 }}
-                  disabled={loading}
-                  InputProps={{
-                    startAdornment: <InputAdornment position="start">$</InputAdornment>,
-                  }}
                 />
               </Grid>
 

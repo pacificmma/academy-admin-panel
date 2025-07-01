@@ -29,18 +29,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchSessionData = useCallback(async () => {
     try {
-      console.log('🔍 fetchSessionData called');
-      
-      const response = await fetch('/api/auth/session', {
+        const response = await fetch('/api/auth/session', {
         method: 'GET',
         credentials: 'include',
       });
       
-      console.log('📡 Response status:', response.status);
-      
       if (response.ok) {
         const data = await response.json();
-        console.log('📦 Response data:', data);
         
         // Assuming data.session is of type SessionData, which includes 'role'
         setSessionData(data.session);
@@ -61,13 +56,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         return data.session;
       } else {
-        console.log('❌ Response not ok');
         setSessionData(null);
         setUser(null); // Clear user if session is not ok
         return null;
       }
     } catch (error) {
-      console.log('💥 Fetch error:', error);
       setSessionData(null);
       setUser(null); // Clear user on fetch error
       return null;
@@ -90,10 +83,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             protectedSessionRef.current = null;
             // When falling back, explicitly fetch session to set the AuthUser with role
             if (firebaseUser) {
-              console.log('Attempting to re-fetch session data after failed restore for Firebase user:', firebaseUser.uid);
               await fetchSessionData();
             } else {
-              console.log('No Firebase user after failed restore, clearing user state.');
               setUser(null); // Clear user if no firebaseUser
               setSessionData(null); // Clear session data
             }
@@ -106,10 +97,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Normal auth state change or after session protection is lifted
       if (!sessionProtected) {
         if (firebaseUser) {
-          console.log('Fetching session data for Firebase user:', firebaseUser.uid);
           await fetchSessionData(); // This will now correctly set the AuthUser state
         } else {
-          console.log('No Firebase user, attempting to fetch session anyway to confirm logout or no session.');
           await fetchSessionData(); // This will clear user/session if no active session
         }
       }
@@ -155,7 +144,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const refreshSession = async () => {
-    console.log('Manually refreshing session...');
     await fetchSessionData();
   };
 

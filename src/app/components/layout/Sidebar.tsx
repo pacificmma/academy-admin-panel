@@ -89,21 +89,12 @@ const Sidebar: React.FC<SidebarProps> = ({
         roles: ['trainer', 'staff', 'admin'],
       },
       
-      // Divider sonrası admin-only sections
-      {
-        text: 'divider',
-        icon: null,
-        path: '',
-        roles: ['admin'],
-      },
-      
       // Members Management - Sadece Admin
       {
         text: 'Members',
         icon: <SchoolIcon />,
         path: '/members',
         roles: ['admin'],
-        badge: 'New',
       },
       
       // Staff Management - Sadece Admin

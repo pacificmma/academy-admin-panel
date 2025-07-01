@@ -54,13 +54,6 @@ export default function DashboardPageClient({ session }: DashboardPageClientProp
             bgColor: 'secondary.50',
         },
         {
-            title: 'Monthly Revenue',
-            value: '--',
-            icon: MoneyIcon,
-            color: 'success',
-            bgColor: 'success.50',
-        },
-        {
             title: 'Staff Members',
             value: '--',
             icon: PersonAddIcon,
@@ -244,92 +237,6 @@ export default function DashboardPageClient({ session }: DashboardPageClientProp
                             </Grid>
                         </CardContent>
                     </Card>
-
-                    {/* Recent Activity Section */}
-                    <Grid container spacing={3} sx={{ mt: 4 }}>
-                        <Grid item xs={12} lg={8}>
-                            <Card>
-                                <CardContent sx={{ p: 4 }}>
-                                    <Typography variant="h6" component="h3" gutterBottom sx={{ fontWeight: 600 }}>
-                                        Recent Activity
-                                    </Typography>
-
-                                    <Box
-                                        sx={{
-                                            textAlign: 'center',
-                                            py: 6,
-                                            color: 'text.secondary',
-                                        }}
-                                    >
-                                        <CalendarIcon sx={{ fontSize: 64, mb: 2, color: 'grey.400' }} />
-                                        <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                                            No recent activity
-                                        </Typography>
-                                        <Typography variant="body2">
-                                            Recent system activity will appear here.
-                                        </Typography>
-                                    </Box>
-                                </CardContent>
-                            </Card>
-                        </Grid>
-
-                        <Grid item xs={12} lg={4}>
-                            <Card>
-                                <CardContent sx={{ p: 4 }}>
-                                    <Typography variant="h6" component="h3" gutterBottom sx={{ fontWeight: 600 }}>
-                                        System Status
-                                    </Typography>
-
-                                    <Box sx={{ mt: 3 }}>
-                                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                            <Box
-                                                sx={{
-                                                    width: 8,
-                                                    height: 8,
-                                                    borderRadius: '50%',
-                                                    bgcolor: 'success.main',
-                                                    mr: 2,
-                                                }}
-                                            />
-                                            <Typography variant="body2">
-                                                All systems operational
-                                            </Typography>
-                                        </Box>
-
-                                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                            <Box
-                                                sx={{
-                                                    width: 8,
-                                                    height: 8,
-                                                    borderRadius: '50%',
-                                                    bgcolor: 'success.main',
-                                                    mr: 2,
-                                                }}
-                                            />
-                                            <Typography variant="body2">
-                                                Database connected
-                                            </Typography>
-                                        </Box>
-
-                                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                            <Box
-                                                sx={{
-                                                    width: 8,
-                                                    height: 8,
-                                                    borderRadius: '50%',
-                                                    bgcolor: 'success.main',
-                                                    mr: 2,
-                                                }}
-                                            />
-                                            <Typography variant="body2">
-                                                Authentication active
-                                            </Typography>
-                                        </Box>
-                                    </Box>
-                                </CardContent>
-                            </Card>
-                        </Grid>
-                    </Grid>
                 </Container>
             </Box>
         </Layout>

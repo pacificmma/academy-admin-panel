@@ -206,7 +206,6 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
             duration: formData.duration,
             date: formData.startDate,
             startTime: formData.startTime,
-            price: formData.price, // Update instance price
           };
           res = await fetch(`/api/classes/instances/${editingClassData.id}`, {
             method: 'PUT',

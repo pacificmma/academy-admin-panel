@@ -65,7 +65,6 @@ export const GET = requireStaffOrTrainer(async (request: NextRequest, context: R
       createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
       updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
       duration: data.duration,
-      price: data.price,
       description: data.description,
     };
 
@@ -155,7 +154,6 @@ export const PUT = requireStaffOrTrainer(async (request: NextRequest, context: R
         createdAt: updatedInstanceData?.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
         updatedAt: updatedInstanceData?.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
         duration: updatedInstanceData?.duration,
-        price: updatedInstanceData?.price,
         description: updatedInstanceData?.description
     };
 
