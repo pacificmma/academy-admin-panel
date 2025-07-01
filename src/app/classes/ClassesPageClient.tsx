@@ -1,4 +1,4 @@
-// src/app/classes/ClassesPageClient.tsx (FIXED - Added missing filters dependency)
+// src/app/classes/ClassesPageClient.tsx
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -17,17 +17,15 @@ import {
   InputLabel,
   Select,
   Grid,
-  ToggleButtonGroup,
-  ToggleButton,
 } from '@mui/material';
-import { Add as AddIcon, Search as SearchIcon, CalendarMonth as CalendarIcon, GridView as GridViewIcon } from '@mui/icons-material';
+import { Add as AddIcon, Search as SearchIcon } from '@mui/icons-material';
 import ClassCard from '@/app/components/ui/ClassCards';
 import ClassCalendar from '@/app/components/ui/ClassCalendar';
 import ClassFormDialog from '@/app/components/forms/ClassFormDialog';
 import DeleteConfirmationDialog from '@/app/components/ui/DeleteConfirmationDialog';
-import { ClassSchedule, ClassInstance, ClassFormData, ClassType, ClassFilters, CLASS_TYPE_OPTIONS } from '@/app/types/class';
+import { ClassSchedule, ClassInstance, ClassFormData, ClassFilters, CLASS_TYPE_OPTIONS } from '@/app/types/class';
 import { useAuth } from '@/app/contexts/AuthContext';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import { SessionData } from '../types';
 import Layout from '../components/layout/Layout';
 
@@ -49,10 +47,13 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [deleteTargetType, setDeleteTargetType] = useState<'schedule' | 'instance' | null>(null);
   const [instructors, setInstructors] = useState<Array<{ id: string; name: string; specialties?: string[] }>>([]);
-  const [calendarViewMode, setCalendarViewMode] = useState<'day' | 'week' | 'month'>('week');
+  const [calendarViewMode, setCalendarViewMode] = useState<'week' | 'day' | 'month'>('week'); // Default to week view
   const [instanceDisplayMode, setInstanceDisplayMode] = useState<'cards' | 'calendar'>(
     (session.role === 'trainer' && tabIndex === 2) || tabIndex === 0 ? 'calendar' : 'cards'
   );
+
+  // State to manage the currently viewed date in the calendar
+  const [currentCalendarDate, setCurrentCalendarDate] = useState(new Date());
 
   const [filters, setFilters] = useState<ClassFilters>({
     classType: undefined,
@@ -92,17 +93,30 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
     setError(null);
     try {
       const queryParams = new URLSearchParams();
-      const today = format(new Date(), 'yyyy-MM-dd');
+      
+      // Determine the date range based on calendar view mode and currentCalendarDate
+      let rangeStart: Date;
+      let rangeEnd: Date;
 
-      if (filters.date) {
-        queryParams.append('startDate', filters.date);
-      } else {
-        queryParams.append('startDate', today);
+      if (calendarViewMode === 'day') {
+        rangeStart = currentCalendarDate;
+        rangeEnd = currentCalendarDate;
+      } else if (calendarViewMode === 'week') {
+        rangeStart = startOfWeek(currentCalendarDate, { weekStartsOn: 1 }); // Monday as start of week
+        rangeEnd = endOfWeek(currentCalendarDate, { weekStartsOn: 1 }); // Sunday as end of week
+      } else { // month view
+        rangeStart = startOfMonth(currentCalendarDate);
+        rangeEnd = endOfMonth(currentCalendarDate);
       }
+
+      queryParams.append('startDate', format(rangeStart, 'yyyy-MM-dd'));
+      queryParams.append('endDate', format(rangeEnd, 'yyyy-MM-dd'));
 
       if (filters.classType) queryParams.append('classType', filters.classType);
       if (filters.instructorId) queryParams.append('instructorId', filters.instructorId);
       if (filters.searchTerm) queryParams.append('search', filters.searchTerm);
+      
+      // Apply instructorId filter for "My Schedule" tab
       if (tabIndex === 2 && user?.uid) {
         queryParams.append('instructorId', user.uid);
       }
@@ -119,48 +133,51 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
     } finally {
       setLoading(false);
     }
-  }, [filters, tabIndex, user?.uid]);
+  }, [filters, tabIndex, user?.uid, currentCalendarDate, calendarViewMode]);
 
-  // FIXED: Added missing dependencies - filters and user now included
+  // Effect to load instructors once on component mount
   useEffect(() => {
     loadInstructors();
-    if (tabIndex === 0) {
+  }, [loadInstructors]);
+
+  // Effect to handle tab changes and set initial states for each tab
+  useEffect(() => {
+    if (tabIndex === 0) { // Class Schedules tab
       loadClassSchedules();
       setInstanceDisplayMode('calendar');
-    } else if (tabIndex === 1 || (tabIndex === 2 && user?.role === 'trainer')) {
-      loadClassInstances();
+      setCurrentCalendarDate(new Date()); // Reset calendar date to today
+      setCalendarViewMode('month'); // Default for schedules to month view
+      setFilters(prev => ({ ...prev, classType: undefined, instructorId: undefined, searchTerm: '', date: undefined })); // Clear filters for schedules
+    } else if (tabIndex === 1) { // Upcoming Classes tab
+      setFilters(prev => ({
+        ...prev,
+        classType: undefined,
+        instructorId: undefined,
+        date: format(new Date(), 'yyyy-MM-dd'), // Default date filter for cards view
+        searchTerm: '',
+      }));
+      setInstanceDisplayMode('cards'); // Default to card view
+      setCurrentCalendarDate(new Date()); // Reset calendar date to today
+      setCalendarViewMode('day'); // Default for cards view calendar logic
+    } else if (tabIndex === 2 && user?.role === 'trainer') { // My Schedule tab
+      setFilters(prev => ({ ...prev, instructorId: user.uid, classType: undefined, searchTerm: '' }));
+      setInstanceDisplayMode('calendar'); // Default to calendar view
+      setCurrentCalendarDate(new Date()); // Reset calendar date to today
+      setCalendarViewMode('week'); // Default for my schedule to week view
     }
-  }, [tabIndex, loadClassSchedules, loadClassInstances, loadInstructors, user]);
+  }, [tabIndex, loadClassSchedules, user]);
 
-  // FIXED: Added new useEffect to reload instances when filters change
+  // Effect to load class instances based on relevant state changes
   useEffect(() => {
     if (tabIndex === 1 || (tabIndex === 2 && user?.role === 'trainer')) {
       loadClassInstances();
     }
-  }, [filters, loadClassInstances]);
+    // For tabIndex 0 (Class Schedules), instances are derived from schedules (classesToDisplayInCalendar),
+    // so no separate loadClassInstances call is needed here.
+  }, [filters, currentCalendarDate, calendarViewMode, tabIndex, loadClassInstances, user]);
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabIndex(newValue);
-    if (newValue === 1) {
-      setFilters({
-        classType: undefined,
-        instructorId: undefined,
-        date: format(new Date(), 'yyyy-MM-dd'),
-        searchTerm: '',
-      });
-      setInstanceDisplayMode('cards');
-    } else if (newValue === 0) {
-      setFilters({
-        classType: undefined,
-        instructorId: undefined,
-        date: undefined,
-        searchTerm: '',
-      });
-      setInstanceDisplayMode('calendar');
-    } else if (newValue === 2) {
-      setFilters(prev => ({ ...prev, instructorId: user?.uid, date: format(new Date(), 'yyyy-MM-dd') }));
-      setInstanceDisplayMode('calendar');
-    }
   };
 
   const handleCreateClassClick = () => {
@@ -314,13 +331,34 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
     setFilters(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleCalendarDateClick = (date: Date) => {
-    setFilters(prev => ({ ...prev, date: format(date, 'yyyy-MM-dd') }));
+  // Callback for when calendar date changes
+  const handleCalendarDateChange = (date: Date) => {
+    setCurrentCalendarDate(date);
+    // Only update filters.date if we are in the "Upcoming Classes" tab (card view with date filter)
+    if (tabIndex === 1) {
+      setFilters(prev => ({ ...prev, date: format(date, 'yyyy-MM-dd') }));
+    }
   };
 
+  // Callback for when calendar view mode changes
   const handleCalendarViewModeChange = (mode: 'day' | 'week' | 'month') => {
     setCalendarViewMode(mode);
   };
+
+  // Prepare classes for calendar display based on the active tab
+  const classesToDisplayInCalendar = tabIndex === 0 ? schedules.map(schedule => ({
+    ...schedule,
+    id: schedule.id,
+    scheduleId: schedule.id,
+    date: schedule.startDate,
+    endTime: `${Math.floor((parseInt(schedule.startTime.split(':')[0]) * 60 + parseInt(schedule.startTime.split(':')[1]) + schedule.duration) / 60).toString().padStart(2, '0')}:${((parseInt(schedule.startTime.split(':')[0]) * 60 + parseInt(schedule.startTime.split(':')[1]) + schedule.duration) % 60).toString().padStart(2, '0')}`,
+    registeredParticipants: [],
+    waitlist: [],
+    status: 'scheduled',
+    createdAt: schedule.createdAt,
+    updatedAt: schedule.updatedAt,
+  })) as ClassInstance[] : instances;
+
 
   return (
     <Layout session={session} title="Classes">
@@ -369,23 +407,12 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
                   <Alert severity="info">No class schedules found. Create one to get started!</Alert>
                 ) : (
                   <ClassCalendar
-                    classes={schedules.map(schedule => ({
-                      ...schedule,
-                      id: schedule.id,
-                      scheduleId: schedule.id,
-                      date: schedule.startDate,
-                      endTime: `${Math.floor((parseInt(schedule.startTime.split(':')[0]) * 60 + parseInt(schedule.startTime.split(':')[1]) + schedule.duration) / 60).toString().padStart(2, '0')}:${((parseInt(schedule.startTime.split(':')[0]) * 60 + parseInt(schedule.startTime.split(':')[1]) + schedule.duration) % 60).toString().padStart(2, '0')}`,
-                      registeredParticipants: [],
-                      waitlist: [],
-                      status: 'scheduled',
-                      createdAt: schedule.createdAt,
-                      updatedAt: schedule.updatedAt,
-                    })) as ClassInstance[]}
+                    classes={classesToDisplayInCalendar}
                     viewMode={calendarViewMode}
                     onViewModeChange={handleCalendarViewModeChange}
                     onClassClick={handleEditClass}
-                    onDateClick={handleCalendarDateClick}
-                    selectedDate={parseISO(filters.date || format(new Date(), 'yyyy-MM-dd'))}
+                    onDateClick={handleCalendarDateChange}
+                    selectedDate={currentCalendarDate}
                     onEditClass={handleEditClass}
                     onDeleteClass={(data, type) => handleDeleteClass(data, 'schedule')}
                     userRole={user?.role || 'member'}
@@ -448,7 +475,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
                       fullWidth
                       type="date"
                       label="Date"
-                      value={filters.date}
+                      value={filters.date} // This filter is for specific day in cards view
                       onChange={(e) => handleFilterChange('date', e.target.value)}
                       InputLabelProps={{ shrink: true }}
                     />
@@ -492,14 +519,13 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
                 <Typography variant="h6" sx={{ mb: 2 }}>
                   My Scheduled Classes
                 </Typography>
-                {instanceDisplayMode === 'calendar' ? (
-                  <ClassCalendar
-                    classes={instances}
+                <ClassCalendar
+                    classes={classesToDisplayInCalendar}
                     viewMode={calendarViewMode}
                     onViewModeChange={handleCalendarViewModeChange}
                     onClassClick={handleEditClass}
-                    onDateClick={handleCalendarDateClick}
-                    selectedDate={parseISO(filters.date || format(new Date(), 'yyyy-MM-dd'))}
+                    onDateClick={handleCalendarDateChange}
+                    selectedDate={currentCalendarDate}
                     onEditClass={handleEditClass}
                     onDeleteClass={(data, type) => handleDeleteClass(data, 'instance')}
                     userRole={user?.role || 'member'}
@@ -508,37 +534,6 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
                     onEndClass={(instanceId) => handleInstanceAction(instanceId, 'end')}
                     onCancelClass={(instanceId) => handleInstanceAction(instanceId, 'cancel')}
                   />
-                ) : (
-                  <Grid container spacing={3}>
-                    {instances.length === 0 ? (
-                      <Grid item xs={12}>
-                        <Alert severity="info">No classes assigned to you.</Alert>
-                      </Grid>
-                    ) : (
-                      instances
-                        .sort((a, b) => {
-                          const dateA = parseISO(a.date);
-                          const dateB = parseISO(b.date);
-                          if (dateA.getTime() !== dateB.getTime()) {
-                            return dateA.getTime() - dateB.getTime();
-                          }
-                          const [hA, mA] = a.startTime.split(':').map(Number);
-                          const [hB, mB] = b.startTime.split(':').map(Number);
-                          return (hA * 60 + mA) - (hB * 60 + mB);
-                        })
-                        .map((instance) => (
-                          <Grid item xs={12} sm={6} md={4} lg={3} key={instance.id}>
-                            <ClassCard
-                              classData={instance}
-                              type="instance"
-                              onEdit={handleEditClass}
-                              onDelete={(id, type) => handleDeleteClass(instance, type)}
-                            />
-                          </Grid>
-                        ))
-                    )}
-                  </Grid>
-                )}
               </Box>
             )}
           </Box>

@@ -17,7 +17,6 @@ const classScheduleSchema = z.object({
   duration: z.number().int().min(15).max(240), // Duration of each session
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), // Start date of first session
   startTime: z.string().regex(/^\d{2}:\d{2}$/), // Start time of each session
-  price: z.number().nonnegative(), // Price for single class or total package price for recurring
   scheduleType: z.enum(['single', 'recurring']),
   daysOfWeek: z.array(z.number().int().min(0).max(6)).optional(), // Only for recurring
 }).superRefine((data, ctx) => {
@@ -27,23 +26,6 @@ const classScheduleSchema = z.object({
         code: z.ZodIssueCode.custom,
         message: 'At least one day must be selected for recurring events',
         path: ['daysOfWeek'],
-      });
-    }
-    // For recurring, price must be greater than 0
-    if (data.price <= 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Price must be greater than 0 for recurring events',
-        path: ['price'],
-      });
-    }
-  } else { // Single event
-    // For single, price cannot be negative
-    if (data.price < 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Price cannot be negative for single event',
-        path: ['price'],
       });
     }
   }
@@ -82,7 +64,7 @@ export const GET = requireStaffOrTrainer(async (request: NextRequest, context: R
 
     for (const doc of snapshot.docs) {
       const data = doc.data();
-      
+
       // Get instructor name
       let instructorName = 'Unknown';
       try {
@@ -145,9 +127,6 @@ export const POST = requireAdmin(async (request: NextRequest, context: RequestCo
     } : {
       scheduleType: 'single' as const, // Explicit cast
     };
-
-    // Price is now the single field 'price' from validatedData
-    const schedulePrice = validatedData.price; 
 
     const scheduleData: ClassScheduleWithoutIdAndTimestamps = { // Use new type alias
       name: validatedData.name,
@@ -243,7 +222,7 @@ async function createSingleClassInstance(scheduleId: string, schedule: ClassSche
 async function generateClassInstances(scheduleId: string, schedule: ClassScheduleWithoutIdAndTimestamps) {
   try {
     if (schedule.recurrence.scheduleType !== 'recurring' ||
-        !schedule.recurrence.daysOfWeek) { // Removed durationValue and durationUnit checks
+      !schedule.recurrence.daysOfWeek) { // Removed durationValue and durationUnit checks
       throw new Error('Invalid recurrence pattern for generating instances.');
     }
 
@@ -297,100 +276,98 @@ async function generateClassInstances(scheduleId: string, schedule: ClassSchedul
 
 // PUT /api/classes/schedules/[id] - Update a class schedule
 export const PUT = requireAdmin(async (request: NextRequest, context: RequestContext) => {
-    try {
-      const { params } = context;
-      if (!params?.id) {
-        return errorResponse('Schedule ID is required', 400);
-      }
-  
-      const body = await request.json();
-      const validatedData = classScheduleSchema.parse(body);
-  
-      const scheduleRef = adminDb.collection('classSchedules').doc(params.id);
-      const scheduleDoc = await scheduleRef.get();
-  
-      if (!scheduleDoc.exists) {
-        return errorResponse('Class schedule not found', 404);
-      }
-  
-      const oldSchedule = scheduleDoc.data() as ClassSchedule; // Cast to ClassSchedule
-  
-      // Verify instructor exists if changing
-      if (validatedData.instructorId && validatedData.instructorId !== oldSchedule.instructorId) {
-        const instructorDoc = await adminDb.collection('staff').doc(validatedData.instructorId).get();
-        if (!instructorDoc.exists) {
-          return errorResponse('Instructor not found', 400);
-        }
-      }
-      
-      const instructorName = (await adminDb.collection('staff').doc(validatedData.instructorId).get()).data()?.fullName || 'Unknown';
-  
-      // Construct recurrence pattern based on scheduleType for storage
-      const recurrencePattern: RecurrencePattern = validatedData.scheduleType === 'recurring' ? {
-        scheduleType: 'recurring' as const,
-        daysOfWeek: validatedData.daysOfWeek,
-      } : {
-        scheduleType: 'single' as const,
-      };
-
-      // Price is now the single field 'price' from validatedData
-  
-      const updatePayload = {
-        name: validatedData.name,
-        classType: validatedData.classType,
-        instructorId: validatedData.instructorId,
-        instructorName,
-        maxParticipants: validatedData.maxParticipants,
-        duration: validatedData.duration,
-        startDate: validatedData.startDate,
-        startTime: validatedData.startTime,
-        recurrence: recurrencePattern, // Assign the explicitly typed recurrencePattern
-        updatedAt: FieldValue.serverTimestamp(),
-      };
-  
-      await scheduleRef.update(updatePayload);
-  
-      // Re-generate instances if recurrence pattern or key schedule details changed
-      const shouldRegenerate =
-        oldSchedule.recurrence.scheduleType !== validatedData.scheduleType ||
-        oldSchedule.startDate !== validatedData.startDate ||
-        oldSchedule.startTime !== validatedData.startTime ||
-        oldSchedule.duration !== validatedData.duration ||
-        (validatedData.scheduleType === 'recurring' &&
-          (oldSchedule.recurrence.daysOfWeek?.toString() !== validatedData.daysOfWeek?.toString())); // Check only daysOfWeek now
-  
-      if (shouldRegenerate) {
-        // Delete existing instances for this schedule
-        const existingInstances = await adminDb.collection('classInstances')
-          .where('scheduleId', '==', params.id)
-          .get();
-        const deleteBatch = adminDb.batch();
-        existingInstances.docs.forEach(doc => deleteBatch.delete(doc.ref));
-        await deleteBatch.commit();
-  
-        // Generate new instances - construct a complete ClassScheduleWithoutIdAndTimestamps
-        const scheduleToPass: ClassScheduleWithoutIdAndTimestamps = {
-            ...oldSchedule, // Start with old schedule data
-            ...updatePayload, // Overlay updated fields
-            instructorName, // Ensure updated instructor name is propagated
-            recurrence: recurrencePattern, // Overlay new recurrence pattern (explicitly typed)
-        };
-
-        if (validatedData.scheduleType === 'recurring') {
-          await generateClassInstances(params.id, scheduleToPass);
-        } else {
-          await createSingleClassInstance(params.id, scheduleToPass);
-        }
-      }
-  
-      return successResponse(null, 'Class schedule updated successfully');
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return errorResponse('Validation failed', 400, error.errors);
-      }
-      console.error('Update schedule error:', error);
-      return errorResponse('Failed to update class schedule');
+  try {
+    const { params } = context;
+    if (!params?.id) {
+      return errorResponse('Schedule ID is required', 400);
     }
+
+    const body = await request.json();
+    const validatedData = classScheduleSchema.parse(body);
+
+    const scheduleRef = adminDb.collection('classSchedules').doc(params.id);
+    const scheduleDoc = await scheduleRef.get();
+
+    if (!scheduleDoc.exists) {
+      return errorResponse('Class schedule not found', 404);
+    }
+
+    const oldSchedule = scheduleDoc.data() as ClassSchedule; // Cast to ClassSchedule
+
+    // Verify instructor exists if changing
+    if (validatedData.instructorId && validatedData.instructorId !== oldSchedule.instructorId) {
+      const instructorDoc = await adminDb.collection('staff').doc(validatedData.instructorId).get();
+      if (!instructorDoc.exists) {
+        return errorResponse('Instructor not found', 400);
+      }
+    }
+
+    const instructorName = (await adminDb.collection('staff').doc(validatedData.instructorId).get()).data()?.fullName || 'Unknown';
+
+    // Construct recurrence pattern based on scheduleType for storage
+    const recurrencePattern: RecurrencePattern = validatedData.scheduleType === 'recurring' ? {
+      scheduleType: 'recurring' as const,
+      daysOfWeek: validatedData.daysOfWeek,
+    } : {
+      scheduleType: 'single' as const,
+    };
+
+    const updatePayload = {
+      name: validatedData.name,
+      classType: validatedData.classType,
+      instructorId: validatedData.instructorId,
+      instructorName,
+      maxParticipants: validatedData.maxParticipants,
+      duration: validatedData.duration,
+      startDate: validatedData.startDate,
+      startTime: validatedData.startTime,
+      recurrence: recurrencePattern, // Assign the explicitly typed recurrencePattern
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+
+    await scheduleRef.update(updatePayload);
+
+    // Re-generate instances if recurrence pattern or key schedule details changed
+    const shouldRegenerate =
+      oldSchedule.recurrence.scheduleType !== validatedData.scheduleType ||
+      oldSchedule.startDate !== validatedData.startDate ||
+      oldSchedule.startTime !== validatedData.startTime ||
+      oldSchedule.duration !== validatedData.duration ||
+      (validatedData.scheduleType === 'recurring' &&
+        (oldSchedule.recurrence.daysOfWeek?.toString() !== validatedData.daysOfWeek?.toString())); // Check only daysOfWeek now
+
+    if (shouldRegenerate) {
+      // Delete existing instances for this schedule
+      const existingInstances = await adminDb.collection('classInstances')
+        .where('scheduleId', '==', params.id)
+        .get();
+      const deleteBatch = adminDb.batch();
+      existingInstances.docs.forEach(doc => deleteBatch.delete(doc.ref));
+      await deleteBatch.commit();
+
+      // Generate new instances - construct a complete ClassScheduleWithoutIdAndTimestamps
+      const scheduleToPass: ClassScheduleWithoutIdAndTimestamps = {
+        ...oldSchedule, // Start with old schedule data
+        ...updatePayload, // Overlay updated fields
+        instructorName, // Ensure updated instructor name is propagated
+        recurrence: recurrencePattern, // Overlay new recurrence pattern (explicitly typed)
+      };
+
+      if (validatedData.scheduleType === 'recurring') {
+        await generateClassInstances(params.id, scheduleToPass);
+      } else {
+        await createSingleClassInstance(params.id, scheduleToPass);
+      }
+    }
+
+    return successResponse(null, 'Class schedule updated successfully');
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return errorResponse('Validation failed', 400, error.errors);
+    }
+    console.error('Update schedule error:', error);
+    return errorResponse('Failed to update class schedule');
+  }
 });
 
 // DELETE /api/classes/schedules/[id] - Delete a class schedule and its instances
