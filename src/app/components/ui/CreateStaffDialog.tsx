@@ -1,7 +1,7 @@
-// src/app/staff/components/CreateStaffDialog.tsx - Create Staff Dialog Component
+// src/app/components/ui/CreateStaffDialog.tsx (Updated and Corrected)
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -17,7 +17,6 @@ import {
   Select,
   MenuItem,
   Typography,
-  Divider,
   CircularProgress,
   IconButton,
   InputAdornment,
@@ -42,16 +41,39 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { UserRole } from '../../types';
 
+// StaffMember type definition (from StaffPageClient.tsx, repeated for clarity here)
+interface StaffMember {
+  dateOfBirth: any;
+  uid: string;
+  email: string;
+  fullName: string;
+  phoneNumber: string;
+  role: UserRole;
+  isActive: boolean;
+  createdAt: string;
+  lastLoginAt?: string;
+  emergencyContact?: {
+    name: string;
+    phone: string;
+    relationship: string;
+  };
+  specializations?: string[];
+  certifications?: string[];
+  // Other fields that might be updated
+}
+
 // Form validation schema
 const createStaffSchema = z.object({
   email: z.string().email('Invalid email format'),
   password: z.string()
     .min(8, 'Password must be at least 8 characters')
     .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/, 
-      'Password must contain at least one uppercase letter, one lowercase letter, and one number'),
+      'Password must contain at least one uppercase letter, one lowercase letter, and one number')
+    .optional(), // Password is optional for edit
   fullName: z.string().min(2, 'Full name must be at least 2 characters').max(100),
   phoneNumber: z.string().regex(/^[\+]?[0-9\s\-\(\)]{10,20}$/, 'Invalid phone number format'),
   role: z.enum(['admin', 'trainer', 'staff']),
+  isActive: z.boolean().optional(), // Added for edit mode
   emergencyContact: z.object({
     name: z.string().min(2).max(100),
     phone: z.string().regex(/^[\+]?[0-9\s\-\(\)]{10,20}$/, 'Invalid emergency contact phone'),
@@ -70,15 +92,26 @@ const createStaffSchema = z.object({
   notes: z.string().max(500).optional()
 });
 
+// Refine schema for 'create' mode to make password required
+const createModeSchema = createStaffSchema.extend({
+  password: z.string() // Make password required only for create
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/, 'Password must contain at least one uppercase letter, one lowercase letter, and one number'),
+});
+
+
 type CreateStaffFormData = z.infer<typeof createStaffSchema>;
 
 interface CreateStaffDialogProps {
   open: boolean;
   onClose: () => void;
-  onStaffCreated: (staff: any) => void;
+  onStaffCreated?: (staff: any) => void; // Optional for edit mode
+  onStaffUpdated?: (staff: any) => void; // New for edit mode
+  initialStaffData?: StaffMember | null; // For editing existing staff
+  mode: 'create' | 'edit'; // Added mode
 }
 
-export default function CreateStaffDialog({ open, onClose, onStaffCreated }: CreateStaffDialogProps) {
+export default function CreateStaffDialog({ open, onClose, onStaffCreated, onStaffUpdated, initialStaffData, mode }: CreateStaffDialogProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -89,11 +122,13 @@ export default function CreateStaffDialog({ open, onClose, onStaffCreated }: Cre
     handleSubmit,
     reset,
     formState: { errors },
-    watch
+    setValue, // To set form values for editing
+    watch // <--- CORRECTED: 'watch' is now destructured here
   } = useForm<CreateStaffFormData>({
-    resolver: zodResolver(createStaffSchema),
+    resolver: zodResolver(mode === 'create' ? createModeSchema : createStaffSchema), // Use different schema based on mode
     defaultValues: {
       role: 'staff',
+      isActive: true, // Default active for new staff
       emergencyContact: {
         name: '',
         phone: '',
@@ -112,6 +147,38 @@ export default function CreateStaffDialog({ open, onClose, onStaffCreated }: Cre
     }
   });
 
+  useEffect(() => {
+    if (open && mode === 'edit' && initialStaffData) {
+      // Populate form fields for editing
+      setValue('fullName', initialStaffData.fullName);
+      setValue('email', initialStaffData.email);
+      setValue('phoneNumber', initialStaffData.phoneNumber);
+      setValue('role', initialStaffData.role);
+      setValue('isActive', initialStaffData.isActive);
+      // Optional fields
+      setValue('emergencyContact.name', initialStaffData.emergencyContact?.name || '');
+      setValue('emergencyContact.phone', initialStaffData.emergencyContact?.phone || '');
+      setValue('emergencyContact.relationship', initialStaffData.emergencyContact?.relationship || '');
+      // Assuming dateOfBirth and address are not in StaffMember in this context
+      setValue('specializations', initialStaffData.specializations?.join(', ') || '');
+      setValue('certifications', initialStaffData.certifications?.join(', ') || '');
+      // setValue('notes', initialStaffData.notes || ''); // Notes not in StaffMember type
+      setShowOptional(
+        !!initialStaffData.emergencyContact?.name ||
+        !!initialStaffData.specializations?.length ||
+        !!initialStaffData.certifications?.length ||
+        !!initialStaffData.dateOfBirth
+        // || !!initialStaffData.address // address not in StaffMember type
+      );
+    } else if (open && mode === 'create') {
+        // Reset form for new creation
+        reset();
+        setError(null);
+        setShowOptional(false);
+    }
+  }, [open, mode, initialStaffData, setValue, reset]);
+
+
   // Handle form submission
   const onSubmit = async (data: CreateStaffFormData) => {
     try {
@@ -119,7 +186,7 @@ export default function CreateStaffDialog({ open, onClose, onStaffCreated }: Cre
       setError(null);
 
       // Prepare request data
-      const requestData = {
+      const requestData: any = {
         ...data,
         specializations: data.specializations 
           ? data.specializations.split(',').map(s => s.trim()).filter(s => s)
@@ -129,22 +196,20 @@ export default function CreateStaffDialog({ open, onClose, onStaffCreated }: Cre
           : []
       };
 
-      // Remove empty optional fields
+      // Remove empty optional fields or fields that should not be sent on update if empty
       if (!requestData.emergencyContact?.name) {
         delete requestData.emergencyContact;
       }
-      if (!requestData.address?.street && !requestData.address?.city) {
-        delete requestData.address;
-      }
-      if (!requestData.dateOfBirth) {
-        delete requestData.dateOfBirth;
-      }
-      if (!requestData.notes) {
-        delete requestData.notes;
+      if (mode === 'edit' && !requestData.password) { // Don't send empty password on update
+        delete requestData.password;
       }
 
-      const response = await fetch('/api/staff/create', {
-        method: 'POST',
+      // API endpoint and method based on mode
+      const apiUrl = mode === 'create' ? '/api/staff/create' : `/api/staff/${initialStaffData?.uid}`;
+      const httpMethod = mode === 'create' ? 'POST' : 'PUT';
+
+      const response = await fetch(apiUrl, {
+        method: httpMethod,
         headers: {
           'Content-Type': 'application/json',
         },
@@ -155,15 +220,19 @@ export default function CreateStaffDialog({ open, onClose, onStaffCreated }: Cre
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to create staff member');
+        throw new Error(result.error || `Failed to ${mode} staff member`);
       }
 
       if (result.success) {
-        onStaffCreated(result.data);
+        if (mode === 'create' && onStaffCreated) {
+          onStaffCreated(result.data);
+        } else if (mode === 'edit' && onStaffUpdated) {
+          onStaffUpdated(result.data);
+        }
         reset();
         handleClose();
       } else {
-        throw new Error(result.error || 'Failed to create staff member');
+        throw new Error(result.error || `Failed to ${mode} staff member`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
@@ -187,6 +256,8 @@ export default function CreateStaffDialog({ open, onClose, onStaffCreated }: Cre
     setShowPassword(!showPassword);
   };
 
+  const currentPassword = watch('password'); // Watch password field to control 'required' status
+
   return (
     <Dialog 
       open={open} 
@@ -202,7 +273,7 @@ export default function CreateStaffDialog({ open, onClose, onStaffCreated }: Cre
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <PersonIcon sx={{ color: 'primary.main' }} />
             <Typography variant="h6" component="h2" sx={{ fontWeight: 600 }}>
-              Create New Staff Member
+              {mode === 'create' ? 'Create New Staff Member' : `Edit Staff Member: ${initialStaffData?.fullName}`}
             </Typography>
           </Box>
           <IconButton onClick={handleClose} disabled={loading}>
@@ -210,7 +281,10 @@ export default function CreateStaffDialog({ open, onClose, onStaffCreated }: Cre
           </IconButton>
         </Box>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-          Add a new staff member, trainer, or administrator to the system
+          {mode === 'create' 
+            ? 'Add a new staff member, trainer, or administrator to the system'
+            : 'Update details for this staff member'
+          }
         </Typography>
       </DialogTitle>
 
@@ -263,7 +337,7 @@ export default function CreateStaffDialog({ open, onClose, onStaffCreated }: Cre
                         required
                         error={!!errors.email}
                         helperText={errors.email?.message}
-                        disabled={loading}
+                        disabled={loading || mode === 'edit'} // Email should ideally not be editable after creation
                         InputProps={{
                           startAdornment: (
                             <InputAdornment position="start">
@@ -312,9 +386,9 @@ export default function CreateStaffDialog({ open, onClose, onStaffCreated }: Cre
                         label="Password"
                         type={showPassword ? 'text' : 'password'}
                         fullWidth
-                        required
+                        required={mode === 'create'} // Password required only for create mode
                         error={!!errors.password}
-                        helperText={errors.password?.message}
+                        helperText={errors.password?.message || (mode === 'edit' && !currentPassword ? 'Leave blank to keep current password' : '')}
                         disabled={loading}
                         InputProps={{
                           startAdornment: (
@@ -364,6 +438,36 @@ export default function CreateStaffDialog({ open, onClose, onStaffCreated }: Cre
                     )}
                   />
                 </Grid>
+
+                {mode === 'edit' && ( // Add isActive toggle only in edit mode
+                  <Grid item xs={12} md={6}>
+                     <FormControl fullWidth required error={!!errors.isActive}>
+                        <InputLabel>Status</InputLabel>
+                        <Controller
+                            name="isActive"
+                            control={control}
+                            render={({ field }) => (
+                                <Select
+                                    {...field}
+                                    label="Status"
+                                    disabled={loading}
+                                    // Convert boolean to string for MenuItem values, and back on change
+                                    value={field.value ? 'true' : 'false'}
+                                    onChange={(e) => field.onChange(e.target.value === 'true')}
+                                >
+                                    <MenuItem value="true">Active</MenuItem>   {/* Corrected value to string */}
+                                    <MenuItem value="false">Inactive</MenuItem> {/* Corrected value to string */}
+                                </Select>
+                            )}
+                        />
+                        {errors.isActive && (
+                          <Typography variant="caption" color="error" sx={{ mt: 0.5, mx: 1.75 }}>
+                            {errors.isActive.message}
+                          </Typography>
+                        )}
+                     </FormControl>
+                  </Grid>
+                )}
               </Grid>
             </CardContent>
           </Card>
@@ -547,7 +651,7 @@ export default function CreateStaffDialog({ open, onClose, onStaffCreated }: Cre
             startIcon={loading ? <CircularProgress size={20} /> : <PersonIcon />}
             sx={{ minWidth: 140 }}
           >
-            {loading ? 'Creating...' : 'Create Staff'}
+            {loading ? (mode === 'create' ? 'Creating...' : 'Updating...') : (mode === 'create' ? 'Create Staff' : 'Update Staff')}
           </Button>
         </DialogActions>
       </form>

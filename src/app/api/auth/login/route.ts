@@ -315,7 +315,7 @@ export async function POST(request: NextRequest) {
 
     // Update user last login information
     try {
-      await adminDb.collection('users').doc(firebaseUser.uid).update({
+      await adminDb.collection('staff').doc(firebaseUser.uid).update({
         lastLoginAt: new Date().toISOString(),
         lastLoginIP: clientIP,
         lastLoginUserAgent: userAgent,

@@ -1,4 +1,4 @@
-// src/app/staff/StaffPageClient.tsx - Staff Management Client Component
+// src/app/staff/StaffPageClient.tsx (Updated)
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -28,6 +28,7 @@ import {
   Card,
   CardContent,
   Grid,
+  Snackbar, // Added for success message
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -43,9 +44,9 @@ import {
   People as StaffIcon,
 } from '@mui/icons-material';
 import Layout from '../components/layout/Layout';
-
 import { SessionData, UserRole } from '../types';
-import CreateStaffDialog from '../components/ui/CreateStaffDialog';
+import CreateStaffDialog from '../components/ui/CreateStaffDialog'; // Reused for edit
+import DeleteConfirmationDialog from '../components/ui/DeleteConfirmationDialog'; // New import
 
 interface StaffMember {
   uid: string;
@@ -72,8 +73,14 @@ interface StaffPageClientProps {
 export default function StaffPageClient({ session }: StaffPageClientProps) {
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const [submitLoading, setSubmitLoading] = useState(false); // For submit actions
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null); // For success messages
+
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false); // New state for edit dialog
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false); // New state for delete dialog
+
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -84,6 +91,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
   const fetchStaffMembers = async () => {
     try {
       setLoading(true);
+      setError(null); // Clear previous errors
       const response = await fetch('/api/staff', {
         credentials: 'include',
       });
@@ -113,6 +121,48 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
   const handleStaffCreated = (newStaff: StaffMember) => {
     setStaffMembers(prev => [newStaff, ...prev]);
     setCreateDialogOpen(false);
+    setSuccessMessage('Staff member created successfully!');
+  };
+
+  // Handle staff update success
+  const handleStaffUpdated = (updatedStaff: StaffMember) => {
+    setStaffMembers(prev => prev.map(staff => staff.uid === updatedStaff.uid ? updatedStaff : staff));
+    setEditDialogOpen(false);
+    setSelectedStaff(null);
+    setSuccessMessage('Staff member updated successfully!');
+  };
+
+  // Handle staff deactivation/deletion
+  const handleStaffDeleted = async () => {
+    if (!selectedStaff) return;
+
+    try {
+      setSubmitLoading(true);
+      setError(null);
+      const response = await fetch(`/api/staff/${selectedStaff.uid}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        // If deactivating, update the member's status locally, but keep them in the list.
+        // If the 'GET /api/staff' filters out inactive users, you might remove them from the state.
+        // For now, let's refetch to ensure consistent state after deactivation.
+        setDeleteDialogOpen(false);
+        setSelectedStaff(null);
+        setSuccessMessage('Staff member status updated successfully!');
+        // Refresh full list to get updated 'isActive' status
+        fetchStaffMembers();
+      } else {
+        throw new Error(result.error || `Failed to ${selectedStaff.isActive ? 'deactivate' : 'activate'} staff member`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Failed to ${selectedStaff?.isActive ? 'deactivate' : 'activate'} staff member`);
+    } finally {
+      setSubmitLoading(false);
+    }
   };
 
   // Filter staff members based on search term
@@ -147,7 +197,17 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
 
   const handleActionMenuClose = () => {
     setActionMenuAnchor(null);
-    setSelectedStaff(null);
+    // setSelectedStaff(null); // Keep selectedStaff until dialog is handled
+  };
+
+  const handleEditClick = () => {
+    setEditDialogOpen(true);
+    handleActionMenuClose();
+  };
+
+  const handleDeleteClick = () => {
+    setDeleteDialogOpen(true);
+    handleActionMenuClose();
   };
 
   // Get role icon
@@ -185,24 +245,28 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
       value: staffMembers.length,
       icon: PersonIcon,
       color: 'primary',
+      bgColor: 'primary.50',
     },
     {
       title: 'Admins',
       value: staffMembers.filter(s => s.role === 'admin').length,
       icon: AdminIcon,
       color: 'error',
+      bgColor: 'error.50',
     },
     {
       title: 'Trainers',
       value: staffMembers.filter(s => s.role === 'trainer').length,
       icon: TrainerIcon,
       color: 'primary',
+      bgColor: 'primary.50', // Reusing primary.50
     },
     {
       title: 'Staff Members',
       value: staffMembers.filter(s => s.role === 'staff').length,
       icon: StaffIcon,
       color: 'secondary',
+      bgColor: 'secondary.50',
     },
   ];
 
@@ -237,7 +301,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
                       width: 48,
                       height: 48,
                       borderRadius: 2,
-                      bgcolor: `${stat.color}.light`,
+                      bgcolor: stat.bgColor,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -305,15 +369,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
                   // Loading skeletons
                   Array.from(new Array(5)).map((_, index) => (
                     <TableRow key={index}>
-                      <TableCell>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                          <Skeleton variant="circular" width={40} height={40} />
-                          <Box>
-                            <Skeleton width={120} height={20} />
-                            <Skeleton width={80} height={16} />
-                          </Box>
-                        </Box>
-                      </TableCell>
+                      <TableCell><Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}><Skeleton variant="circular" width={40} height={40} /><Box><Skeleton width={120} height={20} /><Skeleton width={80} height={16} /></Box></Box></TableCell>
                       <TableCell><Skeleton width={150} /></TableCell>
                       <TableCell><Skeleton width={80} /></TableCell>
                       <TableCell><Skeleton width={70} /></TableCell>
@@ -324,7 +380,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
                 ) : paginatedStaff.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
-                      <PersonIcon sx={{ fontSize: 64, color: 'grey.400', mb: 2 }} />
+                      <PersonIcon sx={{ fontSize: 64, mb: 2, color: 'grey.400' }} />
                       <Typography variant="h6" color="text.secondary">
                         {searchTerm ? 'No staff members found matching your search' : 'No staff members found'}
                       </Typography>
@@ -416,6 +472,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
                           <IconButton
                             onClick={(e) => handleActionMenuClick(e, staff)}
                             size="small"
+                            disabled={session.uid === staff.uid && staff.role === 'admin'} // Disable delete/edit for own admin account
                           >
                             <MoreVertIcon />
                           </IconButton>
@@ -450,14 +507,24 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
           transformOrigin={{ horizontal: 'right', vertical: 'top' }}
           anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
         >
-          <MenuItem onClick={handleActionMenuClose}>
-            <EditIcon sx={{ mr: 1, fontSize: 20 }} />
-            Edit Staff
-          </MenuItem>
-          <MenuItem onClick={handleActionMenuClose} sx={{ color: 'error.main' }}>
-            <DeleteIcon sx={{ mr: 1, fontSize: 20 }} />
-            Deactivate
-          </MenuItem>
+          {selectedStaff && (
+            <>
+              <MenuItem onClick={handleEditClick} disabled={submitLoading}>
+                <EditIcon sx={{ mr: 1, fontSize: 20 }} />
+                Edit Staff
+              </MenuItem>
+              {session.uid !== selectedStaff.uid && ( // Prevent admin from deactivating self
+                <MenuItem 
+                  onClick={handleDeleteClick} 
+                  sx={{ color: 'error.main' }} 
+                  disabled={submitLoading}
+                >
+                  <DeleteIcon sx={{ mr: 1, fontSize: 20 }} />
+                  {selectedStaff.isActive ? 'Deactivate' : 'Activate'}
+                </MenuItem>
+              )}
+            </>
+          )}
         </Menu>
 
         {/* Create Staff Dialog */}
@@ -465,7 +532,55 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
           open={createDialogOpen}
           onClose={() => setCreateDialogOpen(false)}
           onStaffCreated={handleStaffCreated}
+          mode="create"
         />
+
+        {/* Edit Staff Dialog (reusing CreateStaffDialog) */}
+        <CreateStaffDialog
+          open={editDialogOpen}
+          onClose={() => {
+            setEditDialogOpen(false);
+            setSelectedStaff(null);
+          }}
+          onStaffUpdated={handleStaffUpdated}
+          initialStaffData={selectedStaff}
+          mode="edit"
+        />
+
+        {/* Delete Confirmation Dialog (for deactivation) */}
+        <DeleteConfirmationDialog
+          open={deleteDialogOpen}
+          onClose={() => {
+            setDeleteDialogOpen(false);
+            setSelectedStaff(null);
+          }}
+          onConfirm={handleStaffDeleted}
+          title={selectedStaff?.isActive ? "Confirm Deactivation" : "Confirm Activation"}
+          itemName={selectedStaff?.fullName || ''}
+          itemType="staff member"
+          loading={submitLoading}
+          warningMessage={selectedStaff?.isActive ? "This action will deactivate the staff member. They will no longer be able to log in." : "This action will reactivate the staff member. They will be able to log in again."}
+          additionalInfo={selectedStaff ? [
+            { label: 'Role', value: selectedStaff.role.charAt(0).toUpperCase() + selectedStaff.role.slice(1) },
+            { label: 'Email', value: selectedStaff.email },
+          ] : []}
+        />
+
+        {/* Success Snackbar */}
+        <Snackbar
+          open={!!successMessage}
+          autoHideDuration={6000}
+          onClose={() => setSuccessMessage(null)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        >
+          <Alert
+            onClose={() => setSuccessMessage(null)}
+            severity="success"
+            sx={{ width: '100%' }}
+          >
+            {successMessage}
+          </Alert>
+        </Snackbar>
       </Container>
     </Layout>
   );
