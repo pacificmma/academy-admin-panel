@@ -26,7 +26,8 @@ import {
   FormControlLabel,
   Radio,
   FormLabel,
-  Checkbox
+  Checkbox,
+  FormGroup
 } from '@mui/material';
 import {
   Close as CloseIcon,
@@ -37,7 +38,17 @@ import {
 import { DatePicker, TimePicker } from '@mui/x-date-pickers';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { format as formatFns, parseISO, addHours, addMinutes } from 'date-fns';
+import { 
+  format as formatFns, 
+  parseISO, 
+  addHours, 
+  addMinutes,
+  addWeeks, // Yeni eklendi
+  addMonths, // Yeni eklendi
+  isBefore, // Yeni eklendi
+  isEqual, // Yeni eklendi
+  startOfDay // Yeni eklendi
+} from 'date-fns';
 import {
   ClassSchedule,
   ClassFormData,
@@ -57,7 +68,10 @@ interface ClassFormDialogProps {
   instructors: Array<{ id: string; name: string; specialties?: string[] }>;
 }
 
-const DEFAULT_FORM_DATA: ClassFormData = {
+// ClassFormData'yı geçici olarak genişletiyoruz, ClassFormData'nın tanımı harici bir dosyada olduğu için
+// bu component içinde kullanmak üzere state tipini genişletiyoruz.
+// Backend veya `ClassSchedule` tipinin de bu alanları içermesi gerekecektir.
+const DEFAULT_FORM_DATA: ClassFormData & { recurrenceDurationValue: number; recurrenceDurationUnit: 'weeks' | 'months'; } = {
   name: '',
   classType: 'MMA',
   instructorId: '',
@@ -67,6 +81,8 @@ const DEFAULT_FORM_DATA: ClassFormData = {
   startTime: '18:00',
   scheduleType: 'single', // Default to single event
   daysOfWeek: [],
+  recurrenceDurationValue: 4, // Yeni: Varsayılan yinelenme süresi değeri
+  recurrenceDurationUnit: 'weeks', // Yeni: Varsayılan yinelenme süresi birimi
 };
 
 const DAYS_OF_WEEK = [
@@ -87,7 +103,7 @@ export default function ClassFormDialog({
   mode,
   instructors,
 }: ClassFormDialogProps) {
-  const [formData, setFormData] = useState<ClassFormData>(DEFAULT_FORM_DATA);
+  const [formData, setFormData] = useState<typeof DEFAULT_FORM_DATA>(DEFAULT_FORM_DATA);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [previewOccurrences, setPreviewOccurrences] = useState<Array<{ date: string; time: string }>>([]);
@@ -110,6 +126,10 @@ export default function ClassFormDialog({
           startTime: schedule.startTime,
           scheduleType: schedule.recurrence.scheduleType,
           daysOfWeek: schedule.recurrence.daysOfWeek || [],
+          // Mevcut ClassSchedule tipinde bu alanlar yoksa, "as any" kullanmak gerekebilir
+          // veya ClassSchedule tipini types/class.ts dosyasında güncellemelisiniz.
+          recurrenceDurationValue: (schedule.recurrence as any).durationValue || DEFAULT_FORM_DATA.recurrenceDurationValue,
+          recurrenceDurationUnit: (schedule.recurrence as any).durationUnit || DEFAULT_FORM_DATA.recurrenceDurationUnit,
         });
       } else if (isEditingInstance) {
         // Editing an existing ClassInstance
@@ -124,6 +144,8 @@ export default function ClassFormDialog({
           startTime: instance.startTime,
           scheduleType: 'single', // An instance is always treated as a single event for editing
           daysOfWeek: [],
+          recurrenceDurationValue: DEFAULT_FORM_DATA.recurrenceDurationValue, // Instance is single, reset recurrence duration
+          recurrenceDurationUnit: DEFAULT_FORM_DATA.recurrenceDurationUnit,
         });
       } else {
         // Creating a new class
@@ -133,16 +155,40 @@ export default function ClassFormDialog({
     }
   }, [open, classDataForEdit, mode, isEditingSchedule, isEditingInstance]);
 
+  // Yeni: Yinelenme bitiş tarihini hesaplayan yardımcı fonksiyon
+  const calculateRecurrenceEndDate = (startDateString: string, durationValue: number, durationUnit: 'weeks' | 'months'): Date => {
+      let startDate = parseISO(startDateString);
+      if (durationUnit === 'weeks') {
+          return addWeeks(startDate, durationValue);
+      } else {
+          return addMonths(startDate, durationValue);
+      }
+  };
+
   useEffect(() => {
     // Generate preview only for schedules (create mode or editing a schedule) and if it's recurring
     if ((mode === 'create' || isEditingSchedule) && formData.scheduleType === 'recurring') {
-      if (formData.daysOfWeek.length > 0 && formData.startTime) {
-        const occurrences = generateRecurringClassDates(
-          formData.startDate,
-          formData.startTime,
-          formData.daysOfWeek
+      if (formData.daysOfWeek.length > 0 && formData.startTime && formData.recurrenceDurationValue && formData.recurrenceDurationUnit) {
+        const recurrenceEndDate = calculateRecurrenceEndDate(
+            formData.startDate,
+            formData.recurrenceDurationValue,
+            formData.recurrenceDurationUnit
         );
-        setPreviewOccurrences(occurrences.slice(0, 5)); // Show next 5 occurrences
+
+        const allOccurrences = generateRecurringClassDates(
+            formData.startDate,
+            formData.startTime,
+            formData.daysOfWeek
+        );
+
+        // Calculate occurrences only up to the recurrence end date
+        const limitedOccurrences = allOccurrences.filter(occurrence => {
+            const occurrenceDate = parseISO(occurrence.date);
+            // Karşılaştırma yaparken sadece tarih kısmını al, zamanı göz ardı et
+            return isEqual(startOfDay(occurrenceDate), startOfDay(recurrenceEndDate)) || isBefore(occurrenceDate, recurrenceEndDate);
+        });
+
+        setPreviewOccurrences(limitedOccurrences.slice(0, 5)); // Show next 5 occurrences within the calculated duration
       } else {
         setPreviewOccurrences([]);
       }
@@ -154,11 +200,13 @@ export default function ClassFormDialog({
     formData.startTime,
     formData.scheduleType,
     formData.daysOfWeek,
+    formData.recurrenceDurationValue, // Yeni bağımlılık
+    formData.recurrenceDurationUnit, // Yeni bağımlılık
     mode,
     isEditingSchedule,
   ]);
 
-  const handleInputChange = (field: keyof ClassFormData, value: any) => {
+  const handleInputChange = (field: keyof typeof DEFAULT_FORM_DATA, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
@@ -194,8 +242,13 @@ export default function ClassFormDialog({
     if (!formData.startTime) {
       newErrors.startTime = 'Start time is required.';
     }
-    if (formData.scheduleType === 'recurring' && formData.daysOfWeek.length === 0) {
-      newErrors.daysOfWeek = 'Select at least one day for weekly recurrence.';
+    if (formData.scheduleType === 'recurring') {
+      if (formData.daysOfWeek.length === 0) {
+        newErrors.daysOfWeek = 'Select at least one day for weekly recurrence.';
+      }
+      if (formData.recurrenceDurationValue < 1) { // Yeni doğrulama
+        newErrors.recurrenceDurationValue = 'Recurrence duration must be at least 1.';
+      }
     }
 
     setErrors(newErrors);
@@ -208,7 +261,10 @@ export default function ClassFormDialog({
 
     setLoading(true);
     try {
-      await onSubmit(formData, isEditingSchedule ? classDataForEdit?.id : undefined);
+      // formData'yı onSubmit'e gönderirken, ClassFormData tipine uyacak şekilde
+      // yeni eklenen alanları ayrı tutabilir veya ClassFormData'nın genişletilmiş halini
+      // gönderebilirsiniz. Backend'inizin bu yeni alanları kabul ettiğinden emin olun.
+      await onSubmit(formData as ClassFormData, isEditingSchedule ? classDataForEdit?.id : undefined);
     } catch (error) {
       console.error('Failed to save class:', error);
     } finally {
@@ -413,27 +469,65 @@ export default function ClassFormDialog({
               {formData.scheduleType === 'recurring' && (
                 <>
                   <Grid item xs={12}>
-                    <Typography variant="body2" sx={{ mb: 1 }}>
+                    <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600 }}>
                       Select Days of Week for Recurring Events:
                     </Typography>
-                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                      {DAYS_OF_WEEK.map((day) => (
-                        <Chip
-                          key={day.value}
-                          label={day.label}
-                          onClick={() => handleDayOfWeekToggle(day.value)}
-                          color={formData.daysOfWeek?.includes(day.value) ? 'primary' : 'default'}
-                          variant={formData.daysOfWeek?.includes(day.value) ? 'filled' : 'outlined'}
-                          size="small"
-                          disabled={loading}
-                        />
-                      ))}
-                    </Box>
+                    <FormGroup sx={{ mb: 3 }}>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                        {DAYS_OF_WEEK.map((day) => (
+                          <FormControlLabel
+                            key={day.value}
+                            control={
+                              <Checkbox
+                                checked={formData.daysOfWeek?.includes(day.value)}
+                                onChange={() => handleDayOfWeekToggle(day.value)}
+                                disabled={loading}
+                              />
+                            }
+                            label={day.label}
+                          />
+                        ))}
+                      </Box>
+                    </FormGroup>
                     {errors.daysOfWeek && (
                       <FormHelperText error>{errors.daysOfWeek}</FormHelperText>
                     )}
                   </Grid>
-                  {/* Preview of upcoming classes for recurring events */}
+
+                  {/* Yeni: Yinelenme Süresi Girişleri */}
+                  <Grid item xs={12}>
+                    <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600 }}>
+                      Recurring Duration:
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                      <TextField
+                        label="Repeats For"
+                        type="number"
+                        value={formData.recurrenceDurationValue}
+                        onChange={(e) => handleInputChange('recurrenceDurationValue', parseInt(e.target.value) || 1)}
+                        inputProps={{ min: 1 }}
+                        error={!!errors.recurrenceDurationValue}
+                        helperText={errors.recurrenceDurationValue}
+                        disabled={loading}
+                        sx={{ width: 150 }}
+                      />
+                      <FormControl sx={{ width: 120 }} disabled={loading}>
+                        <InputLabel>Unit</InputLabel>
+                        <Select
+                          value={formData.recurrenceDurationUnit}
+                          onChange={(e) => handleInputChange('recurrenceDurationUnit', e.target.value as 'weeks' | 'months')}
+                          label="Unit"
+                        >
+                          <MenuItem value="weeks">Weeks</MenuItem>
+                          <MenuItem value="months">Months</MenuItem>
+                        </Select>
+                      </FormControl>
+                      <Typography variant="body2" color="text.secondary">
+                        (e.g., 4 Weeks, 2 Months)
+                      </Typography>
+                    </Box>
+                  </Grid>
+                  {/* Önizleme kısmı */}
                   {previewOccurrences.length > 0 && (
                     <Grid item xs={12}>
                       <Alert severity="info" sx={{ mt: 2 }}>
