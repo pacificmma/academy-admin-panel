@@ -1,98 +1,74 @@
-// src/app/lib/api/response-utils.ts - Standardized API Response Utilities
+// src/app/lib/api/response-utils.ts - ADD MISSING RESPONSE UTILITIES
+// ============================================
+
 import { NextResponse } from 'next/server';
+import { ApiResponse } from '@/app/types/api';
 
-// Standard API response types
-export interface ApiResponse<T = any> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  message?: string;
-}
-
-export interface ApiErrorResponse {
-  success: false;
-  error: string;
-  details?: any;
-}
-
-export interface ApiSuccessResponse<T = any> {
-  success: true;
-  data: T;
-  message?: string;
-}
-
-// Success response builders
-export function successResponse<T>(data: T, message?: string): NextResponse {
-  return NextResponse.json({
-    success: true,
-    data,
-    message
-  } satisfies ApiSuccessResponse<T>);
-}
-
-export function createdResponse<T>(data: T, message?: string): NextResponse {
-  return NextResponse.json({
-    success: true,
-    data,
-    message
-  } satisfies ApiSuccessResponse<T>, { status: 201 });
-}
-
-// Error response builders
-export function errorResponse(error: string, status: number = 500, details?: any): NextResponse {
-  return NextResponse.json({
+// Standardized error response
+export function errorResponse(
+  message: string,
+  status: number = 500,
+  details?: any
+): NextResponse {
+  const response: ApiResponse = {
     success: false,
-    error,
-    details
-  } satisfies ApiErrorResponse, { status });
+    error: message,
+    ...(details && { details }),
+  };
+
+  return NextResponse.json(response, { status });
 }
 
-export function unauthorizedResponse(): NextResponse {
-  return errorResponse('Unauthorized access', 401);
+// Standardized success response
+export function successResponse<T>(
+  data?: T,
+  message?: string,
+  status: number = 200
+): NextResponse {
+  const response: ApiResponse<T> = {
+    success: true,
+    ...(data !== undefined && { data }),
+    ...(message && { message }),
+  };
+
+  return NextResponse.json(response, { status });
 }
 
-export function forbiddenResponse(): NextResponse {
-  return errorResponse('Insufficient permissions', 403);
+// Created response (201)
+export function createdResponse<T>(
+  data?: T,
+  message: string = 'Resource created successfully'
+): NextResponse {
+  return successResponse(data, message, 201);
 }
 
+// Not found response (404)
 export function notFoundResponse(resource: string = 'Resource'): NextResponse {
   return errorResponse(`${resource} not found`, 404);
 }
 
-export function badRequestResponse(message: string): NextResponse {
+// Bad request response (400)
+export function badRequestResponse(message: string = 'Bad request'): NextResponse {
   return errorResponse(message, 400);
 }
 
-export function validationErrorResponse(errors: string[]): NextResponse {
-  return errorResponse('Validation failed', 400, { validationErrors: errors });
+// Forbidden response (403)
+export function forbiddenResponse(message: string = 'Access denied'): NextResponse {
+  return errorResponse(message, 403);
 }
 
-// Safe JSON parsing
-export async function safeParseJson(request: Request): Promise<{ success: boolean; data?: any; error?: string }> {
-  try {
-    const body = await request.json();
-    return { success: true, data: body };
-  } catch (error) {
-    return { 
-      success: false, 
-      error: 'Invalid JSON format' 
-    };
-  }
+// Unauthorized response (401)
+export function unauthorizedResponse(message: string = 'Authentication required'): NextResponse {
+  return errorResponse(message, 401);
 }
 
-// Input sanitization
-export function sanitizeString(input: any): string {
-  if (typeof input !== 'string') return '';
-  return input.trim().slice(0, 1000); // Prevent extremely long strings
+// Conflict response (409)
+export function conflictResponse(message: string = 'Resource conflict'): NextResponse {
+  return errorResponse(message, 409);
 }
 
-export function sanitizeEmail(input: any): string {
-  if (typeof input !== 'string') return '';
-  return input.toLowerCase().trim().slice(0, 255);
-}
-
-export function sanitizeNumber(input: any, min: number = 0, max: number = Number.MAX_SAFE_INTEGER): number {
-  const num = Number(input);
-  if (isNaN(num)) return min;
-  return Math.max(min, Math.min(max, num));
+// Validation error response (422)
+export function validationErrorResponse(errors: string[] | string): NextResponse {
+  const message = Array.isArray(errors) ? errors.join(', ') : errors;
+  return errorResponse(`Validation failed: ${message}`, 422);
 }

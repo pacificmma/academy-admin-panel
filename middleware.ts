@@ -1,4 +1,6 @@
-// src/app/lib/api/middleware.ts - Fixed API Middleware for Next.js 15
+// src/app/lib/api/middleware.ts - UPDATED TYPE DEFINITIONS
+// ============================================
+
 import { NextRequest, NextResponse } from 'next/server';
 import { validateApiSession } from '@/app/lib/auth/session';
 import { UserRole } from '@/app/types';
@@ -18,7 +20,7 @@ export interface RequestContext {
 
 // Next.js 15 API route context type
 type NextJSRouteContext = {
-  params: { [key: string]: string | string[] };
+  params?: { [key: string]: string | string[] };
 };
 
 // Our internal handler type
@@ -27,10 +29,10 @@ export type ApiHandler = (
   context: RequestContext
 ) => Promise<NextResponse>;
 
-// Next.js 15 compatible route handler type
+// Next.js 15 compatible route handler type - simplified
 export type NextJSRouteHandler = (
   request: NextRequest,
-  context: NextJSRouteContext
+  context?: NextJSRouteContext
 ) => Promise<NextResponse>;
 
 // Middleware options
@@ -45,7 +47,7 @@ export function withAuth(
   handler: ApiHandler,
   options: MiddlewareOptions = {}
 ): NextJSRouteHandler {
-  return async (request: NextRequest, nextjsContext: NextJSRouteContext) => {
+  return async (request: NextRequest, nextjsContext?: NextJSRouteContext) => {
     try {
       // Validate session
       const session = await validateApiSession(request);
@@ -55,10 +57,10 @@ export function withAuth(
         return createErrorResponse('Insufficient permissions', 403);
       }
 
-      // Build our internal context
+      // Build our internal context with params
       const internalContext: RequestContext = {
         session,
-        params: nextjsContext.params,
+        params: nextjsContext?.params,
       };
 
       // Handle self-access for non-admin users
@@ -107,25 +109,6 @@ export const requireSelfOrAdmin = (handler: ApiHandler, selfField = 'uid'): Next
 
 export const requireAdminOrSelf = (handler: ApiHandler, selfField = 'uid'): NextJSRouteHandler =>
   withAuth(handler, { requiredRoles: ['admin'], allowSelf: true, selfField });
-
-// Trainer-specific: can only access assigned classes
-export const requireTrainerAccess = (handler: ApiHandler): NextJSRouteHandler =>
-  withAuth(async (request: NextRequest, context: RequestContext) => {
-    const { session, params } = context;
-    
-    // Admin always has access
-    if (session.role === 'admin') {
-      return await handler(request, context);
-    }
-    
-    // Trainer can only access assigned classes
-    if (session.role === 'trainer' && params?.id) {
-      // TODO: Check if trainer is assigned to this class
-      // This will be implemented when we have the classes collection
-    }
-    
-    return await handler(request, context);
-  }, { requiredRoles: ['admin', 'trainer'] });
 
 // Create standardized error responses
 export function createErrorResponse(
@@ -185,6 +168,46 @@ export function createMethodNotAllowed(allowedMethods: string[]): NextResponse {
       },
     }
   );
+}
+
+// Pagination helper
+export interface PaginationParams {
+  page: number;
+  limit: number;
+  skip: number;
+}
+
+export function getPaginationParams(request: NextRequest): PaginationParams {
+  const url = new URL(request.url);
+  const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
+  const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '10')));
+  const skip = (page - 1) * limit;
+
+  return { page, limit, skip };
+}
+
+// Search/filter helper
+export function getSearchParams(request: NextRequest) {
+  const url = new URL(request.url);
+  const search = url.searchParams.get('search') || '';
+  const sortBy = url.searchParams.get('sortBy') || 'createdAt';
+  const sortOrder = url.searchParams.get('sortOrder') === 'asc' ? 'asc' : 'desc';
+  
+  // Get all filter parameters (anything that starts with 'filter_')
+  const filters: Record<string, string> = {};
+  for (const [key, value] of url.searchParams.entries()) {
+    if (key.startsWith('filter_')) {
+      const filterKey = key.replace('filter_', '');
+      filters[filterKey] = value;
+    }
+  }
+
+  return {
+    search,
+    sortBy,
+    sortOrder,
+    filters,
+  };
 }
 
 // CORS handler for OPTIONS requests
