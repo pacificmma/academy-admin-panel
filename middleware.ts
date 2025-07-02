@@ -1,13 +1,14 @@
-// src/app/lib/api/middleware.ts
+// src/app/lib/api/middleware.ts - API Middleware Pattern
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, validateApiSession } from '@/app/lib/auth/session';
+import { validateApiSession } from '@/app/lib/auth/session';
 import { UserRole } from '@/app/types';
 import { ApiResponse } from '@/app/types/api';
 
-// Request handler type (what our internal handlers expect)
+// Request handler type for functions that will be wrapped by withAuth
+// This is the type that developers will use for their route handlers (e.g., in route.ts files)
 export type ApiHandler = (
   request: NextRequest,
-  context: RequestContext // This context is what the internal handlers expect
+  context: RequestContext
 ) => Promise<NextResponse>;
 
 // Request context with user session
@@ -19,26 +20,34 @@ export interface RequestContext {
     fullName: string;
     isActive: boolean;
   };
-  // Change to accurately reflect Next.js's params type for dynamic routes
-  params?: { [key: string]: string | string[] }; 
+  // Changed to explicitly match Next.js's params structure for dynamic routes
+  params?: { [key: string]: string | string[] };
 }
 
 // Middleware options
 interface MiddlewareOptions {
   requiredRoles?: UserRole[];
-  allowSelf?: boolean;
-  selfField?: string;
+  allowSelf?: boolean; // Allow users to access their own resources
+  selfField?: string; // Field to check for self access (default: 'uid')
 }
+
+// This type defines the expected signature for a Next.js App Router API route export (e.g., GET, POST)
+// This is the type that withAuth must return to satisfy Next.js's build process.
+type RouteHandlerExport = (
+  request: NextRequest,
+  nextjsContext: { params: { [key: string]: string | string[] } }
+) => Promise<NextResponse>;
+
 
 // Main auth wrapper
 export function withAuth(
-  // The handler passed to withAuth now accepts our internal RequestContext
-  handler: (request: NextRequest, context: RequestContext) => Promise<NextResponse>, 
+  // The 'wrappedHandler' is the function written by the developer for the route.ts file,
+  // expecting our custom 'RequestContext'.
+  wrappedHandler: ApiHandler, // Using ApiHandler here as it's the expected input type for handlers
   options: MiddlewareOptions = {}
-) {
-  // This returned function must conform to Next.js's route handler signature:
-  // (request: NextRequest, context: { params: { [key: string]: string | string[] } }) => Promise<NextResponse>
-  return async (request: NextRequest, nextjsRouteContext: { params: { [key: string]: string | string[] } }) => {
+): RouteHandlerExport { // Explicitly state that withAuth returns a RouteHandlerExport
+  // This returned function is what Next.js sees as the exported POST/GET/etc.
+  return async (request: NextRequest, nextjsContext: { params: { [key: string]: string | string[] } }) => {
     try {
       // Validate session
       const session = await validateApiSession(request);
@@ -51,7 +60,7 @@ export function withAuth(
       // Build our internal RequestContext object
       const internalContext: RequestContext = {
         session,
-        params: nextjsRouteContext.params, // Use the params from Next.js's provided context
+        params: nextjsContext.params, // Use the params from Next.js's provided context
       };
 
       // Handle self-access for non-admin users
@@ -59,14 +68,15 @@ export function withAuth(
         const selfField = options.selfField || 'uid';
         const resourceId = internalContext.params.id; // Access 'id' from params
         
-        // Ensure that the session object has the 'selfField' key and it's comparable
+        // This cast might be necessary depending on the exact SessionData definition
+        // Assuming SessionData includes `uid` as a string.
         if (resourceId && String(session[selfField as keyof typeof session]) !== resourceId) { 
           return createErrorResponse('Access denied: can only access your own resources', 403);
         }
       }
 
-      // Call the original handler with our custom internal context
-      return await handler(request, internalContext);
+      // Call the original developer-provided handler with our custom internal context
+      return await wrappedHandler(request, internalContext);
 
     } catch (error: any) {
       if (error.message === 'No valid session found') {
@@ -75,33 +85,40 @@ export function withAuth(
       if (error.message === 'User account is deactivated') {
         return createErrorResponse('Account deactivated', 403);
       }
+      console.error("Auth middleware error:", error); // Log for debugging
       return createErrorResponse('Internal server error', 500);
     }
   };
 }
 
-// Role-specific wrappers (these remain the same, as they now wrap a conforming handler)
-export const requireAdmin = (handler: (request: NextRequest, context: RequestContext) => Promise<NextResponse>) =>
+// Role-specific wrappers (their input handler type is ApiHandler, and return type is RouteHandlerExport)
+export const requireAdmin = (handler: ApiHandler): RouteHandlerExport =>
   withAuth(handler, { requiredRoles: ['admin'] });
 
-export const requireStaff = (handler: (request: NextRequest, context: RequestContext) => Promise<NextResponse>) =>
+export const requireStaff = (handler: ApiHandler): RouteHandlerExport =>
   withAuth(handler, { requiredRoles: ['admin', 'staff'] });
 
-export const requireTrainer = (handler: (request: NextRequest, context: RequestContext) => Promise<NextResponse>) =>
+export const requireTrainer = (handler: ApiHandler): RouteHandlerExport =>
   withAuth(handler, { requiredRoles: ['admin', 'trainer'] });
 
-export const requireStaffOrTrainer = (handler: (request: NextRequest, context: RequestContext) => Promise<NextResponse>) =>
+export const requireStaffOrTrainer = (handler: ApiHandler): RouteHandlerExport =>
   withAuth(handler, { requiredRoles: ['admin', 'staff', 'trainer'] });
 
 // Self-access wrappers
-export const requireSelfOrAdmin = (handler: (request: NextRequest, context: RequestContext) => Promise<NextResponse>, selfField = 'uid') =>
+export const requireSelfOrAdmin = (
+  handler: ApiHandler, 
+  selfField = 'uid'
+): RouteHandlerExport =>
   withAuth(handler, { requiredRoles: ['admin', 'staff', 'trainer'], allowSelf: true, selfField });
 
-export const requireAdminOrSelf = (handler: (request: NextRequest, context: RequestContext) => Promise<NextResponse>, selfField = 'uid') =>
+export const requireAdminOrSelf = (
+  handler: ApiHandler, 
+  selfField = 'uid'
+): RouteHandlerExport =>
   withAuth(handler, { requiredRoles: ['admin'], allowSelf: true, selfField });
 
 // Trainer-specific: can only access assigned classes
-export const requireTrainerAccess = (handler: (request: NextRequest, context: RequestContext) => Promise<NextResponse>) =>
+export const requireTrainerAccess = (handler: ApiHandler): RouteHandlerExport =>
   withAuth(async (request: NextRequest, context: RequestContext) => {
     const { session, params } = context;
     
@@ -254,4 +271,33 @@ export function handleCorsOptions(): NextResponse {
       'Access-Control-Max-Age': '86400',
     },
   });
+}
+
+// Example usage wrapper that combines multiple patterns - This function is likely unused or a leftover.
+// It's not directly related to the POST error from requireAdmin.
+export function createApiRoute(handlers: {
+  GET?: ApiHandler;
+  POST?: ApiHandler;
+  PUT?: ApiHandler;
+  DELETE?: ApiHandler;
+  PATCH?: ApiHandler;
+}) {
+  return async (request: NextRequest, params?: any) => {
+    const method = request.method;
+
+    // Handle CORS preflight
+    if (method === 'OPTIONS') {
+      return handleCorsOptions();
+    }
+
+    // Get the appropriate handler
+    const handler = handlers[method as keyof typeof handlers];
+    
+    if (!handler) {
+      const allowedMethods = Object.keys(handlers).filter(m => m !== 'OPTIONS');
+      return createMethodNotAllowed(allowedMethods);
+    }
+
+    return await handler(request, params);
+  };
 }
