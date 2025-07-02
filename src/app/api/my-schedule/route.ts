@@ -25,10 +25,10 @@ export const GET = requireStaffOrTrainer(async (request: NextRequest, context: R
       query = query.where('date', '<=', endDate);
     }
     
-    // For trainers, only show their classes
-    if (session.role === 'trainer') {
-      query = query.where('instructorId', '==', session.uid);
-    }
+    // Oturum açmış kullanıcının UID'si ile eğitmen kimliğini eşleştirerek filtreleme yapılır.
+    // Bu, kullanıcının rolünden (yönetici, personel veya eğitmen) bağımsız olarak,
+    // "My Schedule" sayfasında sadece kendi atandığı dersleri görmesini sağlar.
+    query = query.where('instructorId', '==', session.uid);
 
     const snapshot = await query.orderBy('date').orderBy('startTime').get();
     const scheduleItems: ClassInstance[] = [];
