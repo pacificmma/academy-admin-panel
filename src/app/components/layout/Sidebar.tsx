@@ -1,4 +1,4 @@
-// src/app/components/layout/Sidebar.tsx - Fixed selected tab text color
+// src/app/components/layout/Sidebar.tsx - Fixed active state detection
 'use client';
 
 import React from 'react';
@@ -139,11 +139,26 @@ const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
-  const isItemActive = (path: string) => {
+  // FIXED: More precise active state detection to prevent conflicts
+  const isItemActive = (path: string): boolean => {
+    // Special case for dashboard - exact match only
     if (path === '/dashboard') {
       return pathname === '/dashboard';
     }
-    return pathname.startsWith(path) && path !== '';
+    
+    // For other paths, ensure exact path match or proper sub-path detection
+    // This prevents /members from being active when on /memberships
+    if (pathname === path) {
+      return true;
+    }
+    
+    // Only consider sub-paths if the current path is actually a sub-route
+    // and not a different path that happens to start with the same letters
+    if (pathname.startsWith(path + '/')) {
+      return true;
+    }
+    
+    return false;
   };
 
   const drawerContent = (
@@ -206,68 +221,58 @@ const Sidebar: React.FC<SidebarProps> = ({
                   onClick={() => handleNavigation(item.path, isDisabled)}
                   disabled={isDisabled}
                   sx={{
-                    borderRadius: 2,
                     minHeight: 48,
+                    borderRadius: 2,
                     px: 2,
                     py: 1.5,
                     '&.Mui-selected': {
                       backgroundColor: 'primary.main',
-                      color: 'white', // Bu önemli - genel rengi beyaz yapıyor
-                      '& .MuiListItemIcon-root': {
-                        color: 'white', // İkon rengini beyaz yapıyor
-                      },
-                      '& .MuiListItemText-primary': {
-                        color: 'white', // Metin rengini beyaz yapıyor - BU ÖNEMLİ
-                      },
+                      color: 'white',
                       '&:hover': {
                         backgroundColor: 'primary.dark',
                       },
-                      '& .MuiChip-root': {
-                        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                      '& .MuiListItemIcon-root': {
                         color: 'white',
                       },
+                      '& .MuiListItemText-primary': {
+                        color: 'white',
+                        fontWeight: 600,
+                      },
                     },
-                    '&:hover': {
-                      backgroundColor: isActive ? 'primary.dark' : 'action.hover',
+                    '&:hover:not(.Mui-selected)': {
+                      backgroundColor: 'action.hover',
                     },
                     '&.Mui-disabled': {
                       opacity: 0.5,
                     },
-                    transition: 'all 0.2s ease',
                   }}
                 >
                   <ListItemIcon
                     sx={{
                       minWidth: 40,
-                      justifyContent: 'center',
-                      color: isActive ? 'white' : 'text.secondary', // Burada da açık belirtiyoruz
+                      color: isActive ? 'inherit' : 'text.secondary',
                     }}
                   >
                     {item.icon}
                   </ListItemIcon>
                   <ListItemText
                     primary={item.text}
-                    primaryTypographyProps={{
-                      fontSize: 14,
-                      fontWeight: isActive ? 600 : 500,
-                      color: isActive ? 'white' : 'inherit', // Burada da açık belirtiyoruz
+                    sx={{
+                      '& .MuiListItemText-primary': {
+                        fontSize: '0.95rem',
+                        fontWeight: isActive ? 600 : 500,
+                      },
                     }}
                   />
                   {item.badge && (
                     <Chip
                       label={item.badge}
                       size="small"
-                      color="primary"
-                      variant="filled"
+                      color="secondary"
                       sx={{
                         height: 20,
-                        fontSize: '0.65rem',
+                        fontSize: '0.75rem',
                         fontWeight: 600,
-                        ml: 1,
-                        ...(isActive && {
-                          backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                          color: 'white',
-                        }),
                       }}
                     />
                   )}
@@ -277,45 +282,29 @@ const Sidebar: React.FC<SidebarProps> = ({
           })}
         </List>
       </Box>
-
-      {/* Footer */}
-      <Box sx={{ 
-        p: 2, 
-        borderTop: '1px solid', 
-        borderColor: 'divider',
-        textAlign: 'center',
-      }}>
-        <Typography 
-          variant="caption" 
-          sx={{ 
-            color: 'text.secondary',
-            fontSize: '0.7rem',
-          }}
-        >
-          © 2025 Pacific MMA
-        </Typography>
-      </Box>
     </Box>
   );
 
   return (
-    <Box component="nav" sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }}>
+    <Box
+      component="nav"
+      sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }}
+    >
       {/* Mobile drawer */}
       <Drawer
         variant="temporary"
         open={mobileOpen}
         onClose={handleDrawerToggle}
         ModalProps={{
-          keepMounted: true,
+          keepMounted: true, // Better mobile performance
         }}
         sx={{
           display: { xs: 'block', md: 'none' },
           '& .MuiDrawer-paper': {
             boxSizing: 'border-box',
             width: drawerWidth,
-            backgroundColor: 'background.paper',
-            borderRight: '1px solid',
-            borderColor: 'divider',
+            borderRight: 'none',
+            boxShadow: theme.shadows[8],
           },
         }}
       >
@@ -330,9 +319,9 @@ const Sidebar: React.FC<SidebarProps> = ({
           '& .MuiDrawer-paper': {
             boxSizing: 'border-box',
             width: drawerWidth,
-            backgroundColor: 'background.paper',
             borderRight: '1px solid',
             borderColor: 'divider',
+            backgroundColor: 'background.paper',
           },
         }}
         open
