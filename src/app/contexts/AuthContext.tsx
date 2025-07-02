@@ -27,45 +27,61 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const protectedUserRef = useRef<AuthUser | null>(null); // Changed to AuthUser
   const protectedSessionRef = useRef<SessionData | null>(null);
 
-  const fetchSessionData = useCallback(async () => {
-    try {
-        const response = await fetch('/api/auth/session', {
-        method: 'GET',
-        credentials: 'include',
-      });
+// Fix for fetchSessionData function in AuthContext.tsx
+const fetchSessionData = useCallback(async () => {
+  try {
+    const response = await fetch('/api/auth/session', {
+      method: 'GET',
+      credentials: 'include',
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
       
-      if (response.ok) {
-        const data = await response.json();
+      // FIXED: Use data.data instead of data.session
+      // data.data contains the actual session information
+      if (data.success && data.data && data.data.isActive) {
+        // Set session data - convert to SessionData format
+        const sessionData: SessionData = {
+          uid: data.data.uid,
+          email: data.data.email,
+          role: data.data.role,
+          fullName: data.data.fullName,
+          isActive: data.data.isActive,
+          createdAt: data.data.createdAt,
+          expiresAt: data.data.expiresAt,
+          lastActivity: data.data.lastActivity,
+        };
+        setSessionData(sessionData);
         
-        // Assuming data.session is of type SessionData, which includes 'role'
-        setSessionData(data.session);
+        // Set AuthUser data
+        const authUser: AuthUser = {
+          uid: data.data.uid,
+          email: data.data.email,
+          fullName: data.data.fullName,
+          role: data.data.role,
+          isActive: data.data.isActive,
+          createdAt: new Date(data.data.createdAt).toISOString(),
+        };
+        setUser(authUser);
         
-        // Construct AuthUser from sessionData
-        if (data.data.isActive) {
-          setUser({
-            uid: data.data.uid,
-            email: data.data.email,
-            fullName: data.data.fullName,
-            role: data.data.role,
-            isActive: data.data.isActive,
-            createdAt: '', // createdAt might not be directly from sessionData, adjust if needed
-            // Other AuthUser fields like updatedAt, lastLoginAt are optional and can be omitted
-          });
-        } else {
-          setUser(null);
-        }
-        return data.session;
+        return sessionData;
       } else {
         setSessionData(null);
-        setUser(null); // Clear user if session is not ok
+        setUser(null);
         return null;
       }
-    } catch (error) {
+    } else {
       setSessionData(null);
-      setUser(null); // Clear user on fetch error
+      setUser(null);
       return null;
     }
-  }, []);
+  } catch (error) {
+    setSessionData(null);
+    setUser(null);
+    return null;
+  }
+}, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
