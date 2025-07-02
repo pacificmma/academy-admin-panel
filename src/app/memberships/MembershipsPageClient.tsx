@@ -84,46 +84,59 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const loadMemberships = useCallback(async (): Promise<void> => {
-    try {
-      setLoading(true);
-      setError(null);
+const loadMemberships = useCallback(async (): Promise<void> => {
+  try {
+    setLoading(true);
+    setError(null);
 
-      const params = new URLSearchParams();
-      if (searchTerm.trim()) {
-        params.append('search', searchTerm.trim());
-      }
+    const params = new URLSearchParams();
+    if (searchTerm.trim()) {
+      params.append('search', searchTerm.trim());
+    }
 
-      const url = `/api/memberships${params.toString() ? `?${params.toString()}` : ''}`;
-      const response = await fetch(url, {
-        credentials: 'include'
-      });
+    const url = `/api/memberships${params.toString() ? `?${params.toString()}` : ''}`;
+    const response = await fetch(url, {
+      credentials: 'include'
+    });
 
-      if (!response.ok) {
-        throw new Error(`Failed to load memberships: ${response.status}`);
-      }
+    if (!response.ok) {
+      throw new Error(`Failed to load memberships: ${response.status}`);
+    }
 
-      const result = await response.json();
+    const result = await response.json();
+    
+    // FIXED: The API returns {data: Array, total: Number} structure
+    if (result.success) {
+      // The API response structure is: {success: true, data: {data: Array, total: Number}}
+      const responseData = result.data || {};
+      const fetchedData = responseData.data || [];
       
-      // Ensure result.data is an array before setting state
-      const fetchedData = Array.isArray(result.data) ? result.data : [];
-      
-      if (result.success) {
+      // Ensure the data is an array
+      if (Array.isArray(fetchedData)) {
         setMemberships(fetchedData);
-        const totalPlans = fetchedData.length || 0;
-        const activePlans = fetchedData.filter((plan: MembershipPlan) => plan.status === 'active').length || 0;
-        const inactivePlans = fetchedData.filter((plan: MembershipPlan) => plan.status === 'inactive').length || 0;
+        
+        // Calculate stats
+        const totalPlans = fetchedData.length;
+        const activePlans = fetchedData.filter((plan: MembershipPlan) => plan.status === 'active').length;
+        const inactivePlans = fetchedData.filter((plan: MembershipPlan) => plan.status === 'inactive').length;
+        
         setStats({ totalPlans, activePlans, inactivePlans });
       } else {
-        throw new Error(result.error || result.details?.[0]?.message || 'Failed to load memberships');
+        setMemberships([]);
+        setStats({ totalPlans: 0, activePlans: 0, inactivePlans: 0 });
       }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
-      setError(errorMessage);
-    } finally {
-      setLoading(false);
+    } else {
+      throw new Error(result.error || 'Failed to load memberships');
     }
-  }, [searchTerm]);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
+    console.error('Error loading memberships:', err);
+    setError(errorMessage);
+    setMemberships([]); // Ensure we have a valid empty array on error
+  } finally {
+    setLoading(false);
+  }
+}, [searchTerm]);
 
   const handleCreateMembership = async (data: MembershipPlanFormData): Promise<void> => {
     try {

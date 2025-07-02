@@ -11,7 +11,7 @@ import { addMinutes, format as formatFns } from 'date-fns';
 // Validation schema for updating class instances
 const updateInstanceSchema = z.object({
   name: z.string().min(3).max(100).optional(),
-  classType: z.enum(['MMA', 'BJJ', 'Boxing', 'Muay Thai', 'Wrestling', 'Judo', 'Kickboxing', 'Fitness', 'Yoga', 'Kids Martial Arts']).optional(),
+  classType: z.enum(['MMA', 'BJJ', 'Boxing', 'Muay Thai', 'Wrestling', 'Judo', 'Kickboxing', 'Fitness', 'Yoga', 'Kids Martial Arts', 'All Access']).optional(),
   instructorId: z.string().min(1).optional(),
   maxParticipants: z.number().int().min(1).max(100).optional(),
   duration: z.number().int().min(15).max(240).optional(),

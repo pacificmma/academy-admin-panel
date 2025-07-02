@@ -11,7 +11,7 @@ import { addMinutes, format as formatFns } from 'date-fns';
 // Validation schema for class schedule (Modified for new recurrence)
 const classScheduleSchema = z.object({
   name: z.string().min(3).max(100),
-  classType: z.enum(['MMA', 'BJJ', 'Boxing', 'Muay Thai', 'Wrestling', 'Judo', 'Kickboxing', 'Fitness', 'Yoga', 'Kids Martial Arts']),
+  classType: z.enum(['MMA', 'BJJ', 'Boxing', 'Muay Thai', 'Wrestling', 'Judo', 'Kickboxing', 'Fitness', 'Yoga', 'Kids Martial Arts', 'All Access']),
   instructorId: z.string().min(1),
   maxParticipants: z.number().int().min(1).max(100),
   duration: z.number().int().min(15).max(240), // Duration of each session

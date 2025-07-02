@@ -304,6 +304,7 @@ export const membershipPackageService = {
       { name: 'Judo', description: 'Japanese martial art.', ageGroups: ['adult', 'teen', 'child'] },
       { name: 'Kickboxing', description: 'Kickboxing martial art.', ageGroups: ['adult', 'teen'] },
       { name: 'Fitness', description: 'General fitness and conditioning.', ageGroups: ['all'] },
+      { name: 'Full Access', description: 'General fitness and conditioning.', ageGroups: ['all'] },
     ];
 
     try {

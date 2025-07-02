@@ -1,7 +1,7 @@
 // src/app/types/class.ts - UNIFIED AND COMPLETE VERSION
 // ============================================
 
-export type ClassType = 'MMA' | 'BJJ' | 'Boxing' | 'Muay Thai' | 'Wrestling' | 'Judo' | 'Kickboxing' | 'Fitness' | 'Yoga' | 'Kids Martial Arts';
+export type ClassType = 'MMA' | 'BJJ' | 'Boxing' | 'Muay Thai' | 'Wrestling' | 'Judo' | 'Kickboxing' | 'Fitness' | 'Yoga' | 'Kids Martial Arts' |  'All Access';
 
 export type ClassStatus = 'scheduled' | 'ongoing' | 'completed' | 'cancelled';
 
@@ -123,7 +123,8 @@ export function getClassTypeColor(classType: ClassType): string {
     'Kickboxing': '#ed8936',
     'Fitness': '#4299e1',
     'Yoga': '#48bb78',
-    'Kids Martial Arts': '#ed64a6'
+    'Kids Martial Arts': '#ed64a6',
+    'All Access': 'black'
   };
   return colors[classType] || '#718096';
 }
