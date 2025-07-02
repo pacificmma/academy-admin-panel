@@ -284,7 +284,7 @@ export default function MembersPageClient({ session }: MembersPageClientProps) {
 
   return (
     <Layout session={session}>
-    <Box>
+    <Box sx={{ px: 2, py: 2 }}>
       {/* Header */}
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Typography variant="h4" component="h1">
