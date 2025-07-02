@@ -1,7 +1,7 @@
-// src/app/components/ui/ClassCalendar.tsx (Updated - Minor text adjustment)
+// src/app/components/ui/ClassCalendar.tsx (Complete Fixed Version)
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -32,7 +32,7 @@ import {
   Stop as StopIcon,
   Cancel as CancelIcon,
 } from '@mui/icons-material';
-import { ClassInstance, getClassTypeColor, formatClassTime, ClassSchedule } from '../../types/class';
+import { ClassInstance, getClassTypeColor, ClassSchedule } from '../../types/class';
 
 interface ClassCalendarProps {
   classes: ClassInstance[];
@@ -41,7 +41,7 @@ interface ClassCalendarProps {
   onClassClick?: (classInstance: ClassInstance) => void;
   onDateClick?: (date: Date) => void;
   selectedDate?: Date;
-  userRole: 'admin' | 'trainer' | 'staff' | 'member'; // Added 'member' as a possible role
+  userRole: 'admin' | 'trainer' | 'staff' | 'member';
   onEditClass: (data: ClassSchedule | ClassInstance) => void;
   onDeleteClass: (data: ClassInstance, type: 'instance') => void;
   onStartClass?: (instanceId: string) => void;
@@ -80,6 +80,11 @@ export default function ClassCalendar({
   const [eventMenuAnchor, setEventMenuAnchor] = useState<null | HTMLElement>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
 
+  // Sync currentDate with selectedDate prop changes
+  useEffect(() => {
+    setCurrentDate(selectedDate);
+  }, [selectedDate]);
+
   const events = useMemo(() => {
     return classes.map(classInstance => ({
       id: classInstance.id,
@@ -115,11 +120,15 @@ export default function ClassCalendar({
         }
         break;
       case 'today':
-        setCurrentDate(new Date());
-        return;
+        newDate.setTime(new Date().getTime());
+        break;
     }
 
     setCurrentDate(newDate);
+    // Notify parent about date change
+    if (onDateClick) {
+      onDateClick(newDate);
+    }
   };
 
   const getDateRange = () => {
@@ -127,6 +136,8 @@ export default function ClassCalendar({
     const end = new Date(currentDate);
 
     if (viewMode === 'day') {
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
       return { start, end };
     } else if (viewMode === 'week') {
       const dayOfWeek = start.getDay(); // 0 for Sunday, 1 for Monday
@@ -149,11 +160,15 @@ export default function ClassCalendar({
   const { start: rangeStart, end: rangeEnd } = getDateRange();
 
   const filteredEvents = events.filter(event => {
-    const eventDate = new Date(event.date);
-    // Normalize eventDate to start of day for comparison
-    eventDate.setHours(0, 0, 0, 0);
-    return eventDate >= new Date(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate()) &&
-           eventDate <= new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), rangeEnd.getDate(), 23, 59, 59, 999);
+    // Parse the date string in YYYY-MM-DD format
+    const eventDate = new Date(event.date + 'T00:00:00.000Z');
+    const eventDateLocal = new Date(eventDate.getUTCFullYear(), eventDate.getUTCMonth(), eventDate.getUTCDate());
+    
+    // Create normalized date range for comparison
+    const rangeStartNormalized = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate());
+    const rangeEndNormalized = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), rangeEnd.getDate());
+    
+    return eventDateLocal >= rangeStartNormalized && eventDateLocal <= rangeEndNormalized;
   });
 
   const handleEventClick = (event: CalendarEvent, anchorEl?: HTMLElement) => {
@@ -174,9 +189,12 @@ export default function ClassCalendar({
   const showManagementButtons = userRole === 'admin' || isInstructorOfSelectedEvent;
 
   const renderDayView = () => {
-    const dayEvents = filteredEvents.filter(event =>
-      new Date(event.date).toDateString() === currentDate.toDateString()
-    ).sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const dayEvents = filteredEvents.filter(event => {
+      const eventDate = new Date(event.date + 'T00:00:00.000Z');
+      const eventDateLocal = new Date(eventDate.getUTCFullYear(), eventDate.getUTCMonth(), eventDate.getUTCDate());
+      const currentDateLocal = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
+      return eventDateLocal.getTime() === currentDateLocal.getTime();
+    }).sort((a, b) => a.startTime.localeCompare(b.startTime));
 
     return (
       <Box sx={{ p: 3 }}>
@@ -198,60 +216,45 @@ export default function ClassCalendar({
           }}
           onClick={() => onDateClick?.(currentDate)}
           >
-            <Typography variant="body1">No classes scheduled for this day.</Typography>
-            {userRole === 'admin' && (
-              <Typography variant="body2" sx={{ mt: 1 }}>
-                Click to schedule a class
-              </Typography>
-            )}
+            <Typography variant="body1">No classes scheduled for this day</Typography>
           </Box>
         ) : (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {dayEvents.map(event => (
-              <Card
-                key={event.id}
-                sx={{
-                  borderLeft: `4px solid ${event.color}`,
-                  cursor: 'pointer',
-                  '&:hover': { bgcolor: 'action.hover' },
-                }}
-                onClick={() => handleEventClick(event)}
-              >
-                <CardContent sx={{ py: 2 }}>
+              <Card key={event.id} sx={{ 
+                cursor: 'pointer',
+                '&:hover': { boxShadow: 3 }
+              }}>
+                <CardContent sx={{ p: 2 }}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <Box>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                    <Box sx={{ flex: 1 }} onClick={() => handleEventClick(event)}>
+                      <Typography variant="h6" sx={{ mb: 1, fontWeight: 600 }}>
                         {event.title}
                       </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {formatClassTime(event.startTime,
-                          event.classInstance.actualDuration || event.classInstance.duration)}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {event.classInstance.instructorName}
-                      </Typography>
-                      <Box sx={{ mt: 1 }}>
-                        <Chip
-                          label={event.classInstance.classType}
-                          size="small"
-                          sx={{
-                            bgcolor: `${event.color}15`,
-                            color: event.color,
-                          }}
-                        />
-                        <Chip
-                          label={`${event.classInstance.registeredParticipants.length}/${event.classInstance.maxParticipants}`}
-                          size="small"
-                          sx={{ ml: 1 }}
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                        <Typography variant="body2" color="text.secondary">
+                          {`${event.startTime} - ${event.endTime}`}
+                        </Typography>
+                        <Chip 
+                          label={event.classInstance.classType} 
+                          size="small" 
+                          sx={{ 
+                            bgcolor: event.color,
+                            color: 'white',
+                            fontWeight: 600
+                          }} 
                         />
                       </Box>
+                      <Typography variant="body2" color="text.secondary">
+                        Instructor: {event.classInstance.instructorName}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {event.classInstance.registeredParticipants.length}/{event.classInstance.maxParticipants} participants
+                      </Typography>
                     </Box>
                     <IconButton
                       size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleEventClick(event, e.currentTarget);
-                      }}
+                      onClick={(e) => handleEventClick(event, e.currentTarget)}
                     >
                       <MoreVertIcon />
                     </IconButton>
@@ -266,38 +269,40 @@ export default function ClassCalendar({
   };
 
   const renderWeekView = () => {
-    const weekDays: Date[] = [];
-    const startOfWeek = new Date(rangeStart);
+    const weekStart = new Date(currentDate);
+    const dayOfWeek = weekStart.getDay();
+    const diff = weekStart.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+    weekStart.setDate(diff);
 
-    for (let i = 0; i < 7; i++) {
-      const day = new Date(startOfWeek);
-      day.setDate(startOfWeek.getDate() + i);
-      weekDays.push(day);
-    }
+    const weekDays = Array.from({ length: 7 }, (_, i) => {
+      const day = new Date(weekStart);
+      day.setDate(weekStart.getDate() + i);
+      return day;
+    });
 
-    const timeSlots = [];
-    for (let hour = 6; hour <= 22; hour++) {
-      timeSlots.push(`${hour.toString().padStart(2, '0')}:00`);
-    }
+    const timeSlots = Array.from({ length: 24 }, (_, i) => {
+      const hour = i.toString().padStart(2, '0');
+      return `${hour}:00`;
+    });
 
     return (
-      <Box sx={{ p: 2 }}>
-        <Box sx={{ display: 'grid', gridTemplateColumns: '60px repeat(7, 1fr)', gap: 1, mb: 2 }}>
-          <Box /> {/* Empty corner for time labels */}
+      <Box sx={{ p: 3 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: '80px repeat(7, 1fr)', gap: 1 }}>
+          {/* Header row */}
+          <Box sx={{ p: 1 }}></Box>
           {weekDays.map(day => (
-            <Box
-              key={day.toISOString()}
-              sx={{
-                p: 1,
-                textAlign: 'center',
-                borderRadius: 1,
-                bgcolor: day.toDateString() === new Date().toDateString() ? 'primary.main' : 'transparent',
-                color: day.toDateString() === new Date().toDateString() ? 'primary.contrastText' : 'text.primary',
-                cursor: onDateClick ? 'pointer' : 'default',
-              }}
-              onClick={() => onDateClick?.(day)}
+            <Box key={day.toISOString()} sx={{ 
+              p: 1, 
+              textAlign: 'center',
+              cursor: onDateClick ? 'pointer' : 'default',
+              '&:hover': {
+                bgcolor: 'action.hover',
+                borderRadius: 1
+              }
+            }}
+            onClick={() => onDateClick?.(day)}
             >
-              <Typography variant="caption" display="block">
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
                 {day.toLocaleDateString('en-US', { weekday: 'short' })}
               </Typography>
               <Typography variant="h6">
@@ -305,45 +310,41 @@ export default function ClassCalendar({
               </Typography>
             </Box>
           ))}
-        </Box>
 
-        <Box sx={{
-          display: 'grid',
-          gridTemplateColumns: '60px repeat(7, 1fr)',
-          gap: 1,
-          maxHeight: '60vh',
-          overflow: 'auto',
-        }}>
-          {timeSlots.map(time => (
-            <React.Fragment key={time}>
-              <Box sx={{ p: 1, textAlign: 'right', fontSize: '0.75rem', color: 'text.secondary' }}>
-                {time}
+          {/* Time slots and events */}
+          {timeSlots.map(timeSlot => (
+            <React.Fragment key={timeSlot}>
+              <Box sx={{ 
+                p: 1, 
+                borderTop: 1, 
+                borderColor: 'divider',
+                fontSize: '0.75rem',
+                color: 'text.secondary'
+              }}>
+                {timeSlot}
               </Box>
               {weekDays.map(day => {
                 const dayEvents = filteredEvents.filter(event => {
-                  const eventDate = new Date(event.date);
-                  const eventHour = parseInt(event.startTime.split(':')[0]);
-                  const timeHour = parseInt(time.split(':')[0]);
-                  return eventDate.toDateString() === day.toDateString() &&
-                         eventHour === timeHour;
+                  const eventDate = new Date(event.date + 'T00:00:00.000Z');
+                  const eventDateLocal = new Date(eventDate.getUTCFullYear(), eventDate.getUTCMonth(), eventDate.getUTCDate());
+                  const dayLocal = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+                  return eventDateLocal.getTime() === dayLocal.getTime() && 
+                         event.startTime.startsWith(timeSlot.substring(0, 2));
                 });
 
                 return (
-                  <Box
-                    key={`${day.toISOString()}-${time}`}
-                    sx={{
-                      minHeight: 40,
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      borderRadius: 1,
-                      p: 0.5,
-                      position: 'relative',
-                      cursor: onDateClick ? 'pointer' : 'default',
-                      '&:hover': {
-                        bgcolor: 'action.hover',
-                      },
-                    }}
-                    onClick={() => onDateClick?.(day)}
+                  <Box key={`${day.toISOString()}-${timeSlot}`} sx={{ 
+                    p: 0.5, 
+                    borderTop: 1, 
+                    borderColor: 'divider',
+                    minHeight: 40,
+                    position: 'relative',
+                    cursor: onDateClick ? 'pointer' : 'default',
+                    '&:hover': {
+                      bgcolor: 'action.hover',
+                    },
+                  }}
+                  onClick={() => onDateClick?.(day)}
                   >
                     {dayEvents.map(event => (
                       <Box
@@ -395,78 +396,91 @@ export default function ClassCalendar({
     const weeks = [];
     const currentWeekDate = new Date(startDate);
 
-    while (currentWeekDate <= lastDayOfMonth || weeks.length < 6) { // Ensure at least 4-6 rows
+    while (currentWeekDate <= lastDayOfMonth || weeks.length < 6) {
       const week = [];
       for (let i = 0; i < 7; i++) {
         week.push(new Date(currentWeekDate));
         currentWeekDate.setDate(currentWeekDate.getDate() + 1);
       }
       weeks.push(week);
-      if (currentWeekDate > lastDayOfMonth && weeks.length >= 4) break; // Stop after current month if enough weeks
+      if (currentWeekDate > lastDayOfMonth && weeks.length >= 4) break;
     }
 
     return (
-      <Box sx={{ p: 2 }}>
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1, mb: 2 }}>
+      <Box sx={{ p: 3 }}>
+        <Box sx={{ 
+          display: 'grid', 
+          gridTemplateColumns: 'repeat(7, 1fr)', 
+          gap: 1,
+          mb: 2
+        }}>
           {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-            <Typography
-              key={day}
-              variant="subtitle2"
-              sx={{ textAlign: 'center', fontWeight: 600, color: 'text.secondary' }}
-            >
+            <Typography key={day} variant="body2" sx={{ 
+              p: 1, 
+              textAlign: 'center', 
+              fontWeight: 600,
+              color: 'text.secondary'
+            }}>
               {day}
             </Typography>
           ))}
         </Box>
 
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1 }}>
-          {weeks.flat().map(date => {
-            const dayEvents = filteredEvents.filter(event =>
-              new Date(event.date).toDateString() === date.toDateString()
-            );
+        <Box sx={{ 
+          display: 'grid', 
+          gridTemplateColumns: 'repeat(7, 1fr)', 
+          gap: 1 
+        }}>
+          {weeks.map((week, weekIndex) => (
+            <React.Fragment key={weekIndex}>
+              {week.map((day, dayIndex) => {
+                const isCurrentMonth = day.getMonth() === currentDate.getMonth();
+                const isToday = day.toDateString() === new Date().toDateString();
+                const dayEvents = filteredEvents.filter(event => {
+                  const eventDate = new Date(event.date + 'T00:00:00.000Z');
+                  const eventDateLocal = new Date(eventDate.getUTCFullYear(), eventDate.getUTCMonth(), eventDate.getUTCDate());
+                  const dayLocal = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+                  return eventDateLocal.getTime() === dayLocal.getTime();
+                });
 
-            const isCurrentMonth = date.getMonth() === currentDate.getMonth();
-            const isToday = date.toDateString() === new Date().toDateString();
-
-            return (
-              <Box
-                key={date.toISOString()}
-                sx={{
-                  minHeight: 80,
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  borderRadius: 1,
-                  p: 1,
-                  cursor: onDateClick ? 'pointer' : 'default',
-                  bgcolor: isToday ? alpha(theme.palette.primary.main, 0.1) : 'transparent',
-                  opacity: isCurrentMonth ? 1 : 0.5,
-                  '&:hover': {
-                    bgcolor: 'action.hover',
-                  },
-                }}
-                onClick={() => onDateClick?.(date)}
-              >
-                <Typography
-                  variant="body2"
-                  sx={{
-                    fontWeight: isToday ? 600 : 400,
-                    color: isToday ? 'primary.main' : 'text.primary',
-                    mb: 0.5,
-                  }}
-                >
-                  {date.getDate()}
-                </Typography>
-
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                  {dayEvents.slice(0, 2).map(event => (
-                    <Tooltip key={event.id} title={`${event.title} - ${event.startTime}`}>
+                return (
+                  <Box
+                    key={`${weekIndex}-${dayIndex}`}
+                    sx={{
+                      position: 'relative',
+                      minHeight: 100,
+                      border: 1,
+                      borderColor: 'divider',
+                      borderRadius: 1,
+                      p: 1,
+                      bgcolor: isCurrentMonth ? 'background.paper' : 'action.hover',
+                      cursor: onDateClick ? 'pointer' : 'default',
+                      '&:hover': {
+                        bgcolor: 'action.hover',
+                      },
+                    }}
+                    onClick={() => onDateClick?.(day)}
+                  >
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        fontWeight: isToday ? 600 : 400,
+                        color: isCurrentMonth ? 'text.primary' : 'text.secondary',
+                        mb: 1
+                      }}
+                    >
+                      {day.getDate()}
+                    </Typography>
+                    {dayEvents.slice(0, 3).map((event, index) => (
                       <Box
+                        key={event.id}
                         sx={{
                           bgcolor: event.color,
                           color: 'white',
-                          p: 0.25,
+                          p: 0.5,
+                          mb: 0.5,
                           borderRadius: 0.5,
-                          fontSize: '0.65rem',
+                          fontSize: '0.6rem',
                           cursor: 'pointer',
                           '&:hover': {
                             transform: 'scale(1.02)',
@@ -477,170 +491,214 @@ export default function ClassCalendar({
                           handleEventClick(event);
                         }}
                       >
-                        {event.title.length > 12 ? `${event.title.slice(0, 12)}...` : event.title}
+                        <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                          {event.title}
+                        </Typography>
                       </Box>
-                    </Tooltip>
-                  ))}
-                  {dayEvents.length > 2 && (
-                    <Typography variant="caption" color="text.secondary">
-                      +{dayEvents.length - 2} more
-                    </Typography>
-                  )}
-                </Box>
-              </Box>
-            );
-          })}
+                    ))}
+                    {dayEvents.length > 3 && (
+                      <Typography variant="caption" sx={{ 
+                        color: 'text.secondary',
+                        fontSize: '0.6rem'
+                      }}>
+                        +{dayEvents.length - 3} more
+                      </Typography>
+                    )}
+                  </Box>
+                );
+              })}
+            </React.Fragment>
+          ))}
         </Box>
       </Box>
     );
   };
 
   return (
-    <Card sx={{ height: 'fit-content' }}>
-      <Box sx={{
-        p: 2,
-        borderBottom: '1px solid',
-        borderColor: 'divider',
+    <Box sx={{ bgcolor: 'background.paper', borderRadius: 2, overflow: 'hidden' }}>
+      {/* Header */}
+      <Box sx={{ 
+        p: 2, 
+        bgcolor: 'primary.main', 
+        color: 'primary.contrastText',
         display: 'flex',
         justifyContent: 'space-between',
-        alignItems: 'center',
+        alignItems: 'center'
       }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <IconButton onClick={() => navigateDate('prev')} size="small">
-              <ChevronLeftIcon />
-            </IconButton>
-            <Button
-              onClick={() => navigateDate('today')}
-              startIcon={<TodayIcon />}
-              variant="outlined"
-              size="small"
-            >
-              Today
-            </Button>
-            <IconButton onClick={() => navigateDate('next')} size="small">
-              <ChevronRightIcon />
-            </IconButton>
-          </Box>
-
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-            {currentDate.toLocaleDateString('en-US', {
-              month: 'long',
-              year: 'numeric',
-              ...(viewMode === 'day' && { day: 'numeric', weekday: 'long' })
-            })}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <IconButton 
+            onClick={() => navigateDate('prev')}
+            sx={{ color: 'inherit' }}
+          >
+            <ChevronLeftIcon />
+          </IconButton>
+          
+          <Typography variant="h6" sx={{ minWidth: 200, textAlign: 'center', color: 'white' }}>
+            {viewMode === 'month' 
+              ? currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+              : viewMode === 'week'
+              ? `Week of ${currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+              : currentDate.toLocaleDateString('en-US', { 
+                  weekday: 'long', 
+                  month: 'long', 
+                  day: 'numeric', 
+                  year: 'numeric' 
+                })
+            }
           </Typography>
+          
+          <IconButton 
+            onClick={() => navigateDate('next')}
+            sx={{ color: 'inherit' }}
+          >
+            <ChevronRightIcon />
+          </IconButton>
+          
+          <Tooltip title="Today">
+            <IconButton 
+              onClick={() => navigateDate('today')}
+              sx={{ color: 'inherit' }}
+            >
+              <TodayIcon />
+            </IconButton>
+          </Tooltip>
         </Box>
 
-        <Box sx={{ display: 'flex', bgcolor: 'background.paper', borderRadius: 1, p: 0.5, border: 1, borderColor: 'divider' }}>
-          <IconButton
-            size="small"
-            onClick={() => onViewModeChange('day')}
-            sx={{
-              bgcolor: viewMode === 'day' ? 'primary.main' : 'transparent',
-              color: viewMode === 'day' ? 'primary.contrastText' : 'text.secondary',
-              '&:hover': {
-                bgcolor: viewMode === 'day' ? 'primary.dark' : 'action.hover',
-              },
-            }}
-          >
-            <DayIcon />
-          </IconButton>
-          <IconButton
-            size="small"
-            onClick={() => onViewModeChange('week')}
-            sx={{
-              bgcolor: viewMode === 'week' ? 'primary.main' : 'transparent',
-              color: viewMode === 'week' ? 'primary.contrastText' : 'text.secondary',
-              '&:hover': {
-                bgcolor: viewMode === 'week' ? 'primary.dark' : 'action.hover',
-              },
-            }}
-          >
-            <WeekIcon />
-          </IconButton>
-          <IconButton
-            size="small"
-            onClick={() => onViewModeChange('month')}
-            sx={{
-              bgcolor: viewMode === 'month' ? 'primary.main' : 'transparent',
-              color: viewMode === 'month' ? 'primary.contrastText' : 'text.secondary',
-              '&:hover': {
-                bgcolor: viewMode === 'month' ? 'primary.dark' : 'action.hover',
-              },
-            }}
-          >
-            <MonthIcon />
-          </IconButton>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Tooltip title="Day View">
+            <IconButton
+              onClick={() => onViewModeChange('day')}
+              sx={{ 
+                color: 'inherit',
+                bgcolor: viewMode === 'day' ? 'rgba(255,255,255,0.2)' : 'transparent'
+              }}
+            >
+              <DayIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Week View">
+            <IconButton
+              onClick={() => onViewModeChange('week')}
+              sx={{ 
+                color: 'inherit',
+                bgcolor: viewMode === 'week' ? 'rgba(255,255,255,0.2)' : 'transparent'
+              }}
+            >
+              <WeekIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Month View">
+            <IconButton
+              onClick={() => onViewModeChange('month')}
+              sx={{ 
+                color: 'inherit',
+                bgcolor: viewMode === 'month' ? 'rgba(255,255,255,0.2)' : 'transparent'
+              }}
+            >
+              <MonthIcon />
+            </IconButton>
+          </Tooltip>
         </Box>
       </Box>
 
-      <Box sx={{ minHeight: 400 }}>
-        {viewMode === 'day' && renderDayView()}
-        {viewMode === 'week' && renderWeekView()}
-        {viewMode === 'month' && renderMonthView()}
-      </Box>
+      {/* Calendar Content */}
+      {viewMode === 'day' && renderDayView()}
+      {viewMode === 'week' && renderWeekView()}
+      {viewMode === 'month' && renderMonthView()}
 
+      {/* Event Menu */}
       <Menu
         anchorEl={eventMenuAnchor}
         open={Boolean(eventMenuAnchor)}
         onClose={handleEventMenuClose}
-        transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-        anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
-        {selectedEvent && onClassClick && (
-          <MenuItem onClick={() => {
-            onClassClick(selectedEvent.classInstance);
-            handleEventMenuClose();
-          }}>
-            View Details
-          </MenuItem>
-        )}
-        {selectedEvent && showManagementButtons && (
-          <MenuItem onClick={() => {
-            onEditClass(selectedEvent.classInstance);
-            handleEventMenuClose();
-          }}>
-            <ListItemIcon>
-              <EditIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Edit Class</ListItemText>
-          </MenuItem>
-        )}
-        {selectedEvent && (userRole === 'admin' || isInstructorOfSelectedEvent) && selectedEvent.classInstance.status !== 'completed' && selectedEvent.classInstance.status !== 'cancelled' && (
-          <MenuItem onClick={() => {
-            onCancelClass?.(selectedEvent.classInstance.id);
-            handleEventMenuClose();
-          }} sx={{ color: 'error.main' }}>
-            <ListItemIcon>
-              <CancelIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Cancel Class</ListItemText>
-          </MenuItem>
-        )}
-        {selectedEvent && (userRole === 'admin' || isInstructorOfSelectedEvent) && selectedEvent.classInstance.status === 'scheduled' && onStartClass && (
-          <MenuItem onClick={() => {
-            onStartClass(selectedEvent.classInstance.id);
-            handleEventMenuClose();
-          }}>
-            <ListItemIcon>
-              <PlayArrowIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Start Class</ListItemText>
-          </MenuItem>
-        )}
-        {selectedEvent && (userRole === 'admin' || isInstructorOfSelectedEvent) && selectedEvent.classInstance.status === 'ongoing' && onEndClass && (
-          <MenuItem onClick={() => {
-            onEndClass(selectedEvent.classInstance.id);
-            handleEventMenuClose();
-          }}>
-            <ListItemIcon>
-              <StopIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>End Class</ListItemText>
-          </MenuItem>
+        <MenuItem onClick={() => {
+          if (selectedEvent) {
+            handleEventClick(selectedEvent);
+          }
+          handleEventMenuClose();
+        }}>
+          <ListItemIcon>
+            <EditIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>View Details</ListItemText>
+        </MenuItem>
+        
+        {showManagementButtons && (
+          <>
+            <MenuItem onClick={() => {
+              if (selectedEvent) {
+                onEditClass(selectedEvent.classInstance);
+              }
+              handleEventMenuClose();
+            }}>
+              <ListItemIcon>
+                <EditIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Edit Class</ListItemText>
+            </MenuItem>
+
+            {selectedEvent?.classInstance.status === 'scheduled' && onStartClass && (
+              <MenuItem onClick={() => {
+                if (selectedEvent) {
+                  onStartClass(selectedEvent.classInstance.id);
+                }
+                handleEventMenuClose();
+              }}>
+                <ListItemIcon>
+                  <PlayArrowIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>Start Class</ListItemText>
+              </MenuItem>
+            )}
+
+            {selectedEvent?.classInstance.status === 'ongoing' && onEndClass && (
+              <MenuItem onClick={() => {
+                if (selectedEvent) {
+                  onEndClass(selectedEvent.classInstance.id);
+                }
+                handleEventMenuClose();
+              }}>
+                <ListItemIcon>
+                  <StopIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>End Class</ListItemText>
+              </MenuItem>
+            )}
+
+            {selectedEvent?.classInstance.status === 'scheduled' && onCancelClass && (
+              <MenuItem onClick={() => {
+                if (selectedEvent) {
+                  onCancelClass(selectedEvent.classInstance.id);
+                }
+                handleEventMenuClose();
+              }}>
+                <ListItemIcon>
+                  <CancelIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>Cancel Class</ListItemText>
+              </MenuItem>
+            )}
+
+            <MenuItem 
+              onClick={() => {
+                if (selectedEvent) {
+                  onDeleteClass(selectedEvent.classInstance, 'instance');
+                }
+                handleEventMenuClose();
+              }}
+              sx={{ color: 'error.main' }}
+            >
+              <ListItemIcon>
+                <DeleteIcon fontSize="small" color="error" />
+              </ListItemIcon>
+              <ListItemText>Delete Class</ListItemText>
+            </MenuItem>
+          </>
         )}
       </Menu>
-    </Card>
+    </Box>
   );
 }

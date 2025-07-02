@@ -1,4 +1,4 @@
-// src/app/classes/ClassesPageClient.tsx - SIMPLE VERSION
+// src/app/classes/ClassesPageClient.tsx - UPDATED VERSION
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -330,9 +330,11 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
     setFilters(prev => ({ ...prev, [field]: value }));
   };
 
+  // FIXED: Added missing handleCalendarDateChange function
   const handleCalendarDateChange = (date: Date) => {
     setCurrentCalendarDate(date);
-    if (tabIndex === 1) {
+    // For tab 1 (Upcoming Classes), also update the date filter if in cards mode
+    if (tabIndex === 1 && instanceDisplayMode === 'cards') {
       setFilters(prev => ({ ...prev, date: format(date, 'yyyy-MM-dd') }));
     }
   };
@@ -377,7 +379,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
       filtered = filtered.filter(instance => instance.date === filters.date);
     }
   
-    // Apply calendar view range filter for calendar views
+    // FIXED: Apply calendar view range filter for calendar views with proper date parsing
     if (tabIndex === 0 || (tabIndex === 1 && instanceDisplayMode === 'calendar') || tabIndex === 2) {
       let rangeStart: Date;
       let rangeEnd: Date;
@@ -396,19 +398,23 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
       }
   
       filtered = filtered.filter(instance => {
-        const instanceDate = new Date(instance.date);
-        return isWithinInterval(instanceDate, { start: rangeStart, end: rangeEnd });
+        // FIXED: Parse the date string properly (YYYY-MM-DD format) to avoid timezone issues
+        const instanceDate = new Date(instance.date + 'T00:00:00.000Z');
+        const instanceDateLocal = new Date(instanceDate.getUTCFullYear(), instanceDate.getUTCMonth(), instanceDate.getUTCDate());
+        return isWithinInterval(instanceDateLocal, { start: rangeStart, end: rangeEnd });
       });
     }
   
-    // For tab 1 (Upcoming Classes) when in cards view, show future classes only
+    // FIXED: For tab 1 (Upcoming Classes) when in cards view, show future classes only
     if (tabIndex === 1 && instanceDisplayMode === 'cards' && !filters.date) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       
       filtered = filtered.filter(instance => {
-        const instanceDate = new Date(instance.date);
-        return instanceDate >= today;
+        // FIXED: Parse the date string properly to avoid timezone issues
+        const instanceDate = new Date(instance.date + 'T00:00:00.000Z');
+        const instanceDateLocal = new Date(instanceDate.getUTCFullYear(), instanceDate.getUTCMonth(), instanceDate.getUTCDate());
+        return instanceDateLocal >= today;
       });
       
       // Sort by date and time for upcoming classes
