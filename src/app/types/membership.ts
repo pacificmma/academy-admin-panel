@@ -3,6 +3,10 @@ export type DurationType = 'days' | 'weeks' | 'months' | 'years';
 export type MembershipStatus = 'active' | 'inactive' | 'draft';
 
 export interface MembershipPlan {
+  ageGroup: any;
+  sportCategoryIds: any;
+  classCredits: undefined;
+  durationMonths: number;
   id: string;
   name: string;
   description?: string;
@@ -15,9 +19,14 @@ export interface MembershipPlan {
   createdAt: string;
   updatedAt: string;
   createdBy: string;
+  updatedBy: string;
 }
 
 export interface MembershipPlanFormData {
+  ageGroup: any;
+  classCredits: undefined;
+  durationMonths: number;
+  sportCategoryIds: any;
   name: string;
   description?: string;
   durationValue: number;
