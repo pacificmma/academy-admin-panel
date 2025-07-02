@@ -94,7 +94,7 @@ export type ClassScheduleWithoutIdAndTimestamps = Omit<ClassSchedule, 'id' | 'cr
 // ============================================
 
 export const CLASS_TYPE_OPTIONS: ClassType[] = [
-  'MMA', 'BJJ', 'Boxing', 'Muay Thai', 'Wrestling', 'Judo', 'Kickboxing', 'Fitness', 'Yoga', 'Kids Martial Arts'
+  'MMA', 'BJJ', 'Boxing', 'Muay Thai', 'Wrestling', 'Judo', 'Kickboxing', 'Fitness', 'Yoga', 'Kids Martial Arts', 'All Access'
 ];
 
 export const LEVEL_OPTIONS = ['Beginner', 'Intermediate', 'Advanced', 'All Levels'] as const;

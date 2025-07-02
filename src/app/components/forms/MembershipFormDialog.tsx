@@ -1,4 +1,4 @@
-// src/app/components/forms/MembershipFormDialog.tsx - Updated with correct types
+// src/app/components/forms/MembershipFormDialog.tsx - Complete version with All Access support
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -65,6 +65,36 @@ const MEMBERSHIP_STATUSES: Array<{ value: MembershipStatus; label: string; color
   { value: 'draft', label: 'Draft', color: 'grey' },
 ];
 
+// Mapping between display format and backend format
+const CLASS_TYPE_MAPPING: { [key: string]: string } = {
+  'All Access': 'all_access',
+  'MMA': 'mma',
+  'BJJ': 'bjj',
+  'Boxing': 'boxing',
+  'Muay Thai': 'muay_thai',
+  'Wrestling': 'wrestling',
+  'Judo': 'judo',
+  'Kickboxing': 'kickboxing',
+  'Fitness': 'fitness',
+  'Yoga': 'yoga',
+  'Kids Martial Arts': 'kids_martial_arts'
+};
+
+// Reverse mapping for display
+const BACKEND_TO_DISPLAY_MAPPING: { [key: string]: string } = {
+  'all_access': 'All Access',
+  'mma': 'MMA',
+  'bjj': 'BJJ',
+  'boxing': 'Boxing',
+  'muay_thai': 'Muay Thai',
+  'wrestling': 'Wrestling',
+  'judo': 'Judo',
+  'kickboxing': 'Kickboxing',
+  'fitness': 'Fitness',
+  'yoga': 'Yoga',
+  'kids_martial_arts': 'Kids Martial Arts'
+};
+
 const DEFAULT_FORM_DATA: MembershipPlanFormData = {
   name: '',
   description: '',
@@ -80,6 +110,9 @@ const DEFAULT_FORM_DATA: MembershipPlanFormData = {
 const formatCurrency = (amount: number, currency: string): string => {
   const currencySymbols: Record<string, string> = {
     USD: '$',
+    EUR: '€',
+    GBP: '£',
+    TRY: '₺',
   };
   
   const symbol = currencySymbols[currency] || currency;
@@ -107,7 +140,7 @@ export default function MembershipFormDialog({
           durationType: membership.durationType,
           price: membership.price,
           currency: membership.currency,
-          classTypes: membership.classTypes,
+          classTypes: membership.classTypes, // Keep in backend format for form state
           status: membership.status,
         });
       } else {
@@ -287,18 +320,14 @@ export default function MembershipFormDialog({
                 disabled={loading}
                 required
                 InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <MoneyIcon />
-                    </InputAdornment>
-                  ),
+                  startAdornment: <InputAdornment position="start"><MoneyIcon /></InputAdornment>,
                   inputProps: { min: 0, step: 0.01 }
                 }}
               />
             </Grid>
 
             <Grid item xs={12} sm={6}>
-              <FormControl fullWidth disabled={loading} error={!!errors.currency}>
+              <FormControl fullWidth disabled={loading}>
                 <InputLabel>Currency</InputLabel>
                 <Select
                   value={formData.currency}
@@ -311,48 +340,50 @@ export default function MembershipFormDialog({
                     </MenuItem>
                   ))}
                 </Select>
-                {errors.currency && <FormHelperText>{errors.currency}</FormHelperText>}
               </FormControl>
             </Grid>
 
             {/* Class Types */}
             <Grid item xs={12}>
-              <FormControl fullWidth error={!!errors.classTypes}>
+              <FormControl fullWidth error={!!errors.classTypes} disabled={loading}>
                 <Autocomplete
                   multiple
-                  freeSolo
                   options={CLASS_TYPE_OPTIONS}
-                  value={formData.classTypes}
-                  onChange={(_, newValue) => {
-                    handleInputChange('classTypes', newValue);
+                  value={formData.classTypes.map(type => BACKEND_TO_DISPLAY_MAPPING[type] || type)}
+                  onChange={(event, newValue) => {
+                    // Convert display values back to backend format
+                    const backendValues = newValue.map(displayValue => 
+                      CLASS_TYPE_MAPPING[displayValue] || displayValue.toLowerCase().replace(/\s+/g, '_')
+                    );
+                    handleInputChange('classTypes', backendValues);
                   }}
-                  disabled={loading}
                   renderTags={(value, getTagProps) =>
-                    value.map((option, index) => (
-                      <Chip
-                        {...getTagProps({ index })}
-                        key={option}
-                        label={option}
-                        sx={{
-                          bgcolor: 'primary.main',
-                          color: 'white',
-                          '& .MuiChip-deleteIcon': {
-                            color: 'rgba(255, 255, 255, 0.7)',
-                            '&:hover': {
+                    value.map((option, index) => {
+                      const { key, ...chipProps } = getTagProps({ index });
+                      return (
+                        <Chip
+                          key={key}
+                          label={option}
+                          {...chipProps}
+                          size="small"
+                          sx={{
+                            bgcolor: 'primary.main',
+                            color: 'white',
+                            '& .MuiChip-deleteIcon': {
                               color: 'white',
                             },
-                          },
-                        }}
-                      />
-                    ))
+                          }}
+                        />
+                      );
+                    })
                   }
                   renderInput={(params) => (
                     <TextField
                       {...params}
-                      label="Included Class Types"
+                      label="Class Types"
                       error={!!errors.classTypes}
-                      helperText={errors.classTypes || 'You can select from list or type custom class types'}
-                      placeholder="Select or type class types"
+                      helperText={errors.classTypes || 'Select the class types included in this membership plan'}
+                      placeholder="Select class types"
                     />
                   )}
                 />
@@ -416,7 +447,7 @@ export default function MembershipFormDialog({
                   {formData.classTypes.map(type => (
                     <Chip
                       key={type}
-                      label={type}
+                      label={BACKEND_TO_DISPLAY_MAPPING[type] || type}
                       size="small"
                       sx={{
                         bgcolor: 'primary.main',
