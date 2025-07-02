@@ -367,7 +367,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
           <Typography variant="h4" component="h1">
             Class Management
           </Typography>
-          {(user?.role === 'admin' || user?.role === 'staff') && (
+          {(session?.role === 'admin' || session?.role === 'staff') && (
             <Button
               variant="contained"
               startIcon={<AddIcon />}
@@ -381,7 +381,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
         <Tabs value={tabIndex} onChange={handleTabChange} sx={{ mb: 3 }}>
           <Tab label="Class Schedules" />
           <Tab label="Upcoming Classes" />
-          {user?.role === 'trainer' && <Tab label="My Schedule" />}
+          {session?.role === 'trainer' && <Tab label="My Schedule" />}
         </Tabs>
 
         {error && (
@@ -415,8 +415,8 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
                     selectedDate={currentCalendarDate}
                     onEditClass={handleEditClass}
                     onDeleteClass={(data, type) => handleDeleteClass(data, 'schedule')}
-                    userRole={user?.role || 'member'}
-                    userId={user?.uid || ''}
+                    userRole={session?.role || 'member'}
+                    userId={session?.uid || ''}
                   />
                 )}
               </Box>
@@ -514,7 +514,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
               </Box>
             )}
 
-            {tabIndex === 2 && user?.role === 'trainer' && (
+            {tabIndex === 2 && session?.role === 'trainer' && (
               <Box>
                 <Typography variant="h6" sx={{ mb: 2 }}>
                   My Scheduled Classes
@@ -528,8 +528,8 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
                     selectedDate={currentCalendarDate}
                     onEditClass={handleEditClass}
                     onDeleteClass={(data, type) => handleDeleteClass(data, 'instance')}
-                    userRole={user?.role || 'member'}
-                    userId={user?.uid || ''}
+                    userRole={session?.role || 'member'}
+                    userId={session?.uid || ''}
                     onStartClass={(instanceId) => handleInstanceAction(instanceId, 'start')}
                     onEndClass={(instanceId) => handleInstanceAction(instanceId, 'end')}
                     onCancelClass={(instanceId) => handleInstanceAction(instanceId, 'cancel')}

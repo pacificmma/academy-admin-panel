@@ -41,13 +41,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSessionData(data.session);
         
         // Construct AuthUser from sessionData
-        if (data.session) {
+        if (data.data.isActive) {
           setUser({
-            uid: data.session.uid,
-            email: data.session.email,
-            fullName: data.session.fullName,
-            role: data.session.role,
-            isActive: data.session.isActive,
+            uid: data.data.uid,
+            email: data.data.email,
+            fullName: data.data.fullName,
+            role: data.data.role,
+            isActive: data.data.isActive,
             createdAt: '', // createdAt might not be directly from sessionData, adjust if needed
             // Other AuthUser fields like updatedAt, lastLoginAt are optional and can be omitted
           });
