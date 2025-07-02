@@ -2,15 +2,21 @@
   "name": "pacific-mma-academy-admin-panel",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
-    "security:audit": "npm audit",
-    "security:fix": "npm audit fix",
-    "security:check": "npm outdated"
-  },
+    "scripts": {
+      "dev": "next dev --turbopack",
+      "build": "next build",
+      "build:check": "npm run type-check && npm run build",
+      "type-check": "tsc --noEmit",
+      "type-check:watch": "tsc --noEmit --watch",
+      "start": "next start",
+      "lint": "next lint",
+      "lint:fix": "next lint --fix",
+      "security:audit": "npm audit",
+      "security:fix": "npm audit fix",
+      "security:check": "npm outdated",
+      "clean": "rm -rf .next out node_modules/.cache",
+      "prebuild": "npm run type-check"
+    },
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
