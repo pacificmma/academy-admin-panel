@@ -1,20 +1,22 @@
 // src/app/api/classes/instances/[id]/participants/route.ts - Manage Class Participants
 
-import { RequestContext, requireStaffOrTrainer } from "@/app/lib/api/middleware";
+import { requireStaffOrTrainer, RequestContext } from "@/app/lib/api/middleware";
 import { errorResponse, successResponse } from "@/app/lib/api/response-utils";
 import { adminDb } from "@/app/lib/firebase/admin";
 import { FieldPath } from "firebase-admin/firestore";
 import { NextRequest } from "next/server";
 
-
-// FIXED: Changed function name and export style to fit Next.js API routes
-export async function GET(request: NextRequest, context: RequestContext) {
+// GET /api/classes/instances/[id]/participants - Get class participants
+export const GET = requireStaffOrTrainer(async (request: NextRequest, context: RequestContext) => {
   try {
     const { params } = context;
-    if (!params?.id) {
+    const instanceId = Array.isArray(params?.id) ? params.id[0] : params?.id;
+    
+    if (!instanceId) {
       return errorResponse('Class instance ID is required', 400);
     }
-    const instanceDoc = await adminDb.collection('classInstances').doc(params.id).get();
+    
+    const instanceDoc = await adminDb.collection('classInstances').doc(instanceId).get();
 
     if (!instanceDoc.exists) {
       return errorResponse('Class instance not found', 404);
@@ -29,7 +31,7 @@ export async function GET(request: NextRequest, context: RequestContext) {
 
     // Get participant details
     const membersSnapshot = await adminDb.collection('members')
-      .where(FieldPath.documentId(), 'in', participantIds) // FIXED: Corrected FieldPath usage
+      .where(FieldPath.documentId(), 'in', participantIds)
       .get();
 
     const memberMap = new Map();
@@ -45,7 +47,6 @@ export async function GET(request: NextRequest, context: RequestContext) {
 
     return successResponse({ registered, waitlist });
   } catch (error) {
-    console.error('Get participants error:', error);
     return errorResponse('Failed to load participants');
   }
-};
+});
