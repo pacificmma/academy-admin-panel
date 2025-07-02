@@ -29,46 +29,50 @@ import {
 } from '@mui/icons-material';
 import { z } from 'zod';
 import { UserRole } from '../../types/auth';
-import { CreateStaffRequest, StaffRecord, UpdateStaffRequest, StaffData } from '../../types/staff';
+import { CreateStaffRequest, StaffRecord, UpdateStaffRequest, StaffFormData } from '../../types/staff';
 
-// Define the form-specific interface directly, composing from StaffData
-// This avoids the 'Omit' conflict with 'uid' and correctly represents form state.
-interface StaffMemberForm extends StaffData {
-  uid?: string; // UID is optional for creation, required for edit (handled by initialStaffData)
-  password?: string; // Password input field, optional for edit, required for create in UI
-  isActive?: boolean; // Managed by the form in edit mode, default for create
-}
-
+// Staff form validation schema
 const staffFormSchema = z.object({
-  uid: z.string().optional(),
   fullName: z.string().min(3, 'Full name is required').max(100, 'Full name is too long'),
   email: z.string().email('Invalid email address'),
   role: z.enum(['admin', 'trainer', 'staff'], { message: 'Please select a valid role' }),
-  isActive: z.boolean().optional(),
   password: z.string().min(6, 'Password must be at least 6 characters').optional(),
-  // These fields are part of StaffData, and their optionality is handled there.
   phoneNumber: z.string().optional(),
-  dateOfBirth: z.string().optional(),
   emergencyContact: z.object({
-    name: z.string().min(2).max(100).optional(),
-    phone: z.string().regex(/^[\+]?[0-9\s\-\(\)]{10,20}$/, 'Invalid phone number format').optional(),
-    relationship: z.string().min(2).max(50).optional()
+    name: z.string().min(2).max(100),
+    phone: z.string().regex(/^[\+]?[0-9\s\-\(\)]{10,20}$/, 'Invalid phone number format'),
+    relationship: z.string().min(2).max(50)
   }).optional(),
-  specializations: z.array(z.string()).optional(),
-  certifications: z.array(z.string()).optional(),
+  address: z.object({
+    street: z.string().min(5).max(200),
+    city: z.string().min(2).max(100),
+    state: z.string().min(2).max(100),
+    zipCode: z.string().min(3).max(20),
+    country: z.string().min(2).max(100)
+  }).optional(),
+  notes: z.string().max(500).optional(),
 });
 
-const DEFAULT_FORM_DATA: StaffMemberForm = {
-  fullName: '',
+const DEFAULT_FORM_DATA: StaffFormData = {
   email: '',
-  role: 'staff',
+  fullName: '',
+  phoneNumber: '',
   password: '',
-  isActive: true, // Default for new staff
-  phoneNumber: undefined,
-  dateOfBirth: undefined,
-  emergencyContact: undefined,
-  specializations: [],
-  certifications: [],
+  confirmPassword: '',
+  role: 'staff',
+  emergencyContact: {
+    name: '',
+    phone: '',
+    relationship: '',
+  },
+  address: {
+    street: '',
+    city: '',
+    state: '',
+    zipCode: '',
+    country: '',
+  },
+  notes: '',
 };
 
 interface CreateStaffDialogProps {
@@ -88,33 +92,39 @@ export default function CreateStaffDialog({
   mode,
   initialStaffData,
 }: CreateStaffDialogProps) {
-  const [formData, setFormData] = useState<StaffMemberForm>(DEFAULT_FORM_DATA);
+  const [formData, setFormData] = useState<StaffFormData>(DEFAULT_FORM_DATA);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   useEffect(() => {
     if (open) {
       setApiError(null);
       setErrors({});
+      
       if (mode === 'edit' && initialStaffData) {
         setFormData({
-          uid: initialStaffData.uid, // initialStaffData.uid (string) maps to formData.uid (string | undefined) -> OK
-          fullName: initialStaffData.fullName,
           email: initialStaffData.email,
+          fullName: initialStaffData.fullName,
+          phoneNumber: initialStaffData.phoneNumber || '',
+          password: '', // Never pre-fill password
+          confirmPassword: '',
           role: initialStaffData.role,
-          isActive: initialStaffData.isActive,
-          phoneNumber: initialStaffData.phoneNumber || undefined,
-          dateOfBirth: initialStaffData.dateOfBirth || undefined,
-          emergencyContact: initialStaffData.emergencyContact ? {
-            name: initialStaffData.emergencyContact.name || undefined,
-            phone: initialStaffData.emergencyContact.phone || undefined,
-            relationship: initialStaffData.emergencyContact.relationship || undefined,
-          } : undefined,
-          specializations: initialStaffData.specializations || [],
-          certifications: initialStaffData.certifications || [],
-          password: '', // Password is never pre-filled in edit mode
+          emergencyContact: {
+            name: initialStaffData.emergencyContact?.name || '',
+            phone: initialStaffData.emergencyContact?.phone || '',
+            relationship: initialStaffData.emergencyContact?.relationship || '',
+          },
+          address: {
+            street: initialStaffData.address?.street || '',
+            city: initialStaffData.address?.city || '',
+            state: initialStaffData.address?.state || '',
+            zipCode: initialStaffData.address?.zipCode || '',
+            country: initialStaffData.address?.country || '',
+          },
+          notes: initialStaffData.notes || '',
         });
       } else {
         setFormData(DEFAULT_FORM_DATA);
@@ -122,84 +132,154 @@ export default function CreateStaffDialog({
     }
   }, [open, mode, initialStaffData]);
 
-  const handleInputChange = (field: keyof StaffMemberForm, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+  const handleInputChange = (field: string, value: any) => {
+    // Handle nested object updates
+    if (field.includes('.')) {
+      const [parent, child] = field.split('.');
+      setFormData(prev => ({
+        ...prev,
+        [parent]: {
+          ...((prev as any)[parent] || {}),
+          [child]: value,
+        },
+      }));
+    } else {
+      setFormData(prev => ({ ...prev, [field]: value }));
+    }
+    
+    // Clear error for this field
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
   };
 
-  const handleSubmit = async () => {
-    setApiError(null);
-    setErrors({});
+  const validateForm = (): boolean => {
+    const newErrors: Record<string, string> = {};
 
-    let dataToValidate: any = { ...formData }; // Use 'any' for Zod parsing flexibility
+    // Basic validation
+    if (!formData.fullName.trim()) {
+      newErrors.fullName = 'Full name is required';
+    }
 
+    if (!formData.email.trim()) {
+      newErrors.email = 'Email is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      newErrors.email = 'Invalid email format';
+    }
+
+    if (!formData.role) {
+      newErrors.role = 'Role is required';
+    }
+
+    // Password validation for create mode
     if (mode === 'create') {
-      // Password is required for create, ensure it's not optional for validation
-      if (!dataToValidate.password) {
-        setErrors(prev => ({ ...prev, password: 'Password is required' }));
-        return;
+      if (!formData.password) {
+        newErrors.password = 'Password is required';
+      } else if (formData.password.length < 6) {
+        newErrors.password = 'Password must be at least 6 characters';
       }
-    } else { // mode === 'edit'
-      // For edit, remove password from validation if not being changed (empty string)
-      if (dataToValidate.password === '') {
-        delete dataToValidate.password;
+
+      if (!formData.confirmPassword) {
+        newErrors.confirmPassword = 'Please confirm your password';
+      } else if (formData.password !== formData.confirmPassword) {
+        newErrors.confirmPassword = 'Passwords do not match';
       }
     }
-    
-    // Validate against the Zod schema
-    const validationResult = staffFormSchema.safeParse(dataToValidate);
 
-    if (!validationResult.success) {
-      const newErrors: Record<string, string> = {};
-      validationResult.error.errors.forEach((err: any) => { // Use 'any' for ZodError.errors
-        if (err.path[0]) {
-          newErrors[err.path[0]] = err.message;
-        }
-      });
-      setErrors(newErrors);
+    // Phone number validation (if provided)
+    if (formData.phoneNumber && !/^[\+]?[0-9\s\-\(\)]{10,20}$/.test(formData.phoneNumber)) {
+      newErrors.phoneNumber = 'Invalid phone number format';
+    }
+
+    // Emergency contact validation (if any field is filled)
+    const hasEmergencyContact = formData.emergencyContact.name || formData.emergencyContact.phone || formData.emergencyContact.relationship;
+    if (hasEmergencyContact) {
+      if (!formData.emergencyContact.name) {
+        newErrors['emergencyContact.name'] = 'Emergency contact name is required';
+      }
+      if (!formData.emergencyContact.phone) {
+        newErrors['emergencyContact.phone'] = 'Emergency contact phone is required';
+      } else if (!/^[\+]?[0-9\s\-\(\)]{10,20}$/.test(formData.emergencyContact.phone)) {
+        newErrors['emergencyContact.phone'] = 'Invalid phone number format';
+      }
+      if (!formData.emergencyContact.relationship) {
+        newErrors['emergencyContact.relationship'] = 'Relationship is required';
+      }
+    }
+
+    // Address validation (if any field is filled)
+    const hasAddress = formData.address.street || formData.address.city || formData.address.state || formData.address.zipCode || formData.address.country;
+    if (hasAddress) {
+      if (!formData.address.street) {
+        newErrors['address.street'] = 'Street address is required';
+      }
+      if (!formData.address.city) {
+        newErrors['address.city'] = 'City is required';
+      }
+      if (!formData.address.state) {
+        newErrors['address.state'] = 'State is required';
+      }
+      if (!formData.address.zipCode) {
+        newErrors['address.zipCode'] = 'Zip code is required';
+      }
+      if (!formData.address.country) {
+        newErrors['address.country'] = 'Country is required';
+      }
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = async () => {
+    setApiError(null);
+    
+    if (!validateForm()) {
       return;
     }
 
     setLoading(true);
     try {
       let response;
+      
       if (mode === 'create') {
-        // Ensure that only fields expected by CreateStaffRequest are sent
         const createData: CreateStaffRequest = {
-          fullName: formData.fullName,
           email: formData.email,
+          fullName: formData.fullName,
+          phoneNumber: formData.phoneNumber || undefined,
+          password: formData.password,
           role: formData.role,
-          password: formData.password!, // Password is required here due to client-side validation
-          phoneNumber: formData.phoneNumber,
-          dateOfBirth: formData.dateOfBirth,
-          emergencyContact: formData.emergencyContact,
-          specializations: formData.specializations,
-          certifications: formData.certifications,
+          emergencyContact: (formData.emergencyContact.name || formData.emergencyContact.phone || formData.emergencyContact.relationship) 
+            ? formData.emergencyContact 
+            : undefined,
+          address: (formData.address.street || formData.address.city || formData.address.state || formData.address.zipCode || formData.address.country)
+            ? formData.address
+            : undefined,
+          notes: formData.notes || undefined,
         };
+
         response = await fetch('/api/staff/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(createData),
           credentials: 'include',
         });
-      } else { // mode === 'edit'
-        // Ensure that only fields expected by UpdateStaffRequest are sent
+      } else {
         const updateData: UpdateStaffRequest = {
           fullName: formData.fullName,
+          phoneNumber: formData.phoneNumber || undefined,
           role: formData.role,
-          isActive: formData.isActive,
-          phoneNumber: formData.phoneNumber,
-          dateOfBirth: formData.dateOfBirth,
-          emergencyContact: formData.emergencyContact,
-          specializations: formData.specializations,
-          certifications: formData.certifications,
-          // Password field is omitted from UpdateStaffRequest in types/staff.ts.
-          // If password update is needed, it would require a separate flow or
-          // a specific field like `newPassword` and an oldPassword for security.
+          isActive: initialStaffData?.isActive ?? true,
+          emergencyContact: (formData.emergencyContact.name || formData.emergencyContact.phone || formData.emergencyContact.relationship) 
+            ? formData.emergencyContact 
+            : undefined,
+          address: (formData.address.street || formData.address.city || formData.address.state || formData.address.zipCode || formData.address.country)
+            ? formData.address
+            : undefined,
+          notes: formData.notes || undefined,
         };
-        response = await fetch(`/api/staff/${formData.uid}`, {
+
+        response = await fetch(`/api/staff/${initialStaffData?.uid}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(updateData),
@@ -208,7 +288,7 @@ export default function CreateStaffDialog({
       }
 
       const result = await response.json();
-
+      
       if (response.ok && result.success) {
         if (mode === 'create' && onStaffCreated) {
           onStaffCreated(result.data);
@@ -247,6 +327,7 @@ export default function CreateStaffDialog({
           </IconButton>
         </Box>
       </DialogTitle>
+
       <DialogContent sx={{ p: 3 }}>
         {apiError && (
           <Alert severity="error" sx={{ mb: 2 }} onClose={() => setApiError(null)}>
@@ -258,9 +339,10 @@ export default function CreateStaffDialog({
           {/* Basic Information */}
           <Grid item xs={12}>
             <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
-              Account Information
+              Basic Information
             </Typography>
           </Grid>
+
           <Grid item xs={12} sm={6}>
             <TextField
               fullWidth
@@ -269,8 +351,10 @@ export default function CreateStaffDialog({
               onChange={(e) => handleInputChange('fullName', e.target.value)}
               error={!!errors.fullName}
               helperText={errors.fullName}
+              required
             />
           </Grid>
+
           <Grid item xs={12} sm={6}>
             <TextField
               fullWidth
@@ -280,16 +364,18 @@ export default function CreateStaffDialog({
               onChange={(e) => handleInputChange('email', e.target.value)}
               error={!!errors.email}
               helperText={errors.email}
-              disabled={mode === 'edit'} // Email should not be editable
+              disabled={mode === 'edit'}
+              required
             />
           </Grid>
+
           <Grid item xs={12} sm={6}>
             <FormControl fullWidth error={!!errors.role}>
-              <InputLabel>Role</InputLabel>
+              <InputLabel>Role *</InputLabel>
               <Select
                 value={formData.role}
                 onChange={(e) => handleInputChange('role', e.target.value as UserRole)}
-                label="Role"
+                label="Role *"
               >
                 <MenuItem value="staff">Staff</MenuItem>
                 <MenuItem value="trainer">Trainer</MenuItem>
@@ -299,44 +385,179 @@ export default function CreateStaffDialog({
             </FormControl>
           </Grid>
 
+          <Grid item xs={12} sm={6}>
+            <TextField
+              fullWidth
+              label="Phone Number"
+              value={formData.phoneNumber}
+              onChange={(e) => handleInputChange('phoneNumber', e.target.value)}
+              error={!!errors.phoneNumber}
+              helperText={errors.phoneNumber}
+            />
+          </Grid>
+
           {mode === 'create' && (
-            <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                label="Password"
-                type={showPassword ? 'text' : 'password'}
-                value={formData.password}
-                onChange={(e) => handleInputChange('password', e.target.value)}
-                error={!!errors.password}
-                helperText={errors.password}
-                InputProps={{
-                  endAdornment: (
-                    <IconButton onClick={() => setShowPassword(prev => !prev)} edge="end">
-                      {showPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
-                    </IconButton>
-                  ),
-                }}
-                required // Password is required for creation
-              />
-            </Grid>
+            <>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={formData.password}
+                  onChange={(e) => handleInputChange('password', e.target.value)}
+                  error={!!errors.password}
+                  helperText={errors.password}
+                  InputProps={{
+                    endAdornment: (
+                      <IconButton onClick={() => setShowPassword(prev => !prev)} edge="end">
+                        {showPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                      </IconButton>
+                    ),
+                  }}
+                  required
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Confirm Password"
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  value={formData.confirmPassword}
+                  onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
+                  error={!!errors.confirmPassword}
+                  helperText={errors.confirmPassword}
+                  InputProps={{
+                    endAdornment: (
+                      <IconButton onClick={() => setShowConfirmPassword(prev => !prev)} edge="end">
+                        {showConfirmPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                      </IconButton>
+                    ),
+                  }}
+                  required
+                />
+              </Grid>
+            </>
           )}
 
-          {mode === 'edit' && (
-            <Grid item xs={12} sm={6}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={formData.isActive}
-                    onChange={(e) => handleInputChange('isActive', e.target.checked)}
-                    color="primary"
-                  />
-                }
-                label={formData.isActive ? 'Account Active' : 'Account Inactive'}
-              />
-            </Grid>
-          )}
+          {/* Emergency Contact */}
+          <Grid item xs={12}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1, mt: 2 }}>
+              Emergency Contact (Optional)
+            </Typography>
+          </Grid>
+
+          <Grid item xs={12} sm={4}>
+            <TextField
+              fullWidth
+              label="Contact Name"
+              value={formData.emergencyContact.name}
+              onChange={(e) => handleInputChange('emergencyContact.name', e.target.value)}
+              error={!!errors['emergencyContact.name']}
+              helperText={errors['emergencyContact.name']}
+            />
+          </Grid>
+
+          <Grid item xs={12} sm={4}>
+            <TextField
+              fullWidth
+              label="Contact Phone"
+              value={formData.emergencyContact.phone}
+              onChange={(e) => handleInputChange('emergencyContact.phone', e.target.value)}
+              error={!!errors['emergencyContact.phone']}
+              helperText={errors['emergencyContact.phone']}
+            />
+          </Grid>
+
+          <Grid item xs={12} sm={4}>
+            <TextField
+              fullWidth
+              label="Relationship"
+              value={formData.emergencyContact.relationship}
+              onChange={(e) => handleInputChange('emergencyContact.relationship', e.target.value)}
+              error={!!errors['emergencyContact.relationship']}
+              helperText={errors['emergencyContact.relationship']}
+            />
+          </Grid>
+
+          {/* Address */}
+          <Grid item xs={12}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1, mt: 2 }}>
+              Address (Optional)
+            </Typography>
+          </Grid>
+
+          <Grid item xs={12}>
+            <TextField
+              fullWidth
+              label="Street Address"
+              value={formData.address.street}
+              onChange={(e) => handleInputChange('address.street', e.target.value)}
+              error={!!errors['address.street']}
+              helperText={errors['address.street']}
+            />
+          </Grid>
+
+          <Grid item xs={12} sm={6}>
+            <TextField
+              fullWidth
+              label="City"
+              value={formData.address.city}
+              onChange={(e) => handleInputChange('address.city', e.target.value)}
+              error={!!errors['address.city']}
+              helperText={errors['address.city']}
+            />
+          </Grid>
+
+          <Grid item xs={12} sm={6}>
+            <TextField
+              fullWidth
+              label="State/Province"
+              value={formData.address.state}
+              onChange={(e) => handleInputChange('address.state', e.target.value)}
+              error={!!errors['address.state']}
+              helperText={errors['address.state']}
+            />
+          </Grid>
+
+          <Grid item xs={12} sm={6}>
+            <TextField
+              fullWidth
+              label="Zip/Postal Code"
+              value={formData.address.zipCode}
+              onChange={(e) => handleInputChange('address.zipCode', e.target.value)}
+              error={!!errors['address.zipCode']}
+              helperText={errors['address.zipCode']}
+            />
+          </Grid>
+
+          <Grid item xs={12} sm={6}>
+            <TextField
+              fullWidth
+              label="Country"
+              value={formData.address.country}
+              onChange={(e) => handleInputChange('address.country', e.target.value)}
+              error={!!errors['address.country']}
+              helperText={errors['address.country']}
+            />
+          </Grid>
+
+          {/* Notes */}
+          <Grid item xs={12}>
+            <TextField
+              fullWidth
+              label="Notes"
+              multiline
+              rows={3}
+              value={formData.notes}
+              onChange={(e) => handleInputChange('notes', e.target.value)}
+              error={!!errors.notes}
+              helperText={errors.notes}
+            />
+          </Grid>
         </Grid>
       </DialogContent>
+
       <DialogActions sx={{ p: 3, gap: 2 }}>
         <Button onClick={onClose} disabled={loading}>
           Cancel

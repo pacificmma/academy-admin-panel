@@ -1,4 +1,4 @@
-// src/app/staff/StaffPageClient.tsx (Updated to use StaffRecord)
+// src/app/staff/StaffPageClient.tsx - Updated with correct imports
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -45,19 +45,17 @@ import {
 } from '@mui/icons-material';
 import Layout from '../components/layout/Layout';
 import { SessionData } from '../types';
-import { StaffRecord, UserRole } from '../types/staff'; // Import StaffRecord and UserRole
+import { StaffRecord } from '../types/staff';
+import { UserRole } from '../types/auth'; // Import UserRole from auth types
 import CreateStaffDialog from '../components/ui/CreateStaffDialog';
 import DeleteConfirmationDialog from '../components/ui/DeleteConfirmationDialog';
-
-// Use StaffRecord directly from types/staff.ts for consistency
-// interface StaffMember removed, now using StaffRecord
 
 interface StaffPageClientProps {
   session: SessionData;
 }
 
 export default function StaffPageClient({ session }: StaffPageClientProps) {
-  const [staffMembers, setStaffMembers] = useState<StaffRecord[]>([]); // Use StaffRecord
+  const [staffMembers, setStaffMembers] = useState<StaffRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,7 +69,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [actionMenuAnchor, setActionMenuAnchor] = useState<null | HTMLElement>(null);
-  const [selectedStaff, setSelectedStaff] = useState<StaffRecord | null>(null); // Use StaffRecord
+  const [selectedStaff, setSelectedStaff] = useState<StaffRecord | null>(null);
 
   // Fetch staff members
   const fetchStaffMembers = async () => {
@@ -104,14 +102,14 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
   }, []);
 
   // Handle staff creation success
-  const handleStaffCreated = (newStaff: StaffRecord) => { // Use StaffRecord
+  const handleStaffCreated = (newStaff: StaffRecord) => {
     setStaffMembers(prev => [newStaff, ...prev]);
     setCreateDialogOpen(false);
     setSuccessMessage('Staff member created successfully!');
   };
 
   // Handle staff update success
-  const handleStaffUpdated = (updatedStaff: StaffRecord) => { // Use StaffRecord
+  const handleStaffUpdated = (updatedStaff: StaffRecord) => {
     setStaffMembers(prev => prev.map(staff => staff.uid === updatedStaff.uid ? updatedStaff : staff));
     setEditDialogOpen(false);
     setSelectedStaff(null);
@@ -172,7 +170,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
   };
 
   // Handle action menu
-  const handleActionMenuClick = (event: React.MouseEvent<HTMLElement>, staff: StaffRecord) => { // Use StaffRecord
+  const handleActionMenuClick = (event: React.MouseEvent<HTMLElement>, staff: StaffRecord) => {
     setActionMenuAnchor(event.currentTarget);
     setSelectedStaff(staff);
   };
@@ -206,7 +204,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
   };
 
   // Get role color
-  const getRoleColor = (role: UserRole) => {
+  const getRoleColor = (role: UserRole): 'error' | 'primary' | 'secondary' | 'default' => {
     switch (role) {
       case 'admin':
         return 'error';
@@ -413,7 +411,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
                             <EmailIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
                             <Typography variant="body2">{staff.email}</Typography>
                           </Box>
-                          {staff.phoneNumber && ( // Only show if phone number exists
+                          {staff.phoneNumber && (
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                               <PhoneIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
                               <Typography variant="body2">{staff.phoneNumber}</Typography>
@@ -517,7 +515,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
           mode="create"
         />
 
-        {/* Edit Staff Dialog (reusing CreateStaffDialog) */}
+        {/* Edit Staff Dialog */}
         <CreateStaffDialog
           open={editDialogOpen}
           onClose={() => {
@@ -529,7 +527,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
           mode="edit"
         />
 
-        {/* Delete Confirmation Dialog (for deactivation) */}
+        {/* Delete Confirmation Dialog */}
         <DeleteConfirmationDialog
           open={deleteDialogOpen}
           onClose={() => {

@@ -1,42 +1,118 @@
-// src/app/types/staff.ts
-// src/app/types/staff.ts - (Modified for consistency and new optional fields)
+// src/app/types/staff.ts - COMPLETE AND CONSISTENT VERSION
+// ============================================
+
 import { UserRole } from './auth';
-import { BaseEntity } from './common'; // Assuming BaseEntity is from common.ts
 
-export interface StaffData {
-  fullName: string;
+export interface StaffRecord {
+  id: string;
+  uid: string;
   email: string;
+  fullName: string;
+  phoneNumber?: string;
   role: UserRole;
-  phoneNumber?: string; // Added as optional
-  dateOfBirth?: string; // Added as optional
-  emergencyContact?: { // Added as optional
-    name?: string; // Made optional to match frontend removal
-    phone?: string; // Made optional to match frontend removal
-    relationship?: string; // Made optional to match frontend removal
-  };
-  specializations?: string[]; // Added as optional
-  certifications?: string[]; // Added as optional
-}
-
-export interface StaffRecord extends StaffData, BaseEntity {
-  uid: string; // Firebase Auth UID, used as document ID
   isActive: boolean;
+  emergencyContact?: {
+    name: string;
+    phone: string;
+    relationship: string;
+  };
+  address?: {
+    street: string;
+    city: string;
+    state: string;
+    zipCode: string;
+    country: string;
+  };
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  updatedBy?: string;
+  // Security fields (only visible to admins)
   lastLoginAt?: string;
-  profileImage?: string; // Keep existing optional properties
-  // Security fields, only for backend, not exposed to frontend API responses directly
-  // password?: string; // REMOVED: Should never be here, only in CreateStaffRequest hashed
-  // lastLoginIP?: string;
-  // lastLoginUserAgent?: string;
-  // failedLoginAttempts?: number;
-  // accountLockoutUntil?: string;
+  lastLoginIP?: string;
+  failedLoginAttempts?: number;
+  accountLockoutUntil?: string;
 }
 
-export interface CreateStaffRequest extends StaffData {
-  password: string; // Password is required for creation
+export interface CreateStaffRequest {
+  email: string;
+  fullName: string;
+  phoneNumber?: string;
+  password: string;
+  role: UserRole;
+  emergencyContact?: {
+    name: string;
+    phone: string;
+    relationship: string;
+  };
+  address?: {
+    street: string;
+    city: string;
+    state: string;
+    zipCode: string;
+    country: string;
+  };
+  notes?: string;
 }
 
-export interface UpdateStaffRequest extends Partial<StaffData> { // Allow partial updates of StaffData fields
+export interface UpdateStaffRequest {
+  fullName?: string;
+  phoneNumber?: string;
+  role?: UserRole;
   isActive?: boolean;
+  emergencyContact?: {
+    name: string;
+    phone: string;
+    relationship: string;
+  };
+  address?: {
+    street: string;
+    city: string;
+    state: string;
+    zipCode: string;
+    country: string;
+  };
+  notes?: string;
 }
 
-export type { UserRole };
+export interface StaffFilters {
+  role?: UserRole;
+  isActive?: boolean;
+  searchTerm?: string;
+}
+
+export interface StaffStats {
+  totalStaff: number;
+  activeStaff: number;
+  inactiveStaff: number;
+  adminCount: number;
+  trainerCount: number;
+  staffCount: number;
+}
+
+// Client-safe version (without sensitive fields)
+export type ClientSafeStaffRecord = Omit<StaffRecord, 'lastLoginIP' | 'failedLoginAttempts' | 'accountLockoutUntil'>;
+
+// Form data interfaces
+export interface StaffFormData {
+  email: string;
+  fullName: string;
+  phoneNumber: string;
+  password: string;
+  confirmPassword: string;
+  role: UserRole;
+  emergencyContact: {
+    name: string;
+    phone: string;
+    relationship: string;
+  };
+  address: {
+    street: string;
+    city: string;
+    state: string;
+    zipCode: string;
+    country: string;
+  };
+  notes: string;
+}

@@ -1,4 +1,4 @@
-// src/app/components/forms/MembershipFormDialog.tsx - Clean Form
+// src/app/components/forms/MembershipFormDialog.tsx - Updated with correct types
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -32,13 +32,9 @@ import {
   MembershipPlanFormData,
   DurationType,
   MembershipStatus,
-  DURATION_TYPES,
-  CLASS_TYPE_OPTIONS, // Değiştirildi: DEFAULT_CLASS_TYPES yerine
-  CURRENCIES,
-  MEMBERSHIP_STATUSES,
   formatDuration,
-  formatCurrency,
 } from '../../types/membership';
+import { CLASS_TYPE_OPTIONS } from '../../types/class';
 
 interface MembershipFormDialogProps {
   open: boolean;
@@ -48,15 +44,46 @@ interface MembershipFormDialogProps {
   mode: 'create' | 'edit';
 }
 
+// Constants for form options
+const DURATION_TYPES: Array<{ value: DurationType; label: string }> = [
+  { value: 'days', label: 'Days' },
+  { value: 'weeks', label: 'Weeks' },
+  { value: 'months', label: 'Months' },
+  { value: 'years', label: 'Years' },
+];
+
+const CURRENCIES = [
+  { value: 'USD', label: 'USD ($)' },
+  { value: 'EUR', label: 'EUR (€)' },
+  { value: 'GBP', label: 'GBP (£)' },
+  { value: 'TRY', label: 'TRY (₺)' },
+];
+
+const MEMBERSHIP_STATUSES: Array<{ value: MembershipStatus; label: string; color: string }> = [
+  { value: 'active', label: 'Active', color: 'success' },
+  { value: 'inactive', label: 'Inactive', color: 'grey' },
+  { value: 'draft', label: 'Draft', color: 'grey' },
+];
+
 const DEFAULT_FORM_DATA: MembershipPlanFormData = {
   name: '',
   description: '',
   durationValue: 1,
   durationType: 'months',
   price: 0,
+  currency: 'USD',
   classTypes: [],
   status: 'active',
-  currency: 'USD',
+};
+
+// Utility function for currency formatting
+const formatCurrency = (amount: number, currency: string): string => {
+  const currencySymbols: Record<string, string> = {
+    USD: '$',
+  };
+  
+  const symbol = currencySymbols[currency] || currency;
+  return `${symbol}${amount.toFixed(2)}`;
 };
 
 export default function MembershipFormDialog({
@@ -79,10 +106,9 @@ export default function MembershipFormDialog({
           durationValue: membership.durationValue,
           durationType: membership.durationType,
           price: membership.price,
-          // EDIT DÜZELTME: classTypes'ı doğru formata dönüştür
+          currency: membership.currency,
           classTypes: membership.classTypes,
           status: membership.status,
-          currency: membership.currency || 'USD',
         });
       } else {
         setFormData(DEFAULT_FORM_DATA);
@@ -120,6 +146,10 @@ export default function MembershipFormDialog({
 
     if (formData.durationValue <= 0) {
       newErrors.durationValue = 'Duration must be greater than 0';
+    }
+
+    if (!formData.currency) {
+      newErrors.currency = 'Currency is required';
     }
 
     if (formData.classTypes.length === 0) {
@@ -232,7 +262,7 @@ export default function MembershipFormDialog({
                 <InputLabel>Duration Type</InputLabel>
                 <Select
                   value={formData.durationType}
-                  onChange={(e) => handleInputChange('durationType', e.target.value)}
+                  onChange={(e) => handleInputChange('durationType', e.target.value as DurationType)}
                   label="Duration Type"
                 >
                   {DURATION_TYPES.map((type) => (
@@ -268,7 +298,7 @@ export default function MembershipFormDialog({
             </Grid>
 
             <Grid item xs={12} sm={6}>
-              <FormControl fullWidth disabled={loading}>
+              <FormControl fullWidth disabled={loading} error={!!errors.currency}>
                 <InputLabel>Currency</InputLabel>
                 <Select
                   value={formData.currency}
@@ -281,6 +311,7 @@ export default function MembershipFormDialog({
                     </MenuItem>
                   ))}
                 </Select>
+                {errors.currency && <FormHelperText>{errors.currency}</FormHelperText>}
               </FormControl>
             </Grid>
 
@@ -291,26 +322,17 @@ export default function MembershipFormDialog({
                   multiple
                   freeSolo
                   options={CLASS_TYPE_OPTIONS}
-                  getOptionLabel={(option) => typeof option === 'string' ? option : option.label}
-                  value={
-                    formData.classTypes.map(value =>
-                      CLASS_TYPE_OPTIONS.find(opt => opt.value === value) || value
-                    )
-                  }
+                  value={formData.classTypes}
                   onChange={(_, newValue) => {
-                    // MAPPING: Convert selected objects back to their string values
-                    const mappedValues = newValue.map(option => 
-                      typeof option === 'string' ? option : option.value
-                    );
-                    handleInputChange('classTypes', mappedValues);
+                    handleInputChange('classTypes', newValue);
                   }}
                   disabled={loading}
                   renderTags={(value, getTagProps) =>
                     value.map((option, index) => (
                       <Chip
                         {...getTagProps({ index })}
-                        key={typeof option === 'string' ? option : option.value}
-                        label={typeof option === 'string' ? option : option.label}
+                        key={option}
+                        label={option}
                         sx={{
                           bgcolor: 'primary.main',
                           color: 'white',
@@ -343,7 +365,7 @@ export default function MembershipFormDialog({
                 <InputLabel>Status</InputLabel>
                 <Select
                   value={formData.status}
-                  onChange={(e) => handleInputChange('status', e.target.value)}
+                  onChange={(e) => handleInputChange('status', e.target.value as MembershipStatus)}
                   label="Status"
                 >
                   {MEMBERSHIP_STATUSES.map((status) => (
@@ -376,6 +398,11 @@ export default function MembershipFormDialog({
                 <Typography variant="body1">
                   <strong>Name:</strong> {formData.name}
                 </Typography>
+                {formData.description && (
+                  <Typography variant="body1">
+                    <strong>Description:</strong> {formData.description}
+                  </Typography>
+                )}
                 <Typography variant="body1">
                   <strong>Duration:</strong> {formatDuration(formData.durationValue, formData.durationType)}
                 </Typography>

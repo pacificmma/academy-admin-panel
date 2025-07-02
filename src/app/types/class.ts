@@ -1,13 +1,15 @@
-// src/app/types/class.ts (Corrected and Simplified)
+// src/app/types/class.ts - UNIFIED AND COMPLETE VERSION
+// ============================================
+
 export type ClassType = 'MMA' | 'BJJ' | 'Boxing' | 'Muay Thai' | 'Wrestling' | 'Judo' | 'Kickboxing' | 'Fitness' | 'Yoga' | 'Kids Martial Arts';
 
-// Simplified RecurrencePattern based on user's request: NO durationValue or durationUnit
+export type ClassStatus = 'scheduled' | 'ongoing' | 'completed' | 'cancelled';
+
+// Simplified RecurrencePattern
 export interface RecurrencePattern {
   scheduleType: 'single' | 'recurring';
   daysOfWeek?: number[]; // 0=Sunday, 1=Monday, etc. (for recurring)
 }
-
-export type ClassStatus = 'scheduled' | 'ongoing' | 'completed' | 'cancelled';
 
 export interface ClassSchedule {
   id: string;
@@ -19,14 +21,13 @@ export interface ClassSchedule {
   duration: number; // Minutes
   startDate: string; // ISO date string (for first occurrence)
   startTime: string; // HH:MM format
-  recurrence: RecurrencePattern; // Changed to new pattern
+  recurrence: RecurrencePattern;
   isActive: boolean;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
-  // description and location are optional in ClassSchedule, and not expected from form
-  description?: string; // Optional field for schedule description, not used in form
-  location?: string; // Optional field for schedule location, not used in form
+  description?: string;
+  location?: string;
 }
 
 export interface ClassInstance {
@@ -43,26 +44,25 @@ export interface ClassInstance {
   registeredParticipants: string[]; // Member IDs
   waitlist: string[]; // Member IDs
   status: ClassStatus;
-  location?: string; // Can be set per instance if different from schedule
-  notes?: string; // Specific notes for this instance
-  actualDuration?: number; // Actual duration if different from scheduled
-  duration: number; // Duration of this specific instance
+  location?: string;
+  notes?: string;
+  actualDuration?: number;
+  duration: number;
   createdAt: string;
   updatedAt: string;
-  description?: string; // Description for this specific instance if overridden
+  description?: string;
 }
 
-// Updated ClassFormData to only include fields relevant for the form (NO recurrenceDurationValue/Unit, NO packagePrice distinction)
 export interface ClassFormData {
   name: string;
   classType: ClassType;
   instructorId: string;
   maxParticipants: number;
-  duration: number; // Duration of each session in minutes
-  startDate: string; // Initial start date (for single or first recurring)
-  startTime: string; // Start time of each session
+  duration: number;
+  startDate: string;
+  startTime: string;
   scheduleType: 'single' | 'recurring';
-  daysOfWeek: number[]; // For recurring
+  daysOfWeek: number[];
 }
 
 export interface ClassFilters {
@@ -70,7 +70,7 @@ export interface ClassFilters {
   instructorId?: string;
   date?: string;
   status?: ClassStatus;
-  level?: string; // Not used in form, but might exist in backend for filtering
+  level?: string;
   searchTerm?: string;
 }
 
@@ -87,10 +87,19 @@ export interface ClassStats {
   }>;
 }
 
-// New type alias for schedule data without ID and timestamps, for cleaner passing to helper functions
+// Type alias for schedule data without ID and timestamps
 export type ClassScheduleWithoutIdAndTimestamps = Omit<ClassSchedule, 'id' | 'createdAt' | 'updatedAt'>;
 
-// Helper functions (adjusted for new recurrence structure)
+// EXPORTED CONSTANTS AND UTILITIES
+// ============================================
+
+export const CLASS_TYPE_OPTIONS: ClassType[] = [
+  'MMA', 'BJJ', 'Boxing', 'Muay Thai', 'Wrestling', 'Judo', 'Kickboxing', 'Fitness', 'Yoga', 'Kids Martial Arts'
+];
+
+export const LEVEL_OPTIONS = ['Beginner', 'Intermediate', 'Advanced', 'All Levels'] as const;
+
+// Helper functions
 import { addDays, addWeeks, addMonths, startOfDay, isBefore, format as formatFns } from 'date-fns';
 
 export function formatClassTime(startTime: string, duration: number): string {
@@ -120,9 +129,7 @@ export function getClassTypeColor(classType: ClassType): string {
 }
 
 /**
- * Generates class instances based on a simplified recurrence pattern (fixed to ~1 year).
- * This version uses a start date and selected days of the week, repeating for approximately one year.
- * Removed durationValue and durationUnit parameters.
+ * Generates class instances based on recurrence pattern (fixed to ~1 year).
  */
 export function generateRecurringClassDates(
   startDate: string,
@@ -162,10 +169,3 @@ export function generateRecurringClassDates(
 
   return classDates.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 }
-
-// These are not used in the simplified form but are kept for consistency with backend types if they exist there.
-export const CLASS_TYPE_OPTIONS: ClassType[] = [
-  'MMA', 'BJJ', 'Boxing', 'Muay Thai', 'Wrestling', 'Judo', 'Kickboxing', 'Fitness', 'Yoga', 'Kids Martial Arts'
-];
-
-export const LEVEL_OPTIONS = ['Beginner', 'Intermediate', 'Advanced', 'All Levels'] as const;

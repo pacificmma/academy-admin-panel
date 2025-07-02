@@ -14,15 +14,16 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { getFirestore, Timestamp } from 'firebase/firestore';
-import app from '@/app/lib/firebase/config'; // Assuming app is the default export
+import app from '@/app/lib/firebase/config';
 import {
   MembershipPlanFormData,
   MembershipPlan,
+  MembershipStatus,
 } from '@/app/types/membership';
 
 const db = getFirestore(app);
 
-// Locally defined types based on reported missing exports from membership.ts
+// Additional types for this service (not in main types to keep them clean)
 export type AgeGroup = 'adult' | 'child' | 'teen' | 'all';
 
 export interface SportCategoryDefinition {
@@ -51,7 +52,6 @@ export interface PackageUsageStats {
   totalSubscribers: number;
   activeSubscribers: number;
   averageDurationDays: number;
-  // Add other relevant stats based on how this data is collected/used
 }
 
 const MEMBERSHIP_PACKAGES_COLLECTION = 'membershipPackages';
@@ -63,17 +63,17 @@ const convertDocToMembershipPlan = (doc: any): MembershipPlan => {
   return {
     id: doc.id,
     name: data.name,
-    description: data.description,
+    description: data.description || '',
+    durationValue: data.durationValue,
+    durationType: data.durationType || 'months', // Provide default
     price: data.price,
-    durationMonths: data.durationMonths,
-    classCredits: data.classCredits,
-    sportCategoryIds: data.sportCategoryIds || [],
-    ageGroup: data.ageGroup,
+    currency: data.currency || 'USD', // Provide default
+    classTypes: data.classTypes || [],
     status: data.status,
-    createdAt: data.createdAt ? data.createdAt.toDate() : new Date(),
-    updatedAt: data.updatedAt ? data.updatedAt.toDate() : new Date(),
-    createdBy: data.createdBy || null,
-    updatedBy: data.updatedBy || null,
+    createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+    updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+    createdBy: data.createdBy || '',
+    updatedBy: data.updatedBy || '',
   };
 };
 
@@ -81,10 +81,6 @@ const convertDocToMembershipPlan = (doc: any): MembershipPlan => {
 export const membershipPackageService = {
   /**
    * Creates a new membership package.
-   * @param packageData The data for the new membership package.
-   * @param userId The ID of the user creating the package.
-   * @param userName The name of the user creating the package.
-   * @returns The ID of the newly created package.
    */
   async createMembershipPackage(
     packageData: MembershipPlanFormData,
@@ -109,8 +105,6 @@ export const membershipPackageService = {
 
   /**
    * Fetches a single membership package by its ID.
-   * @param id The ID of the membership package.
-   * @returns The membership package record or null if not found.
    */
   async getMembershipPackageById(id: string): Promise<MembershipPlan | null> {
     try {
@@ -128,9 +122,6 @@ export const membershipPackageService = {
 
   /**
    * Updates an existing membership package.
-   * @param id The ID of the package to update.
-   * @param updates The partial data to update.
-   * @param userId The ID of the user updating the package.
    */
   async updateMembershipPackage(
     id: string,
@@ -152,7 +143,6 @@ export const membershipPackageService = {
 
   /**
    * Deletes a membership package by its ID.
-   * @param id The ID of the package to delete.
    */
   async deleteMembershipPackage(id: string): Promise<void> {
     try {
@@ -165,7 +155,6 @@ export const membershipPackageService = {
 
   /**
    * Retrieves all membership packages.
-   * @returns A list of all membership packages.
    */
   async getAllMembershipPackages(): Promise<MembershipPlan[]> {
     try {
@@ -180,7 +169,6 @@ export const membershipPackageService = {
 
   /**
    * Retrieves all active membership packages.
-   * @returns A list of active membership packages.
    */
   async getActiveMembershipPackages(): Promise<MembershipPlan[]> {
     try {
@@ -199,8 +187,6 @@ export const membershipPackageService = {
 
   /**
    * Retrieves membership packages filtered by age group.
-   * @param ageGroup The age group to filter by.
-   * @returns A list of membership packages for the specified age group.
    */
   async getPackagesByAgeGroup(ageGroup: AgeGroup): Promise<MembershipPlan[]> {
     try {
@@ -219,11 +205,6 @@ export const membershipPackageService = {
 
   /**
    * Clones an existing membership package.
-   * @param packageId The ID of the package to clone.
-   * @param newName The name for the cloned package.
-   * @param userId The ID of the user performing the clone.
-   * @param userName The name of the user performing the clone.
-   * @returns The ID of the cloned package.
    */
   async cloneMembershipPackage(
     packageId: string,
@@ -241,15 +222,11 @@ export const membershipPackageService = {
         name: newName,
         description: originalPackage.description,
         price: originalPackage.price,
-        durationMonths: originalPackage.durationMonths,
-        classCredits: originalPackage.classCredits,
-        sportCategoryIds: originalPackage.sportCategoryIds,
-        ageGroup: originalPackage.ageGroup,
-        status: 'draft',
-        durationValue: 0,
-        durationType: 'days',
-        currency: '',
-        classTypes: []
+        durationValue: originalPackage.durationValue,
+        durationType: originalPackage.durationType,
+        currency: originalPackage.currency,
+        classTypes: [...originalPackage.classTypes], // Create a copy of the array
+        status: 'draft' as MembershipStatus,
       };
 
       return await membershipPackageService.createMembershipPackage(
@@ -265,34 +242,40 @@ export const membershipPackageService = {
 
   /**
    * Validates membership package data.
-   * @param data The data to validate.
-   * @returns An array of error messages, or empty if valid.
    */
   validatePackageData(data: MembershipPlanFormData): string[] {
     const errors: string[] = [];
+    
     if (!data.name || data.name.trim() === '') {
       errors.push('Package name is required.');
     }
+    
     if (data.price === undefined || data.price < 0) {
       errors.push('Price must be a non-negative number.');
     }
-    if (data.durationMonths === undefined || data.durationMonths <= 0) {
-      errors.push('Duration must be a positive number of months.');
+    
+    if (data.durationValue === undefined || data.durationValue <= 0) {
+      errors.push('Duration must be a positive number.');
     }
-    if (data.classCredits === undefined || data.classCredits < 0) {
-      errors.push('Class credits must be a non-negative number.');
+
+    if (!data.durationType || !['days', 'weeks', 'months', 'years'].includes(data.durationType)) {
+      errors.push('Valid duration type is required (days, weeks, months, or years).');
     }
-    if (!data.ageGroup) {
-      errors.push('Age group is required.');
+
+    if (!data.currency || data.currency.trim() === '') {
+      errors.push('Currency is required.');
     }
+
+    if (!data.status || !['active', 'inactive', 'draft'].includes(data.status)) {
+      errors.push('Valid status is required (active, inactive, or draft).');
+    }
+
     return errors;
   },
 
   /**
    * Retrieves usage statistics for a specific membership package.
    * (This is a placeholder and would require actual subscription tracking logic)
-   * @param packageId The ID of the package to get stats for.
-   * @returns Package usage statistics.
    */
   async getPackageUsageStats(packageId: string): Promise<PackageUsageStats> {
     // This is a placeholder. Real implementation would involve querying
@@ -307,34 +290,40 @@ export const membershipPackageService = {
 
   // Sport Category Management
   /**
-   * Loads sport categories from a predefined source (e.g., JSON file or initial data).
-   * This is a utility function, likely used for initial setup or migrations.
+   * Loads sport categories from a predefined source.
    */
   async loadSportCategories(): Promise<void> {
-    // Example data - this would typically come from a static file or initial setup.
     const categories: Omit<SportCategoryDefinition, 'id'>[] = [
       { name: 'Brazilian Jiu-Jitsu', description: 'Grappling martial art.', ageGroups: ['adult', 'teen'] },
       { name: 'Muay Thai', description: 'Thai boxing.', ageGroups: ['adult', 'teen'] },
       { name: 'Kids Martial Arts', description: 'Martial arts for children.', ageGroups: ['child'] },
       { name: 'Wrestling', description: 'Grappling combat sport.', ageGroups: ['adult', 'teen'] },
       { name: 'Yoga', description: 'Flexibility and strength.', ageGroups: ['all'] },
+      { name: 'MMA', description: 'Mixed Martial Arts.', ageGroups: ['adult', 'teen'] },
+      { name: 'Boxing', description: 'Boxing combat sport.', ageGroups: ['adult', 'teen'] },
+      { name: 'Judo', description: 'Japanese martial art.', ageGroups: ['adult', 'teen', 'child'] },
+      { name: 'Kickboxing', description: 'Kickboxing martial art.', ageGroups: ['adult', 'teen'] },
+      { name: 'Fitness', description: 'General fitness and conditioning.', ageGroups: ['all'] },
     ];
 
-    for (const categoryData of categories) {
-      const categoryRef = doc(collection(db, SPORT_CATEGORIES_COLLECTION));
-      await setDoc(categoryRef, {
-        ...categoryData,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+    try {
+      for (const categoryData of categories) {
+        const categoryRef = doc(collection(db, SPORT_CATEGORIES_COLLECTION));
+        await setDoc(categoryRef, {
+          ...categoryData,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+      console.log('Sport categories loaded successfully.');
+    } catch (error) {
+      console.error('Error loading sport categories:', error);
+      throw new Error('Failed to load sport categories.');
     }
-    console.log('Sport categories loaded successfully (if not already present).');
   },
 
   /**
    * Adds a new sport category.
-   * @param categoryData The data for the new sport category.
-   * @returns The ID of the newly created category.
    */
   async addSportCategory(
     categoryData: Omit<SportCategoryDefinition, 'id'>
@@ -355,7 +344,6 @@ export const membershipPackageService = {
 
   /**
    * Retrieves all sport categories.
-   * @returns A list of all sport categories.
    */
   async getAllSportCategories(): Promise<SportCategoryDefinition[]> {
     try {
@@ -366,8 +354,8 @@ export const membershipPackageService = {
         name: doc.data().name,
         description: doc.data().description,
         ageGroups: doc.data().ageGroups || [],
-        createdAt: doc.data().createdAt ? doc.data().createdAt.toDate() : undefined,
-        updatedAt: doc.data().updatedAt ? doc.data().updatedAt.toDate() : undefined,
+        createdAt: doc.data().createdAt,
+        updatedAt: doc.data().updatedAt,
       }));
     } catch (error) {
       console.error('Error fetching all sport categories:', error);
@@ -377,8 +365,6 @@ export const membershipPackageService = {
 
   /**
    * Retrieves sport categories filtered by age group.
-   * @param ageGroup The age group to filter by.
-   * @returns A list of sport categories for the specified age group.
    */
   async getSportCategoriesByAgeGroup(ageGroup: AgeGroup): Promise<SportCategoryDefinition[]> {
     try {
@@ -393,8 +379,8 @@ export const membershipPackageService = {
         name: doc.data().name,
         description: doc.data().description,
         ageGroups: doc.data().ageGroups || [],
-        createdAt: doc.data().createdAt ? doc.data().createdAt.toDate() : undefined,
-        updatedAt: doc.data().updatedAt ? doc.data().updatedAt.toDate() : undefined,
+        createdAt: doc.data().createdAt,
+        updatedAt: doc.data().updatedAt,
       }));
     } catch (error) {
       console.error(`Error fetching sport categories for age group ${ageGroup}:`, error);

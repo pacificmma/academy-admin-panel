@@ -1,4 +1,4 @@
-// src/app/memberships/MembershipsPageClient.tsx - Final Professional Version (without refresh button)
+// src/app/memberships/MembershipsPageClient.tsx - Updated with correct types
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -45,22 +45,25 @@ import MembershipFormDialog from '../components/forms/MembershipFormDialog';
 import {
   MembershipPlan,
   MembershipPlanFormData,
+  MembershipStats,
   formatDuration,
-  formatCurrency,
 } from '../types/membership';
 import { SessionData } from '../types';
-import DeleteConfirmationDialog from '../components/ui/DeleteConfirmationDialog'; // Corrected import
-
-
-interface MembershipStats {
-  totalPlans: number;
-  activePlans: number;
-  inactivePlans: number;
-}
+import DeleteConfirmationDialog from '../components/ui/DeleteConfirmationDialog';
 
 interface MembershipsPageClientProps {
   session: SessionData;
 }
+
+// Local utility function for currency formatting
+const formatCurrency = (amount: number, currency: string): string => {
+  const currencySymbols: Record<string, string> = {
+    USD: '$',
+  };
+  
+  const symbol = currencySymbols[currency] || currency;
+  return `${symbol}${amount.toFixed(2)}`;
+};
 
 export default function MembershipsPageClient({ session }: MembershipsPageClientProps): React.JSX.Element {
   const [memberships, setMemberships] = useState<MembershipPlan[]>([]);
@@ -102,7 +105,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
 
       const result = await response.json();
       
-      // FIXED: Ensure result.data is an array before setting state
+      // Ensure result.data is an array before setting state
       const fetchedData = Array.isArray(result.data) ? result.data : [];
       
       if (result.success) {
@@ -277,7 +280,6 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
             Membership Plans
           </Typography>
           <Box sx={{ display: 'flex', gap: 1 }}>
-            {/* Removed the Refresh Button as per your request */}
             <Button
               variant="contained"
               startIcon={<AddIcon />}
@@ -441,9 +443,9 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
                       </TableCell>
                       <TableCell>
                         <Chip
-                          label={membership.status === 'active' ? 'Active' : 'Inactive'}
+                          label={membership.status === 'active' ? 'Active' : membership.status === 'inactive' ? 'Inactive' : 'Draft'}
                           size="small"
-                          color={membership.status === 'active' ? 'success' : 'default'}
+                          color={membership.status === 'active' ? 'success' : membership.status === 'inactive' ? 'default' : 'warning'}
                         />
                       </TableCell>
                       <TableCell align="right">
@@ -514,7 +516,7 @@ export default function MembershipsPageClient({ session }: MembershipsPageClient
           membership={selectedMembership}
         />
 
-        {/* Delete Confirmation Dialog - using custom component */}
+        {/* Delete Confirmation Dialog */}
         <DeleteConfirmationDialog
           open={deleteDialogOpen}
           onClose={() => {
