@@ -67,10 +67,10 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
       const res = await fetch('/api/staff');
       if (!res.ok) throw new Error('Failed to fetch instructors');
       const data = await res.json();
-      setInstructors(data.data.map((staff: any) => ({ 
-        id: staff.uid, 
-        name: staff.fullName, 
-        specialties: staff.specializations || [] 
+      setInstructors(data.data.map((staff: any) => ({
+        id: staff.uid,
+        name: staff.fullName,
+        specialties: staff.specializations || []
       })));
     } catch (err: any) {
       setError(err.message || 'Failed to load instructors.');
@@ -163,11 +163,11 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
       setInstanceDisplayMode('calendar');
       setCurrentCalendarDate(new Date());
       setCalendarViewMode('month');
-      setFilters(prev => ({ 
-        ...prev, 
-        classType: undefined, 
-        instructorId: undefined, 
-        searchTerm: '', 
+      setFilters(prev => ({
+        ...prev,
+        classType: undefined,
+        instructorId: undefined,
+        searchTerm: '',
         date: undefined  // Clear date filter for schedules
       }));
     } else if (tabIndex === 1) { // Upcoming Classes tab
@@ -182,10 +182,10 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
       setCurrentCalendarDate(new Date());
       setCalendarViewMode('week');  // Better for viewing upcoming classes in calendar
     } else if (tabIndex === 2 && user?.role === 'trainer') { // My Schedule tab
-      setFilters(prev => ({ 
-        ...prev, 
-        instructorId: user.uid, 
-        classType: undefined, 
+      setFilters(prev => ({
+        ...prev,
+        instructorId: user.uid,
+        classType: undefined,
         searchTerm: '',
         date: undefined  // Clear date filter for trainer schedule
       }));
@@ -221,10 +221,10 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
     setError(null);
     try {
       const isEditing = !!editingClassData;
-      const url = isEditing 
+      const url = isEditing
         ? `${scheduleId ? '/api/classes/schedules' : '/api/classes/instances'}/${scheduleId || (editingClassData as ClassInstance).id}`
         : '/api/classes/schedules';
-      
+
       const res = await fetch(url, {
         method: isEditing ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -239,13 +239,13 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
 
       setIsFormDialogOpen(false);
       setEditingClassData(null);
-      
+
       // Reload data after changes
       if (tabIndex === 0) {
         await loadClassSchedules();
       }
       await loadAllInstances();
-      
+
     } catch (err: any) {
       setError(err.message || `Failed to ${formMode} class.`);
     } finally {
@@ -265,7 +265,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
 
     setLoading(true);
     try {
-      const endpoint = deleteTargetType === 'schedule' 
+      const endpoint = deleteTargetType === 'schedule'
         ? `/api/classes/schedules/${deleteTargetId}`
         : `/api/classes/instances/${deleteTargetId}`;
 
@@ -286,7 +286,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
         await loadClassSchedules();
       }
       await loadAllInstances();
-      
+
       setIsDeleteDialogOpen(false);
       setDeleteTargetId(null);
       setDeleteTargetType(null);
@@ -346,7 +346,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
   // Filter instances based on current view and filters - ALL CLIENT SIDE
   const filteredInstances = useMemo(() => {
     let filtered = [...allInstances];
-  
+
     // Apply search filter
     if (filters.searchTerm) {
       const searchLower = filters.searchTerm.toLowerCase();
@@ -358,32 +358,32 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
         instance.location?.toLowerCase().includes(searchLower)
       );
     }
-  
+
     // Apply class type filter
     if (filters.classType) {
       filtered = filtered.filter(instance => instance.classType === filters.classType);
     }
-  
+
     // Apply instructor filter
     if (filters.instructorId) {
       filtered = filtered.filter(instance => instance.instructorId === filters.instructorId);
     }
-  
+
     // Apply trainer filter for "My Schedule" tab
     if (tabIndex === 2 && user?.role === 'trainer' && user?.uid) {
       filtered = filtered.filter(instance => instance.instructorId === user.uid);
     }
-  
+
     // Apply date filter ONLY for cards view in tab 1 (Upcoming Classes)
     if (tabIndex === 1 && instanceDisplayMode === 'cards' && filters.date) {
       filtered = filtered.filter(instance => instance.date === filters.date);
     }
-  
+
     // FIXED: Apply calendar view range filter for calendar views with proper date parsing
     if (tabIndex === 0 || (tabIndex === 1 && instanceDisplayMode === 'calendar') || tabIndex === 2) {
       let rangeStart: Date;
       let rangeEnd: Date;
-  
+
       if (calendarViewMode === 'day') {
         rangeStart = new Date(currentCalendarDate);
         rangeEnd = new Date(currentCalendarDate);
@@ -396,7 +396,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
         rangeStart = startOfMonth(currentCalendarDate);
         rangeEnd = endOfMonth(currentCalendarDate);
       }
-  
+
       filtered = filtered.filter(instance => {
         // FIXED: Parse the date string properly (YYYY-MM-DD format) to avoid timezone issues
         const instanceDate = new Date(instance.date + 'T00:00:00.000Z');
@@ -404,19 +404,19 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
         return isWithinInterval(instanceDateLocal, { start: rangeStart, end: rangeEnd });
       });
     }
-  
+
     // FIXED: For tab 1 (Upcoming Classes) when in cards view, show future classes only
     if (tabIndex === 1 && instanceDisplayMode === 'cards' && !filters.date) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      
+
       filtered = filtered.filter(instance => {
         // FIXED: Parse the date string properly to avoid timezone issues
         const instanceDate = new Date(instance.date + 'T00:00:00.000Z');
         const instanceDateLocal = new Date(instanceDate.getUTCFullYear(), instanceDate.getUTCMonth(), instanceDate.getUTCDate());
         return instanceDateLocal >= today;
       });
-      
+
       // Sort by date and time for upcoming classes
       filtered.sort((a, b) => {
         const dateCompare = a.date.localeCompare(b.date);
@@ -426,7 +426,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
         return dateCompare;
       });
     }
-  
+
     return filtered;
   }, [allInstances, filters, tabIndex, user, instanceDisplayMode, calendarViewMode, currentCalendarDate]);
 
@@ -435,27 +435,32 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
     if (tabIndex === 0) {
       // For Class Schedules tab: combine schedule instances and real instances
       const scheduleInstances: ClassInstance[] = [];
-      
+
       schedules.forEach(schedule => {
         if (schedule.recurrence.scheduleType === 'single') {
           scheduleInstances.push(...generateScheduleInstances(schedule));
         }
       });
-      
+
       const allInstances = [...scheduleInstances, ...filteredInstances];
-      
+
       // Remove duplicates
       return allInstances.filter((instance, index, self) => {
-        return index === self.findIndex(i => 
-          i.scheduleId === instance.scheduleId && 
-          i.date === instance.date && 
+        return index === self.findIndex(i =>
+          i.scheduleId === instance.scheduleId &&
+          i.date === instance.date &&
           i.startTime === instance.startTime
         );
       });
     }
-    
+
     return filteredInstances;
   }, [tabIndex, schedules, filteredInstances, generateScheduleInstances]);
+
+  // src/app/classes/ClassesPageClient.tsx - FIXED VERSION
+  // Only the updated sections that need to change
+
+  // Replace the existing return statement in the ClassesPageClient component:
 
   return (
     <Layout session={session} title="Classes">
@@ -500,29 +505,33 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
                 <Typography variant="h6" sx={{ mb: 2 }}>
                   All Class Schedules
                 </Typography>
-                {classesToDisplayInCalendar.length === 0 ? (
-                  <Alert severity="info">No class schedules found. Create one to get started!</Alert>
-                ) : (
-                  <ClassCalendar
-                    classes={classesToDisplayInCalendar}
-                    viewMode={calendarViewMode}
-                    onViewModeChange={handleCalendarViewModeChange}
-                    onClassClick={handleEditClass}
-                    onDateClick={handleCalendarDateChange}
-                    selectedDate={currentCalendarDate}
-                    onEditClass={handleEditClass}
-                    onDeleteClass={(data, type) => handleDeleteClass(data, 'schedule')}
-                    userRole={session?.role || 'member'}
-                    userId={session?.uid || ''}
-                  />
-                )}
+                {/* FIXED: Always show calendar for tab 0, regardless of filtered events count */}
+                <ClassCalendar
+                  classes={classesToDisplayInCalendar}
+                  viewMode={calendarViewMode}
+                  onViewModeChange={handleCalendarViewModeChange}
+                  onClassClick={handleEditClass}
+                  onDateClick={handleCalendarDateChange}
+                  selectedDate={currentCalendarDate}
+                  userRole={session.role}
+                  onEditClass={handleEditClass}
+                  onDeleteClass={handleDeleteClass}
+                  onStartClass={handleInstanceAction.bind(null, '', 'start')}
+                  onEndClass={handleInstanceAction.bind(null, '', 'end')}
+                  onCancelClass={handleInstanceAction.bind(null, '', 'cancel')}
+                  userId={user?.uid || ''}
+                />
               </Box>
             )}
 
             {tabIndex === 1 && (
               <Box>
+                <Typography variant="h6" sx={{ mb: 2 }}>
+                  Upcoming Classes
+                </Typography>
+
                 <Grid container spacing={2} sx={{ mb: 3 }}>
-                  <Grid item xs={12} sm={3}>
+                  <Grid item xs={12} sm={4}>
                     <TextField
                       fullWidth
                       placeholder="Search classes..."
@@ -552,7 +561,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
                       </Select>
                     </FormControl>
                   </Grid>
-                  <Grid item xs={12} sm={3}>
+                  <Grid item xs={12} sm={2}>
                     <FormControl fullWidth>
                       <InputLabel>Instructor</InputLabel>
                       <Select
@@ -608,6 +617,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
                     )}
                   </Grid>
                 ) : (
+                  /* FIXED: Always show calendar for tab 1 calendar view, regardless of filtered events count */
                   <ClassCalendar
                     classes={filteredInstances}
                     viewMode={calendarViewMode}
@@ -615,13 +625,13 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
                     onClassClick={handleEditClass}
                     onDateClick={handleCalendarDateChange}
                     selectedDate={currentCalendarDate}
+                    userRole={session.role}
                     onEditClass={handleEditClass}
-                    onDeleteClass={(data, type) => handleDeleteClass(data, 'instance')}
-                    userRole={session?.role || 'member'}
-                    userId={session?.uid || ''}
-                    onStartClass={(instanceId) => handleInstanceAction(instanceId, 'start')}
-                    onEndClass={(instanceId) => handleInstanceAction(instanceId, 'end')}
-                    onCancelClass={(instanceId) => handleInstanceAction(instanceId, 'cancel')}
+                    onDeleteClass={handleDeleteClass}
+                    onStartClass={handleInstanceAction.bind(null, '', 'start')}
+                    onEndClass={handleInstanceAction.bind(null, '', 'end')}
+                    onCancelClass={handleInstanceAction.bind(null, '', 'cancel')}
+                    userId={user?.uid || ''}
                   />
                 )}
               </Box>
@@ -630,27 +640,29 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
             {tabIndex === 2 && session?.role === 'trainer' && (
               <Box>
                 <Typography variant="h6" sx={{ mb: 2 }}>
-                  My Scheduled Classes
+                  My Schedule
                 </Typography>
+                {/* FIXED: Always show calendar for tab 2, regardless of filtered events count */}
                 <ClassCalendar
-                    classes={classesToDisplayInCalendar}
-                    viewMode={calendarViewMode}
-                    onViewModeChange={handleCalendarViewModeChange}
-                    onClassClick={handleEditClass}
-                    onDateClick={handleCalendarDateChange}
-                    selectedDate={currentCalendarDate}
-                    onEditClass={handleEditClass}
-                    onDeleteClass={(data, type) => handleDeleteClass(data, 'instance')}
-                    userRole={session?.role || 'member'}
-                    userId={session?.uid || ''}
-                    onStartClass={(instanceId) => handleInstanceAction(instanceId, 'start')}
-                    onEndClass={(instanceId) => handleInstanceAction(instanceId, 'end')}
-                    onCancelClass={(instanceId) => handleInstanceAction(instanceId, 'cancel')}
-                  />
+                  classes={filteredInstances}
+                  viewMode={calendarViewMode}
+                  onViewModeChange={handleCalendarViewModeChange}
+                  onClassClick={handleEditClass}
+                  onDateClick={handleCalendarDateChange}
+                  selectedDate={currentCalendarDate}
+                  userRole={session.role}
+                  onEditClass={handleEditClass}
+                  onDeleteClass={handleDeleteClass}
+                  onStartClass={handleInstanceAction.bind(null, '', 'start')}
+                  onEndClass={handleInstanceAction.bind(null, '', 'end')}
+                  onCancelClass={handleInstanceAction.bind(null, '', 'cancel')}
+                  userId={user?.uid || ''}
+                />
               </Box>
             )}
           </Box>
         )}
+
 
         <ClassFormDialog
           open={isFormDialogOpen}
