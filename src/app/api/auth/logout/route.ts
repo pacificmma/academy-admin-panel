@@ -1,22 +1,10 @@
-// src/app/api/auth/logout/route.ts - FIXED FOR NEXT.JS 15
+// src/app/api/auth/logout/route.ts - FIXED FOR NEXT.JS 15 - OPTIMIZED
 import { NextRequest, NextResponse } from 'next/server';
 import { clearSessionCookie } from '@/app/lib/auth/session';
-
-function addSecurityHeaders(response: NextResponse): NextResponse {
-  response.headers.set('X-Content-Type-Options', 'nosniff');
-  response.headers.set('X-Frame-Options', 'DENY');
-  response.headers.set('X-XSS-Protection', '1; mode=block');
-  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-  
-  if (process.env.NODE_ENV === 'production') {
-    response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-  }
-  
-  return response;
-}
+import { addSecurityHeaders } from '@/app/lib/auth/api-auth';
 
 // POST /api/auth/logout - Logout user
-export async function POST(request: NextRequest, context?: any) {
+export async function POST(request: NextRequest) {
   try {    
     // Create response
     const response = NextResponse.json({
@@ -42,7 +30,7 @@ export async function POST(request: NextRequest, context?: any) {
 }
 
 // GET /api/auth/logout - Handle direct navigation
-export async function GET(request: NextRequest, context?: any) {
+export async function GET(request: NextRequest) {
   try {
     // Clear session cookie and redirect
     const response = NextResponse.redirect(new URL('/login', request.url));
@@ -55,8 +43,8 @@ export async function GET(request: NextRequest, context?: any) {
   }
 }
 
-// OPTIONS /api/auth/logout - Handle CORS preflight
-export async function OPTIONS(request?: NextRequest, context?: any) {
+// OPTIONS /api/auth/logout - Handle CORS preflight - FIXED FOR NEXT.JS 15
+export async function OPTIONS() {
   const origin = process.env.NODE_ENV === 'production' 
     ? process.env.NEXT_PUBLIC_APP_URL || 'https://your-domain.com'
     : 'http://localhost:3000';

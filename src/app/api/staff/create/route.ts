@@ -1,7 +1,8 @@
-// src/app/api/staff/create/route.ts - Secure Staff Creation with Firebase Auth
+// src/app/api/staff/create/route.ts - Secure Staff Creation with Firebase Auth - FIXED
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/app/lib/firebase/admin';
-import { withSecurity, handleError, sanitizeOutput } from '@/app/lib/security/api-security';
+import { requireAdmin, RequestContext } from '@/app/lib/api/middleware';
+import { successResponse, errorResponse, conflictResponse, createdResponse, badRequestResponse } from '@/app/lib/api/response-utils';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 
@@ -34,15 +35,9 @@ const createStaffSchema = z.object({
 type CreateStaffInput = z.infer<typeof createStaffSchema>;
 
 // POST /api/staff/create - Create new staff member
-export async function POST(request: NextRequest) {
+export const POST = requireAdmin(async (request: NextRequest, context: RequestContext) => {
   try {
-    // Apply security checks - only admins can create staff
-    const { session, error } = await withSecurity(request, {
-      requiredRoles: ['admin'],
-      rateLimit: { maxRequests: 10, windowMs: 15 * 60 * 1000 } // Stricter rate limit for creation
-    });
-
-    if (error) return error;
+    const { session } = context;
 
     // Parse and validate request body
     let body: CreateStaffInput;
@@ -51,15 +46,9 @@ export async function POST(request: NextRequest) {
       body = createStaffSchema.parse(rawBody);
     } catch (parseError) {
       if (parseError instanceof z.ZodError) {
-        return NextResponse.json(
-          { success: false, error: parseError.errors[0].message },
-          { status: 400 }
-        );
+        return badRequestResponse(parseError.errors[0].message);
       }
-      return NextResponse.json(
-        { success: false, error: 'Invalid JSON format' },
-        { status: 400 }
-      );
+      return badRequestResponse('Invalid JSON format');
     }
 
     const { email, password, fullName, phoneNumber, role, ...otherData } = body;
@@ -68,10 +57,7 @@ export async function POST(request: NextRequest) {
       // Check if email already exists in Firebase Auth
       try {
         await adminAuth.getUserByEmail(email);
-        return NextResponse.json(
-          { success: false, error: 'Email already exists in the system' },
-          { status: 409 }
-        );
+        return conflictResponse('Email already exists in the system');
       } catch (firebaseError: any) {
         // If user doesn't exist, that's what we want
         if (firebaseError.code !== 'auth/user-not-found') {
@@ -85,10 +71,7 @@ export async function POST(request: NextRequest) {
         .get();
 
       if (!existingStaff.empty) {
-        return NextResponse.json(
-          { success: false, error: 'Email already exists in staff records' },
-          { status: 409 }
-        );
+        return conflictResponse('Email already exists in staff records');
       }
 
       // Create Firebase Authentication user
@@ -112,9 +95,9 @@ export async function POST(request: NextRequest) {
         role: role,
         isActive: true,
         password: hashedPassword, // Store hashed password as backup
-        createdBy: session!.uid,
+        createdBy: session.uid,
         createdAt: new Date(),
-        updatedBy: session!.uid,
+        updatedBy: session.uid,
         updatedAt: new Date(),
         lastLoginAt: null,
         lastLoginIP: null,
@@ -131,7 +114,7 @@ export async function POST(request: NextRequest) {
       await adminAuth.setCustomUserClaims(firebaseUser.uid, {
         role: role,
         isStaff: true,
-        createdBy: session!.uid
+        createdBy: session.uid
       });
 
       // Prepare response data (exclude sensitive information)
@@ -148,11 +131,7 @@ export async function POST(request: NextRequest) {
         certifications: otherData.certifications
       };
 
-      return NextResponse.json({
-        success: true,
-        message: 'Staff member created successfully',
-        data: responseData
-      }, { status: 201 });
+      return createdResponse(responseData, 'Staff member created successfully');
 
     } catch (firebaseError: any) {
       // If Firebase user was created but Firestore failed, clean up
@@ -170,21 +149,25 @@ export async function POST(request: NextRequest) {
     }
 
   } catch (error: any) {
-    return handleError(error);
+    console.error('Staff creation error:', error);
+    return errorResponse('Failed to create staff member', 500);
   }
-}
+});
 
-// Handle OPTIONS for CORS
+// Handle OPTIONS for CORS - FIXED FOR NEXT.JS 15
 export async function OPTIONS() {
+  const origin = process.env.NODE_ENV === 'production' 
+    ? process.env.NEXT_PUBLIC_APP_URL || 'https://your-domain.com'
+    : 'http://localhost:3000';
+
   return new NextResponse(null, {
     status: 200,
     headers: {
-      'Access-Control-Allow-Origin': process.env.NODE_ENV === 'production' 
-        ? process.env.NEXT_PUBLIC_APP_DOMAIN || 'https://yourdomain.com'
-        : 'http://localhost:3000',
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Credentials': 'true',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      'Access-Control-Allow-Credentials': 'true',
+      'Access-Control-Max-Age': '86400',
     },
   });
 }

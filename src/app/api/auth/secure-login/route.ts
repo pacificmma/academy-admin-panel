@@ -1,9 +1,11 @@
-// src/app/api/auth/secure-login/route.ts - SECURE LOGIN ENDPOINT
+// src/app/api/auth/secure-login/route.ts - SECURE LOGIN ENDPOINT - FIXED
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/app/lib/firebase/admin';
 import { createSession, setSessionCookie } from '@/app/lib/auth/session';
 import { UserRole } from '@/app/types/auth';
-import bcrypt from 'bcryptjs'; // Ensure bcrypt is imported. You might need to install 'bcryptjs' if not already present.
+import { getClientIP, checkRateLimit, addSecurityHeaders } from '@/app/lib/auth/api-auth';
+import { errorResponse, successResponse } from '@/app/lib/api/response-utils';
+import bcrypt from 'bcryptjs';
 
 // ============================================
 // TYPES & INTERFACES
@@ -22,8 +24,6 @@ interface UserDocument {
   lastLoginUserAgent?: string;
 }
 
-// Removed SecureLoginPayload interface as client will send plaintext password
-
 interface FailedAttempt {
   count: number;
   lastAttempt: number;
@@ -38,7 +38,6 @@ const SECURITY_CONFIG = {
   maxFailedAttempts: 5,
   lockoutDuration: 15 * 60 * 1000, // 15 minutes
   attemptWindow: 15 * 60 * 1000, // 15 minutes
-  // maxRequestAge is no longer relevant for password verification if plaintext is sent
 };
 
 const failedAttempts = new Map<string, FailedAttempt>();
@@ -47,21 +46,10 @@ const failedAttempts = new Map<string, FailedAttempt>();
 // UTILITY FUNCTIONS
 // ============================================
 
-function getClientIP(request: NextRequest): string {
-  const xForwardedFor = request.headers.get('x-forwarded-for');
-  const xRealIp = request.headers.get('x-real-ip');
-
-  if (xForwardedFor) {
-    return xForwardedFor.split(',')[0].trim();
-  }
-
-  return xRealIp || 'unknown';
-}
-
 function validateSecureLoginInput(body: any): {
   isValid: boolean;
   errors: string[];
-  sanitizedData?: { email: string; password: string }; // Changed to expect plaintext password
+  sanitizedData?: { email: string; password: string };
 } {
   const errors: string[] = [];
 
@@ -69,7 +57,7 @@ function validateSecureLoginInput(body: any): {
     return { isValid: false, errors: ['Invalid request body'] };
   }
 
-  const { email, password } = body; // Expect plaintext password directly
+  const { email, password } = body;
 
   // Email validation
   if (!email || typeof email !== 'string') {
@@ -81,17 +69,14 @@ function validateSecureLoginInput(body: any): {
     }
   }
 
-  // Password validation (basic checks for plaintext)
+  // Password validation
   if (!password || typeof password !== 'string') {
     errors.push('Password is required');
   } else {
-    // Basic length validation for plaintext password, adjust as per your policy
     if (password.length < 6 || password.length > 128) {
       errors.push('Invalid password length');
     }
   }
-
-  // Removed timestamp, nonce, signature validation as they are no longer used for direct password verification
 
   if (errors.length > 0) {
     return { isValid: false, errors };
@@ -102,7 +87,7 @@ function validateSecureLoginInput(body: any): {
     errors: [],
     sanitizedData: {
       email: email.toLowerCase().trim(),
-      password: password // Store plaintext password here temporarily for bcrypt comparison
+      password: password
     }
   };
 }
@@ -178,19 +163,6 @@ async function verifyPassword(
   }
 }
 
-function addSecurityHeaders(response: NextResponse): NextResponse {
-  response.headers.set('X-Content-Type-Options', 'nosniff');
-  response.headers.set('X-Frame-Options', 'DENY');
-  response.headers.set('X-XSS-Protection', '1; mode=block');
-  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-
-  if (process.env.NODE_ENV === 'production') {
-    response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-  }
-
-  return response;
-}
-
 // ============================================
 // MAIN SECURE LOGIN ENDPOINT
 // ============================================
@@ -200,6 +172,15 @@ export async function POST(request: NextRequest) {
   const userAgent = request.headers.get('user-agent') || 'unknown';
 
   try {
+    // Rate limiting check
+    if (!checkRateLimit(clientIP, 10, 15 * 60 * 1000)) {
+      const response = NextResponse.json(
+        { success: false, error: 'Too many requests. Please try again later.' },
+        { status: 429 }
+      );
+      return addSecurityHeaders(response);
+    }
+
     // Check for account lockout
     const lockoutCheck = checkAccountLockout(clientIP);
     if (!lockoutCheck.allowed) {
@@ -219,25 +200,17 @@ export async function POST(request: NextRequest) {
       body = await request.json();
     } catch (parseError) {
       recordFailedAttempt(clientIP, 'invalid_request');
-      const response = NextResponse.json(
-        { success: false, error: 'Invalid request format' },
-        { status: 400 }
-      );
-      return addSecurityHeaders(response);
+      return addSecurityHeaders(errorResponse('Invalid request format', 400));
     }
 
-    // Validate and sanitize input (now expects plaintext password)
+    // Validate and sanitize input
     const validation = validateSecureLoginInput(body);
     if (!validation.isValid) {
       recordFailedAttempt(clientIP, 'invalid_input');
-      const response = NextResponse.json(
-        { success: false, error: validation.errors[0] },
-        { status: 400 }
-      );
-      return addSecurityHeaders(response);
+      return addSecurityHeaders(errorResponse(validation.errors[0], 400));
     }
 
-    const { email, password } = validation.sanitizedData!; // Get plaintext password
+    const { email, password } = validation.sanitizedData!;
 
     // Get Firebase user
     let firebaseUser;
@@ -245,11 +218,7 @@ export async function POST(request: NextRequest) {
       firebaseUser = await adminAuth.getUserByEmail(email);
     } catch (error: any) {
       recordFailedAttempt(clientIP, 'user_not_found', { email });
-      const response = NextResponse.json(
-        { success: false, error: 'Invalid email or password' },
-        { status: 401 }
-      );
-      return addSecurityHeaders(response);
+      return addSecurityHeaders(errorResponse('Invalid email or password', 401));
     }
 
     // Get user document from Firestore
@@ -260,54 +229,34 @@ export async function POST(request: NextRequest) {
 
       if (!userSnapshot.exists) {
         recordFailedAttempt(clientIP, 'user_document_not_found', { uid: firebaseUser.uid });
-        const response = NextResponse.json(
-          { success: false, error: 'User not found in system' },
-          { status: 401 }
-        );
-        return addSecurityHeaders(response);
+        return addSecurityHeaders(errorResponse('User not found in system', 401));
       }
 
       const userData = userSnapshot.data();
       if (!userData) {
         recordFailedAttempt(clientIP, 'user_document_empty', { uid: firebaseUser.uid });
-        const response = NextResponse.json(
-          { success: false, error: 'User data not found' },
-          { status: 401 }
-        );
-        return addSecurityHeaders(response);
+        return addSecurityHeaders(errorResponse('User data not found', 401));
       }
 
       userDoc = userData as UserDocument;
     } catch (error: any) {
       recordFailedAttempt(clientIP, 'firestore_error');
-      const response = NextResponse.json(
-        { success: false, error: 'Database error' },
-        { status: 500 }
-      );
-      return addSecurityHeaders(response);
+      return addSecurityHeaders(errorResponse('Database error', 500));
     }
 
     // Validate required user document fields
     if (!userDoc.role || !userDoc.fullName || typeof userDoc.isActive !== 'boolean') {
       recordFailedAttempt(clientIP, 'invalid_user_data', { uid: firebaseUser.uid });
-      const response = NextResponse.json(
-        { success: false, error: 'Invalid user data' },
-        { status: 401 }
-      );
-      return addSecurityHeaders(response);
+      return addSecurityHeaders(errorResponse('Invalid user data', 401));
     }
 
     // Check if user is active
     if (!userDoc.isActive) {
       recordFailedAttempt(clientIP, 'user_inactive', { email });
-      const response = NextResponse.json(
-        { success: false, error: 'Account is deactivated. Please contact your administrator.' },
-        { status: 403 }
-      );
-      return addSecurityHeaders(response);
+      return addSecurityHeaders(errorResponse('Account is deactivated. Please contact your administrator.', 403));
     }
 
-    // Verify password using bcrypt (NEW)
+    // Verify password using bcrypt
     const isPasswordValid = await verifyPassword(
       password, // Pass plaintext password
       userDoc.password || '' // This should be the bcrypt hash from Firestore
@@ -315,11 +264,7 @@ export async function POST(request: NextRequest) {
 
     if (!isPasswordValid) {
       recordFailedAttempt(clientIP, 'invalid_password', { email });
-      const response = NextResponse.json(
-        { success: false, error: 'Invalid email or password' },
-        { status: 401 }
-      );
-      return addSecurityHeaders(response);
+      return addSecurityHeaders(errorResponse('Invalid email or password', 401));
     }
 
     // Create session
@@ -335,11 +280,7 @@ export async function POST(request: NextRequest) {
     const sessionToken = await createSession(sessionData);
     if (!sessionToken) {
       recordFailedAttempt(clientIP, 'session_creation_failed');
-      const response = NextResponse.json(
-        { success: false, error: 'Failed to create session' },
-        { status: 500 }
-      );
-      return addSecurityHeaders(response);
+      return addSecurityHeaders(errorResponse('Failed to create session', 500));
     }
 
     // Update user last login information
@@ -388,15 +329,11 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const response = NextResponse.json(
-      { success: false, error: 'An unexpected error occurred' },
-      { status: 500 }
-    );
-    return addSecurityHeaders(response);
+    return addSecurityHeaders(errorResponse('An unexpected error occurred', 500));
   }
 }
 
-// Handle OPTIONS for CORS
+// Handle OPTIONS for CORS - FIXED FOR NEXT.JS 15
 export async function OPTIONS() {
   const origin = process.env.NODE_ENV === 'production'
     ? process.env.NEXT_PUBLIC_APP_URL || 'https://your-domain.com'
