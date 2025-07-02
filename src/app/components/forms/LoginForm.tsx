@@ -112,7 +112,7 @@ export default function SecureLoginForm() {
       <Box sx={{ mb: 3 }}>
         <TextField
           fullWidth
-          label="E-posta"
+          label="E-mail"
           name="email"
           type="email"
           value={formData.email}
@@ -136,7 +136,7 @@ export default function SecureLoginForm() {
       <Box sx={{ mb: 4 }}>
         <TextField
           fullWidth
-          label="Şifre"
+          label="Password"
           name="password"
           type={showPassword ? 'text' : 'password'}
           value={formData.password}
@@ -213,10 +213,10 @@ export default function SecureLoginForm() {
                 },
               }}
             />
-            Giriş Yapılıyor...
+            Signing In
           </Box>
         ) : (
-          'Giriş Yap'
+          'Sign In'
         )}
       </Button>
     </Box>

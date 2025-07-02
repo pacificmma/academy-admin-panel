@@ -163,20 +163,32 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
       setInstanceDisplayMode('calendar');
       setCurrentCalendarDate(new Date());
       setCalendarViewMode('month');
-      setFilters(prev => ({ ...prev, classType: undefined, instructorId: undefined, searchTerm: '', date: undefined }));
+      setFilters(prev => ({ 
+        ...prev, 
+        classType: undefined, 
+        instructorId: undefined, 
+        searchTerm: '', 
+        date: undefined  // Clear date filter for schedules
+      }));
     } else if (tabIndex === 1) { // Upcoming Classes tab
       setFilters(prev => ({
         ...prev,
         classType: undefined,
         instructorId: undefined,
-        date: format(new Date(), 'yyyy-MM-dd'),
+        date: undefined,  // Don't set a default date - let it show all upcoming
         searchTerm: '',
       }));
-      setInstanceDisplayMode('cards');
+      setInstanceDisplayMode('cards');  // Default to cards for upcoming classes
       setCurrentCalendarDate(new Date());
-      setCalendarViewMode('day');
+      setCalendarViewMode('week');  // Better for viewing upcoming classes in calendar
     } else if (tabIndex === 2 && user?.role === 'trainer') { // My Schedule tab
-      setFilters(prev => ({ ...prev, instructorId: user.uid, classType: undefined, searchTerm: '' }));
+      setFilters(prev => ({ 
+        ...prev, 
+        instructorId: user.uid, 
+        classType: undefined, 
+        searchTerm: '',
+        date: undefined  // Clear date filter for trainer schedule
+      }));
       setInstanceDisplayMode('calendar');
       setCurrentCalendarDate(new Date());
       setCalendarViewMode('week');
@@ -332,7 +344,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
   // Filter instances based on current view and filters - ALL CLIENT SIDE
   const filteredInstances = useMemo(() => {
     let filtered = [...allInstances];
-
+  
     // Apply search filter
     if (filters.searchTerm) {
       const searchLower = filters.searchTerm.toLowerCase();
@@ -344,32 +356,32 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
         instance.location?.toLowerCase().includes(searchLower)
       );
     }
-
+  
     // Apply class type filter
     if (filters.classType) {
       filtered = filtered.filter(instance => instance.classType === filters.classType);
     }
-
+  
     // Apply instructor filter
     if (filters.instructorId) {
       filtered = filtered.filter(instance => instance.instructorId === filters.instructorId);
     }
-
-    // Apply date filter for cards view (tab 1)
-    if (tabIndex === 1 && filters.date) {
-      filtered = filtered.filter(instance => instance.date === filters.date);
-    }
-
+  
     // Apply trainer filter for "My Schedule" tab
     if (tabIndex === 2 && user?.role === 'trainer' && user?.uid) {
       filtered = filtered.filter(instance => instance.instructorId === user.uid);
     }
-
-    // Apply calendar view range filter
+  
+    // Apply date filter ONLY for cards view in tab 1 (Upcoming Classes)
+    if (tabIndex === 1 && instanceDisplayMode === 'cards' && filters.date) {
+      filtered = filtered.filter(instance => instance.date === filters.date);
+    }
+  
+    // Apply calendar view range filter for calendar views
     if (tabIndex === 0 || (tabIndex === 1 && instanceDisplayMode === 'calendar') || tabIndex === 2) {
       let rangeStart: Date;
       let rangeEnd: Date;
-
+  
       if (calendarViewMode === 'day') {
         rangeStart = new Date(currentCalendarDate);
         rangeEnd = new Date(currentCalendarDate);
@@ -382,13 +394,33 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
         rangeStart = startOfMonth(currentCalendarDate);
         rangeEnd = endOfMonth(currentCalendarDate);
       }
-
+  
       filtered = filtered.filter(instance => {
         const instanceDate = new Date(instance.date);
         return isWithinInterval(instanceDate, { start: rangeStart, end: rangeEnd });
       });
     }
-
+  
+    // For tab 1 (Upcoming Classes) when in cards view, show future classes only
+    if (tabIndex === 1 && instanceDisplayMode === 'cards' && !filters.date) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      filtered = filtered.filter(instance => {
+        const instanceDate = new Date(instance.date);
+        return instanceDate >= today;
+      });
+      
+      // Sort by date and time for upcoming classes
+      filtered.sort((a, b) => {
+        const dateCompare = a.date.localeCompare(b.date);
+        if (dateCompare === 0) {
+          return a.startTime.localeCompare(b.startTime);
+        }
+        return dateCompare;
+      });
+    }
+  
     return filtered;
   }, [allInstances, filters, tabIndex, user, instanceDisplayMode, calendarViewMode, currentCalendarDate]);
 
