@@ -608,97 +608,110 @@ export default function ClassCalendar({
 
       {/* Event Menu */}
       <Menu
-        anchorEl={eventMenuAnchor}
-        open={Boolean(eventMenuAnchor)}
-        onClose={handleEventMenuClose}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-      >
-        <MenuItem onClick={() => {
+  anchorEl={eventMenuAnchor}
+  open={Boolean(eventMenuAnchor)}
+  onClose={handleEventMenuClose}
+  anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+  transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+>
+  {/* Always show View Details */}
+  <MenuItem onClick={() => {
+    if (selectedEvent) {
+      handleEventClick(selectedEvent);
+    }
+    handleEventMenuClose();
+  }}>
+    <ListItemIcon>
+      <EditIcon fontSize="small" />
+    </ListItemIcon>
+    <ListItemText>View Details</ListItemText>
+  </MenuItem>
+  
+  {/* Conditionally render management buttons - use array instead of Fragment */}
+  {showManagementButtons && [
+    <MenuItem 
+      key="edit-class"
+      onClick={() => {
+        if (selectedEvent) {
+          onEditClass(selectedEvent.classInstance);
+        }
+        handleEventMenuClose();
+      }}
+    >
+      <ListItemIcon>
+        <EditIcon fontSize="small" />
+      </ListItemIcon>
+      <ListItemText>Edit Class</ListItemText>
+    </MenuItem>,
+
+    ...(selectedEvent?.classInstance.status === 'scheduled' && onStartClass ? [
+      <MenuItem 
+        key="start-class"
+        onClick={() => {
           if (selectedEvent) {
-            handleEventClick(selectedEvent);
+            onStartClass(selectedEvent.classInstance.id);
           }
           handleEventMenuClose();
-        }}>
-          <ListItemIcon>
-            <EditIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>View Details</ListItemText>
-        </MenuItem>
-        
-        {showManagementButtons && (
-          <>
-            <MenuItem onClick={() => {
-              if (selectedEvent) {
-                onEditClass(selectedEvent.classInstance);
-              }
-              handleEventMenuClose();
-            }}>
-              <ListItemIcon>
-                <EditIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Edit Class</ListItemText>
-            </MenuItem>
+        }}
+      >
+        <ListItemIcon>
+          <PlayArrowIcon fontSize="small" />
+        </ListItemIcon>
+        <ListItemText>Start Class</ListItemText>
+      </MenuItem>
+    ] : []),
 
-            {selectedEvent?.classInstance.status === 'scheduled' && onStartClass && (
-              <MenuItem onClick={() => {
-                if (selectedEvent) {
-                  onStartClass(selectedEvent.classInstance.id);
-                }
-                handleEventMenuClose();
-              }}>
-                <ListItemIcon>
-                  <PlayArrowIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>Start Class</ListItemText>
-              </MenuItem>
-            )}
+    ...(selectedEvent?.classInstance.status === 'ongoing' && onEndClass ? [
+      <MenuItem 
+        key="end-class"
+        onClick={() => {
+          if (selectedEvent) {
+            onEndClass(selectedEvent.classInstance.id);
+          }
+          handleEventMenuClose();
+        }}
+      >
+        <ListItemIcon>
+          <StopIcon fontSize="small" />
+        </ListItemIcon>
+        <ListItemText>End Class</ListItemText>
+      </MenuItem>
+    ] : []),
 
-            {selectedEvent?.classInstance.status === 'ongoing' && onEndClass && (
-              <MenuItem onClick={() => {
-                if (selectedEvent) {
-                  onEndClass(selectedEvent.classInstance.id);
-                }
-                handleEventMenuClose();
-              }}>
-                <ListItemIcon>
-                  <StopIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>End Class</ListItemText>
-              </MenuItem>
-            )}
+    ...(selectedEvent?.classInstance.status === 'scheduled' && onCancelClass ? [
+      <MenuItem 
+        key="cancel-class"
+        onClick={() => {
+          if (selectedEvent) {
+            onCancelClass(selectedEvent.classInstance.id);
+          }
+          handleEventMenuClose();
+        }}
+      >
+        <ListItemIcon>
+          <CancelIcon fontSize="small" />
+        </ListItemIcon>
+        <ListItemText>Cancel Class</ListItemText>
+      </MenuItem>
+    ] : []),
 
-            {selectedEvent?.classInstance.status === 'scheduled' && onCancelClass && (
-              <MenuItem onClick={() => {
-                if (selectedEvent) {
-                  onCancelClass(selectedEvent.classInstance.id);
-                }
-                handleEventMenuClose();
-              }}>
-                <ListItemIcon>
-                  <CancelIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>Cancel Class</ListItemText>
-              </MenuItem>
-            )}
-
-            <MenuItem 
-              onClick={() => {
-                if (selectedEvent) {
-                  onDeleteClass(selectedEvent.classInstance, 'instance');
-                }
-                handleEventMenuClose();
-              }}
-              sx={{ color: 'error.main' }}
-            >
-              <ListItemIcon>
-                <DeleteIcon fontSize="small" color="error" />
-              </ListItemIcon>
-              <ListItemText>Delete Class</ListItemText>
-            </MenuItem>
-          </>
-        )}
-      </Menu>
+    <MenuItem 
+      key="delete-class"
+      onClick={() => {
+        if (selectedEvent) {
+          onDeleteClass(selectedEvent.classInstance, 'instance');
+        }
+        handleEventMenuClose();
+      }}
+      sx={{ color: 'error.main' }}
+    >
+      <ListItemIcon>
+        <DeleteIcon fontSize="small" color="error" />
+      </ListItemIcon>
+      <ListItemText>Delete Class</ListItemText>
+    </MenuItem>
+  ]}
+</Menu>
     </Box>
   );
 }
