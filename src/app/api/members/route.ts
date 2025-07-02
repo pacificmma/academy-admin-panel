@@ -1,7 +1,8 @@
-// src/app/api/memberships/route.ts - Session-based Authentication Fixed
-import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/app/lib/auth/session';
+// src/app/api/memberships/route.ts - FIXED FOR NEXT.JS 15
+import { NextRequest } from 'next/server';
 import { adminDb } from '@/app/lib/firebase/admin';
+import { requireAdmin } from '@/app/lib/api/middleware';
+import { errorResponse, successResponse, createdResponse, conflictResponse } from '@/app/lib/api/response-utils';
 import { z } from 'zod';
 
 // Clean validation schema - esnek süre sistemi
@@ -16,18 +17,10 @@ const membershipPlanSchema = z.object({
   status: z.enum(['active', 'inactive']).default('active'),
 });
 
-// GET /api/memberships
-export async function GET(request: NextRequest) {
+// GET /api/memberships - List membership plans
+export const GET = requireAdmin(async (request: NextRequest, context) => {
   try {
-    // Session-based authentication
-    const session = await getSession(request);
-    if (!session || session.role !== 'admin' || !session.isActive) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized - Admin access required' },
-        { status: 401 }
-      );
-    }
-
+    const { session } = context;
     const url = new URL(request.url);
     const search = url.searchParams.get('search');
 
@@ -55,43 +48,27 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({
-      success: true,
+    return successResponse({
       data: plans,
       total: plans.length
-    });
+    }, `Successfully fetched ${plans.length} membership plans`);
 
   } catch (error) {
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch membership plans' },
-      { status: 500 }
-    );
+    return errorResponse('Failed to fetch membership plans', 500);
   }
-}
+});
 
-// POST /api/memberships
-export async function POST(request: NextRequest) {
+// POST /api/memberships - Create membership plan
+export const POST = requireAdmin(async (request: NextRequest, context) => {
   try {
-    const session = await getSession(request);
-    if (!session || session.role !== 'admin' || !session.isActive) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized - Admin access required' },
-        { status: 401 }
-      );
-    }
-
+    const { session } = context;
     const body = await request.json();
     const validation = membershipPlanSchema.safeParse(body);
 
     if (!validation.success) {
-      return NextResponse.json(
-        { 
-          success: false,
-          error: 'Validation failed', 
-          details: validation.error.issues 
-        },
-        { status: 400 }
-      );
+      return errorResponse('Validation failed', 400, { 
+        validationErrors: validation.error.issues 
+      });
     }
 
     const planData = validation.data;
@@ -103,10 +80,7 @@ export async function POST(request: NextRequest) {
       .get();
 
     if (!existingPlan.empty) {
-      return NextResponse.json(
-        { success: false, error: 'A membership plan with this name already exists' },
-        { status: 409 }
-      );
+      return conflictResponse('A membership plan with this name already exists');
     }
 
     const newPlan = {
@@ -126,16 +100,9 @@ export async function POST(request: NextRequest) {
       updatedAt: createdDoc.data()?.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
     };
 
-    return NextResponse.json({
-      success: true,
-      data: createdPlan,
-      message: 'Membership plan created successfully'
-    }, { status: 201 });
+    return createdResponse(createdPlan, 'Membership plan created successfully');
 
   } catch (error) {
-    return NextResponse.json(
-      { success: false, error: 'Failed to create membership plan' },
-      { status: 500 }
-    );
+    return errorResponse('Failed to create membership plan', 500);
   }
-}
+});

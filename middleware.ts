@@ -1,6 +1,4 @@
-// src/app/lib/api/middleware.ts - UPDATED TYPE DEFINITIONS
-// ============================================
-
+//src/app/lib/api/middleware.ts - UPDATED MIDDLEWARE
 import { NextRequest, NextResponse } from 'next/server';
 import { validateApiSession } from '@/app/lib/auth/session';
 import { UserRole } from '@/app/types';
@@ -18,21 +16,10 @@ export interface RequestContext {
   params?: { [key: string]: string | string[] };
 }
 
-// Next.js 15 API route context type
-type NextJSRouteContext = {
-  params?: { [key: string]: string | string[] };
-};
-
 // Our internal handler type
 export type ApiHandler = (
   request: NextRequest,
   context: RequestContext
-) => Promise<NextResponse>;
-
-// Next.js 15 compatible route handler type - simplified
-export type NextJSRouteHandler = (
-  request: NextRequest,
-  context?: NextJSRouteContext
 ) => Promise<NextResponse>;
 
 // Middleware options
@@ -46,8 +33,8 @@ interface MiddlewareOptions {
 export function withAuth(
   handler: ApiHandler,
   options: MiddlewareOptions = {}
-): NextJSRouteHandler {
-  return async (request: NextRequest, nextjsContext?: NextJSRouteContext) => {
+) {
+  return async (request: NextRequest, routeContext?: { params?: Promise<{ [key: string]: string | string[] }> | { [key: string]: string | string[] } }) => {
     try {
       // Validate session
       const session = await validateApiSession(request);
@@ -57,10 +44,20 @@ export function withAuth(
         return createErrorResponse('Insufficient permissions', 403);
       }
 
-      // Build our internal context with params
+      // Extract params - handle both Promise and direct params
+      let params: { [key: string]: string | string[] } | undefined;
+      if (routeContext?.params) {
+        if (routeContext.params instanceof Promise) {
+          params = await routeContext.params;
+        } else {
+          params = routeContext.params;
+        }
+      }
+
+      // Build our internal context
       const internalContext: RequestContext = {
         session,
-        params: nextjsContext?.params,
+        params,
       };
 
       // Handle self-access for non-admin users
@@ -91,23 +88,23 @@ export function withAuth(
 }
 
 // Role-specific wrappers
-export const requireAdmin = (handler: ApiHandler): NextJSRouteHandler =>
+export const requireAdmin = (handler: ApiHandler) =>
   withAuth(handler, { requiredRoles: ['admin'] });
 
-export const requireStaff = (handler: ApiHandler): NextJSRouteHandler =>
+export const requireStaff = (handler: ApiHandler) =>
   withAuth(handler, { requiredRoles: ['admin', 'staff'] });
 
-export const requireTrainer = (handler: ApiHandler): NextJSRouteHandler =>
+export const requireTrainer = (handler: ApiHandler) =>
   withAuth(handler, { requiredRoles: ['admin', 'trainer'] });
 
-export const requireStaffOrTrainer = (handler: ApiHandler): NextJSRouteHandler =>
+export const requireStaffOrTrainer = (handler: ApiHandler) =>
   withAuth(handler, { requiredRoles: ['admin', 'staff', 'trainer'] });
 
 // Self-access wrappers
-export const requireSelfOrAdmin = (handler: ApiHandler, selfField = 'uid'): NextJSRouteHandler =>
+export const requireSelfOrAdmin = (handler: ApiHandler, selfField = 'uid') =>
   withAuth(handler, { requiredRoles: ['admin', 'staff', 'trainer'], allowSelf: true, selfField });
 
-export const requireAdminOrSelf = (handler: ApiHandler, selfField = 'uid'): NextJSRouteHandler =>
+export const requireAdminOrSelf = (handler: ApiHandler, selfField = 'uid') =>
   withAuth(handler, { requiredRoles: ['admin'], allowSelf: true, selfField });
 
 // Create standardized error responses
@@ -153,23 +150,6 @@ export function createSuccessResponse<T>(
   });
 }
 
-// Handle method not allowed
-export function createMethodNotAllowed(allowedMethods: string[]): NextResponse {
-  return new NextResponse(
-    JSON.stringify({
-      success: false,
-      error: 'Method not allowed',
-    }),
-    {
-      status: 405,
-      headers: {
-        'Allow': allowedMethods.join(', '),
-        'Content-Type': 'application/json',
-      },
-    }
-  );
-}
-
 // Pagination helper
 export interface PaginationParams {
   page: number;
@@ -208,22 +188,4 @@ export function getSearchParams(request: NextRequest) {
     sortOrder,
     filters,
   };
-}
-
-// CORS handler for OPTIONS requests
-export function handleCorsOptions(): NextResponse {
-  const origin = process.env.NODE_ENV === 'production' 
-    ? process.env.NEXT_PUBLIC_APP_URL || 'https://your-domain.com'
-    : 'http://localhost:3000';
-
-  return new NextResponse(null, {
-    status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': origin,
-      'Access-Control-Allow-Credentials': 'true',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
-      'Access-Control-Allow-Headers': 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization',
-      'Access-Control-Max-Age': '86400',
-    },
-  });
 }

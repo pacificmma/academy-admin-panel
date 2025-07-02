@@ -1,22 +1,15 @@
-// src/app/api/staff/route.ts - Staff List API (Modified)
-import { NextRequest, NextResponse } from 'next/server';
+//src/app/api/staff/route.ts - FIXED VERSION
+// ============================================
+
+import { NextRequest } from 'next/server';
 import { adminDb } from '@/app/lib/firebase/admin';
+import { requireStaffOrTrainer } from '@/app/lib/api/middleware';
 import { errorResponse, successResponse } from '@/app/lib/api/response-utils';
-import { withSecurity } from '@/app/lib/security/api-security';
-import { PERMISSIONS } from '@/app/lib/api/permissions';
-import { UserRole } from '@/app/types/auth';
 
 // GET /api/staff - List all staff members
-export async function GET(request: NextRequest) {
+export const GET = requireStaffOrTrainer(async (request: NextRequest, context) => {
   try {
-    // Apply security checks - allow admin, trainer, and staff to list staff for basic info (e.g., instructors for classes)
-    const { session, error } = await withSecurity(request, {
-      requiredRoles: PERMISSIONS.staff.viewBasicInfo, // MODIFIED: Allow staff and trainers to view basic info
-      rateLimit: { maxRequests: 100, windowMs: 15 * 60 * 1000 }
-    });
-
-    if (error) return error;
-
+    const { session } = context;
     const url = new URL(request.url);
     const search = url.searchParams.get('search');
     const role = url.searchParams.get('role');
@@ -40,7 +33,7 @@ export async function GET(request: NextRequest) {
       }
 
       const snapshot = await query.offset(offset).limit(limit).get();
-      let staffMembers = snapshot.docs.map((doc: { data: () => any; id: any; }) => {
+      let staffMembers = snapshot.docs.map((doc: any) => {
         const data = doc.data();
         return {
           uid: doc.id,
@@ -53,7 +46,7 @@ export async function GET(request: NextRequest) {
       // Apply search filtering
       if (search) {
         const searchLower = search.toLowerCase();
-        staffMembers = staffMembers.filter((staff: { fullName: string; email: string; }) =>
+        staffMembers = staffMembers.filter((staff: any) =>
           staff.fullName.toLowerCase().includes(searchLower) ||
           staff.email.toLowerCase().includes(searchLower)
         );
@@ -61,11 +54,10 @@ export async function GET(request: NextRequest) {
 
       return successResponse(staffMembers);
     } catch (dbError: any) {
-      console.error('Database query error for staff:', dbError);
       throw new Error('Failed to fetch staff members from database');
     }
 
   } catch (error: any) {
     return errorResponse(error.message || 'Failed to list staff members', 500);
   }
-}
+});

@@ -1,4 +1,4 @@
-// src/app/api/auth/logout/route.ts - SECURE LOGOUT API (FIXED)
+// src/app/api/auth/logout/route.ts - FIXED FOR NEXT.JS 15
 import { NextRequest, NextResponse } from 'next/server';
 import { clearSessionCookie } from '@/app/lib/auth/session';
 
@@ -15,7 +15,8 @@ function addSecurityHeaders(response: NextResponse): NextResponse {
   return response;
 }
 
-export async function POST(request: NextRequest) {
+// POST /api/auth/logout - Logout user
+export async function POST(request: NextRequest, context?: any) {
   try {    
     // Create response
     const response = NextResponse.json({
@@ -28,12 +29,7 @@ export async function POST(request: NextRequest) {
     
     return addSecurityHeaders(response);
 
-  } catch (error: unknown) {    
-    console.error('Logout error:', {
-      error: error instanceof Error ? error.message : 'Unknown error',
-      timestamp: new Date().toISOString(),
-    });
-    
+  } catch (error: unknown) {
     // Even if there's an error, still clear cookie
     const response = NextResponse.json(
       { success: true, message: 'Logged out' },
@@ -45,27 +41,22 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Handle GET requests too (for direct navigation)
-export async function GET(request: NextRequest) {
+// GET /api/auth/logout - Handle direct navigation
+export async function GET(request: NextRequest, context?: any) {
   try {
     // Clear session cookie and redirect
     const response = NextResponse.redirect(new URL('/login', request.url));
     clearSessionCookie(response);
     return addSecurityHeaders(response);
   } catch (error: unknown) {
-    console.error('Logout redirect error:', {
-      error: error instanceof Error ? error.message : 'Unknown error',
-      timestamp: new Date().toISOString(),
-    });
-    
     const response = NextResponse.redirect(new URL('/login', request.url));
     clearSessionCookie(response);
     return addSecurityHeaders(response);
   }
 }
 
-// Handle OPTIONS for CORS
-export async function OPTIONS() {
+// OPTIONS /api/auth/logout - Handle CORS preflight
+export async function OPTIONS(request?: NextRequest, context?: any) {
   const origin = process.env.NODE_ENV === 'production' 
     ? process.env.NEXT_PUBLIC_APP_URL || 'https://your-domain.com'
     : 'http://localhost:3000';

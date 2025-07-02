@@ -1,11 +1,14 @@
-// src/app/api/sport-categories/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+//src/app/api/sport-categories/route.ts - FIXED VERSION
+// ============================================
+
+import { NextRequest } from 'next/server';
 import { adminDb } from '@/app/lib/firebase/admin';
-import { requireAdmin } from '@/app/lib/api/middleware';
+import { requireAdmin, requireStaffOrTrainer } from '@/app/lib/api/middleware';
+import { errorResponse, successResponse, badRequestResponse, conflictResponse } from '@/app/lib/api/response-utils';
 import { Timestamp } from 'firebase-admin/firestore';
 
 // GET - Tüm spor kategorilerini getir
-export async function GET(request: NextRequest) {
+export const GET = requireStaffOrTrainer(async (request: NextRequest, context) => {
   try {
     const categoriesRef = adminDb.collection('sportCategories');
     const snapshot = await categoriesRef
@@ -18,17 +21,11 @@ export async function GET(request: NextRequest) {
       ...doc.data(),
     }));
 
-    return NextResponse.json({
-      success: true,
-      data: categories
-    });
+    return successResponse(categories);
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: 'Kategoriler getirilemedi' },
-      { status: 500 }
-    );
+    return errorResponse('Kategoriler getirilemedi', 500);
   }
-}
+});
 
 // POST - Yeni spor kategorisi ekle (Admin only)
 export const POST = requireAdmin(async (request: NextRequest, context) => {
@@ -38,17 +35,11 @@ export const POST = requireAdmin(async (request: NextRequest, context) => {
 
     // Input validation
     if (!body.name || typeof body.name !== 'string' || body.name.trim().length < 2) {
-      return NextResponse.json(
-        { success: false, error: 'Kategori adı en az 2 karakter olmalıdır' },
-        { status: 400 }
-      );
+      return badRequestResponse('Kategori adı en az 2 karakter olmalıdır');
     }
 
     if (!['adult', 'youth', 'both'].includes(body.ageRestrictions)) {
-      return NextResponse.json(
-        { success: false, error: 'Geçersiz yaş kısıtlaması' },
-        { status: 400 }
-      );
+      return badRequestResponse('Geçersiz yaş kısıtlaması');
     }
 
     // Generate unique ID from name
@@ -61,10 +52,7 @@ export const POST = requireAdmin(async (request: NextRequest, context) => {
     // Check if category already exists
     const existingCategory = await adminDb.collection('sportCategories').doc(categoryId).get();
     if (existingCategory.exists) {
-      return NextResponse.json(
-        { success: false, error: 'Bu isimde bir kategori zaten mevcut' },
-        { status: 400 }
-      );
+      return conflictResponse('Bu isimde bir kategori zaten mevcut');
     }
 
     // Get next display order
@@ -95,14 +83,8 @@ export const POST = requireAdmin(async (request: NextRequest, context) => {
 
     await adminDb.collection('sportCategories').doc(categoryId).set(categoryData);
 
-    return NextResponse.json({
-      success: true,
-      data: categoryData
-    });
+    return successResponse(categoryData);
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: 'Kategori eklenemedi' },
-      { status: 500 }
-    );
+    return errorResponse('Kategori eklenemedi', 500);
   }
 });

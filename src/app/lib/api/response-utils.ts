@@ -1,4 +1,4 @@
-// src/app/lib/api/response-utils.ts - ADD MISSING RESPONSE UTILITIES
+//src/app/lib/api/response-utils.ts - COMPLETE RESPONSE UTILITIES
 // ============================================
 
 import { NextResponse } from 'next/server';
@@ -71,4 +71,21 @@ export function conflictResponse(message: string = 'Resource conflict'): NextRes
 export function validationErrorResponse(errors: string[] | string): NextResponse {
   const message = Array.isArray(errors) ? errors.join(', ') : errors;
   return errorResponse(`Validation failed: ${message}`, 422);
+}
+
+// Method not allowed response (405)
+export function methodNotAllowedResponse(allowedMethods: string[]): NextResponse {
+  return new NextResponse(
+    JSON.stringify({
+      success: false,
+      error: 'Method not allowed',
+    }),
+    {
+      status: 405,
+      headers: {
+        'Allow': allowedMethods.join(', '),
+        'Content-Type': 'application/json',
+      },
+    }
+  );
 }
