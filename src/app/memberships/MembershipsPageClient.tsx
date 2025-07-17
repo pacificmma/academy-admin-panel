@@ -56,13 +56,8 @@ interface MembershipsPageClientProps {
 }
 
 // Local utility function for currency formatting
-const formatCurrency = (amount: number, currency: string): string => {
-  const currencySymbols: Record<string, string> = {
-    USD: '$',
-  };
-  
-  const symbol = currencySymbols[currency] || currency;
-  return `${symbol}${amount.toFixed(2)}`;
+const formatCurrency = (amount: number): string => {
+  return `$${amount.toFixed(2)}`;
 };
 
 export default function MembershipsPageClient({ session }: MembershipsPageClientProps): React.JSX.Element {
@@ -428,7 +423,7 @@ const loadMemberships = useCallback(async (): Promise<void> => {
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2" fontWeight="medium">
-                          {formatCurrency(membership.price, membership.currency)}
+                          {formatCurrency(membership.price)}
                         </Typography>
                       </TableCell>
                       <TableCell>
@@ -543,7 +538,7 @@ const loadMemberships = useCallback(async (): Promise<void> => {
           loading={submitLoading}
           warningMessage="This action will permanently delete the membership plan."
           additionalInfo={[
-            { label: 'Price', value: formatCurrency(selectedMembership?.price || 0, selectedMembership?.currency || 'USD') },
+            { label: 'Price', value: formatCurrency(selectedMembership?.price || 0,) },
             { label: 'Duration', value: formatDuration(selectedMembership?.durationValue || 0, selectedMembership?.durationType || 'months') },
           ]}
         />

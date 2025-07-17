@@ -196,7 +196,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
         return <AdminIcon sx={{ fontSize: 20 }} />;
       case 'trainer':
         return <TrainerIcon sx={{ fontSize: 20 }} />;
-      case 'staff':
+      case 'visiting_trainer':
         return <StaffIcon sx={{ fontSize: 20 }} />;
       default:
         return <PersonIcon sx={{ fontSize: 20 }} />;
@@ -210,7 +210,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
         return 'error';
       case 'trainer':
         return 'primary';
-      case 'staff':
+      case 'visiting_trainer':
         return 'secondary';
       default:
         return 'default';
@@ -242,7 +242,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
     },
     {
       title: 'Staff Members',
-      value: staffMembers.filter(s => s.role === 'staff').length,
+      value: staffMembers.filter(s => s.role === 'visiting_trainer').length,
       icon: StaffIcon,
       color: 'secondary',
       bgColor: 'secondary.50',
@@ -318,7 +318,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
             }}
             sx={{ minWidth: 300 }}
           />
-          
+
           <Button
             variant="contained"
             startIcon={<AddIcon />}
@@ -339,7 +339,6 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
                   <TableCell>Contact</TableCell>
                   <TableCell>Role</TableCell>
                   <TableCell>Status</TableCell>
-                  <TableCell>Last Login</TableCell>
                   <TableCell align="right">Actions</TableCell>
                 </TableRow>
               </TableHead>
@@ -351,13 +350,12 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
                       <TableCell><Skeleton width={150} /></TableCell>
                       <TableCell><Skeleton width={80} /></TableCell>
                       <TableCell><Skeleton width={70} /></TableCell>
-                      <TableCell><Skeleton width={100} /></TableCell>
                       <TableCell><Skeleton width={40} /></TableCell>
                     </TableRow>
                   ))
                 ) : paginatedStaff.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
+                    <TableCell colSpan={5} align="center" sx={{ py: 8 }}>
                       <PersonIcon sx={{ fontSize: 64, mb: 2, color: 'grey.400' }} />
                       <Typography variant="h6" color="text.secondary">
                         {searchTerm ? 'No staff members found matching your search' : 'No staff members found'}
@@ -404,7 +402,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
                           </Box>
                         </Box>
                       </TableCell>
-                      
+
                       <TableCell>
                         <Box>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
@@ -419,7 +417,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
                           )}
                         </Box>
                       </TableCell>
-                      
+
                       <TableCell>
                         <Chip
                           icon={getRoleIcon(staff.role)}
@@ -428,7 +426,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
                           size="small"
                         />
                       </TableCell>
-                      
+
                       <TableCell>
                         <Chip
                           label={staff.isActive ? 'Active' : 'Inactive'}
@@ -437,16 +435,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
                           size="small"
                         />
                       </TableCell>
-                      
-                      <TableCell>
-                        <Typography variant="body2" color="text.secondary">
-                          {staff.lastLoginAt 
-                            ? new Date(staff.lastLoginAt).toLocaleDateString()
-                            : 'Never'
-                          }
-                        </Typography>
-                      </TableCell>
-                      
+
                       <TableCell align="right">
                         <Tooltip title="More actions">
                           <IconButton
@@ -464,7 +453,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
               </TableBody>
             </Table>
           </TableContainer>
-          
+
           {/* Pagination */}
           {!loading && filteredStaff.length > 0 && (
             <TablePagination
@@ -494,9 +483,9 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
                 Edit Staff
               </MenuItem>
               {session.uid !== selectedStaff.uid && (
-                <MenuItem 
-                  onClick={handleDeleteClick} 
-                  sx={{ color: 'error.main' }} 
+                <MenuItem
+                  onClick={handleDeleteClick}
+                  sx={{ color: 'error.main' }}
                   disabled={submitLoading}
                 >
                   <DeleteIcon sx={{ mr: 1, fontSize: 20 }} />

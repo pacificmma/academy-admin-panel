@@ -14,7 +14,7 @@ const membershipPlanSchema = z.object({
   durationValue: z.number().min(1), // 1, 2, 3, 6, 12 vb.
   durationType: z.enum(['days', 'weeks', 'months', 'years']), // esnek süre türü
   price: z.number().min(0),
-  currency: z.string().length(3).default('USD'),
+  currency: z.literal('USD').default('USD'),
   classTypes: z.array(z.string()).min(1),
   status: z.enum(['active', 'inactive']).default('active'),
 });

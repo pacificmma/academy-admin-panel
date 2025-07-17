@@ -1,5 +1,5 @@
 // src/app/types/auth.ts (Updated to include 'role' in AuthUser)
-export type UserRole = 'admin' | 'staff' | 'trainer' | 'member';
+export type UserRole = 'admin' | 'visiting_trainer' | 'trainer' | 'member';
 
 export interface AuthSession {
   uid: string;

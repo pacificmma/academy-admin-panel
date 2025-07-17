@@ -35,7 +35,7 @@ import { CreateStaffRequest, StaffRecord, UpdateStaffRequest, StaffFormData } fr
 const staffFormSchema = z.object({
   fullName: z.string().min(3, 'Full name is required').max(100, 'Full name is too long'),
   email: z.string().email('Invalid email address'),
-  role: z.enum(['admin', 'trainer', 'staff'], { message: 'Please select a valid role' }),
+  role: z.enum(['admin', 'trainer', 'visiting_trainer'], { message: 'Please select a valid role' }), // Updated enum
   password: z.string().min(6, 'Password must be at least 6 characters').optional(),
   phoneNumber: z.string().optional(),
   emergencyContact: z.object({
@@ -59,7 +59,7 @@ const DEFAULT_FORM_DATA: StaffFormData = {
   phoneNumber: '',
   password: '',
   confirmPassword: '',
-  role: 'staff',
+  role: 'visiting_trainer',
   emergencyContact: {
     name: '',
     phone: '',
@@ -103,7 +103,7 @@ export default function CreateStaffDialog({
     if (open) {
       setApiError(null);
       setErrors({});
-      
+
       if (mode === 'edit' && initialStaffData) {
         setFormData({
           email: initialStaffData.email,
@@ -146,7 +146,7 @@ export default function CreateStaffDialog({
     } else {
       setFormData(prev => ({ ...prev, [field]: value }));
     }
-    
+
     // Clear error for this field
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
@@ -233,7 +233,7 @@ export default function CreateStaffDialog({
 
   const handleSubmit = async () => {
     setApiError(null);
-    
+
     if (!validateForm()) {
       return;
     }
@@ -241,7 +241,7 @@ export default function CreateStaffDialog({
     setLoading(true);
     try {
       let response;
-      
+
       if (mode === 'create') {
         const createData: CreateStaffRequest = {
           email: formData.email,
@@ -249,8 +249,8 @@ export default function CreateStaffDialog({
           phoneNumber: formData.phoneNumber || undefined,
           password: formData.password,
           role: formData.role,
-          emergencyContact: (formData.emergencyContact.name || formData.emergencyContact.phone || formData.emergencyContact.relationship) 
-            ? formData.emergencyContact 
+          emergencyContact: (formData.emergencyContact.name || formData.emergencyContact.phone || formData.emergencyContact.relationship)
+            ? formData.emergencyContact
             : undefined,
           address: (formData.address.street || formData.address.city || formData.address.state || formData.address.zipCode || formData.address.country)
             ? formData.address
@@ -270,8 +270,8 @@ export default function CreateStaffDialog({
           phoneNumber: formData.phoneNumber || undefined,
           role: formData.role,
           isActive: initialStaffData?.isActive ?? true,
-          emergencyContact: (formData.emergencyContact.name || formData.emergencyContact.phone || formData.emergencyContact.relationship) 
-            ? formData.emergencyContact 
+          emergencyContact: (formData.emergencyContact.name || formData.emergencyContact.phone || formData.emergencyContact.relationship)
+            ? formData.emergencyContact
             : undefined,
           address: (formData.address.street || formData.address.city || formData.address.state || formData.address.zipCode || formData.address.country)
             ? formData.address
@@ -288,7 +288,7 @@ export default function CreateStaffDialog({
       }
 
       const result = await response.json();
-      
+
       if (response.ok && result.success) {
         if (mode === 'create' && onStaffCreated) {
           onStaffCreated(result.data);
@@ -377,7 +377,7 @@ export default function CreateStaffDialog({
                 onChange={(e) => handleInputChange('role', e.target.value as UserRole)}
                 label="Role *"
               >
-                <MenuItem value="staff">Staff</MenuItem>
+                <MenuItem value="visiting_trainer">Visiting Trainer</MenuItem>
                 <MenuItem value="trainer">Trainer</MenuItem>
                 <MenuItem value="admin">Admin</MenuItem>
               </Select>

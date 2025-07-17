@@ -38,10 +38,10 @@ import {
 import { DatePicker, TimePicker } from '@mui/x-date-pickers';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { 
-  format as formatFns, 
-  parseISO, 
-  addHours, 
+import {
+  format as formatFns,
+  parseISO,
+  addHours,
   addMinutes,
   addWeeks, // Yeni eklendi
   addMonths, // Yeni eklendi
@@ -52,12 +52,10 @@ import {
 import {
   ClassSchedule,
   ClassFormData,
-  ClassType,
-  CLASS_TYPE_OPTIONS,
-  getClassTypeColor,
   generateRecurringClassDates,
   ClassInstance,
 } from '../../types/class';
+import DynamicClassTypeSelector from '../ui/DynamicClassTypeSelector';
 
 interface ClassFormDialogProps {
   open: boolean;
@@ -73,7 +71,7 @@ interface ClassFormDialogProps {
 // Backend veya `ClassSchedule` tipinin de bu alanları içermesi gerekecektir.
 const DEFAULT_FORM_DATA: ClassFormData & { recurrenceDurationValue: number; recurrenceDurationUnit: 'weeks' | 'months'; } = {
   name: '',
-  classType: 'MMA',
+  classType: '',
   instructorId: '',
   maxParticipants: 20,
   duration: 60, // in minutes
@@ -157,12 +155,12 @@ export default function ClassFormDialog({
 
   // Yeni: Yinelenme bitiş tarihini hesaplayan yardımcı fonksiyon
   const calculateRecurrenceEndDate = (startDateString: string, durationValue: number, durationUnit: 'weeks' | 'months'): Date => {
-      let startDate = parseISO(startDateString);
-      if (durationUnit === 'weeks') {
-          return addWeeks(startDate, durationValue);
-      } else {
-          return addMonths(startDate, durationValue);
-      }
+    let startDate = parseISO(startDateString);
+    if (durationUnit === 'weeks') {
+      return addWeeks(startDate, durationValue);
+    } else {
+      return addMonths(startDate, durationValue);
+    }
   };
 
   useEffect(() => {
@@ -170,22 +168,22 @@ export default function ClassFormDialog({
     if ((mode === 'create' || isEditingSchedule) && formData.scheduleType === 'recurring') {
       if (formData.daysOfWeek.length > 0 && formData.startTime && formData.recurrenceDurationValue && formData.recurrenceDurationUnit) {
         const recurrenceEndDate = calculateRecurrenceEndDate(
-            formData.startDate,
-            formData.recurrenceDurationValue,
-            formData.recurrenceDurationUnit
+          formData.startDate,
+          formData.recurrenceDurationValue,
+          formData.recurrenceDurationUnit
         );
 
         const allOccurrences = generateRecurringClassDates(
-            formData.startDate,
-            formData.startTime,
-            formData.daysOfWeek
+          formData.startDate,
+          formData.startTime,
+          formData.daysOfWeek
         );
 
         // Calculate occurrences only up to the recurrence end date
         const limitedOccurrences = allOccurrences.filter(occurrence => {
-            const occurrenceDate = parseISO(occurrence.date);
-            // Karşılaştırma yaparken sadece tarih kısmını al, zamanı göz ardı et
-            return isEqual(startOfDay(occurrenceDate), startOfDay(recurrenceEndDate)) || isBefore(occurrenceDate, recurrenceEndDate);
+          const occurrenceDate = parseISO(occurrence.date);
+          // Karşılaştırma yaparken sadece tarih kısmını al, zamanı göz ardı et
+          return isEqual(startOfDay(occurrenceDate), startOfDay(recurrenceEndDate)) || isBefore(occurrenceDate, recurrenceEndDate);
         });
 
         setPreviewOccurrences(limitedOccurrences.slice(0, 5)); // Show next 5 occurrences within the calculated duration
@@ -207,7 +205,7 @@ export default function ClassFormDialog({
   ]);
 
   const handleInputChange = (field: keyof typeof DEFAULT_FORM_DATA, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData((prev: any) => ({ ...prev, [field]: value }));
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
@@ -216,7 +214,7 @@ export default function ClassFormDialog({
   const handleDayOfWeekToggle = (day: number) => {
     const currentDays = formData.daysOfWeek || [];
     const newDays = currentDays.includes(day)
-      ? currentDays.filter(d => d !== day)
+      ? currentDays.filter((d:any) => d !== day)
       : [...currentDays, day].sort((a, b) => a - b);
     handleInputChange('daysOfWeek', newDays);
   };
@@ -229,6 +227,9 @@ export default function ClassFormDialog({
     }
     if (!formData.instructorId) {
       newErrors.instructorId = 'Instructor is required.';
+    }
+    if (!formData.classType.trim()) {
+      newErrors.classType = 'Class type is required';
     }
     if (formData.maxParticipants < 1 || formData.maxParticipants > 100) {
       newErrors.maxParticipants = 'Max participants must be between 1 and 100.';
@@ -324,30 +325,21 @@ export default function ClassFormDialog({
               </Grid>
 
               <Grid item xs={12} md={4}>
-                <FormControl fullWidth error={!!errors.classType} disabled={loading}>
-                  <InputLabel>Class Type</InputLabel>
-                  <Select
-                    value={formData.classType}
-                    onChange={(e) => handleInputChange('classType', e.target.value as ClassType)}
-                    label="Class Type"
-                  >
-                    {CLASS_TYPE_OPTIONS.map((type) => (
-                      <MenuItem key={type} value={type}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Box
-                            sx={{
-                              width: 12,
-                              height: 12,
-                              borderRadius: '50%',
-                              bgcolor: getClassTypeColor(type),
-                            }}
-                          />
-                          {type}
-                        </Box>
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                <DynamicClassTypeSelector
+                  value={formData.classType ? [formData.classType] : []}
+                  onChange={(classTypes) => {
+                    // For single selection, take the first item
+                    const selectedType = classTypes.length > 0 ? classTypes[0] : '';
+                    handleInputChange('classType', selectedType);
+                  }}
+                  multiple={false}
+                  label="Class Type"
+                  placeholder="Type to add new class type..."
+                  error={!!errors.classType}
+                  helperText={errors.classType}
+                  disabled={loading}
+                  required
+                />
               </Grid>
 
               {/* Instructor and Capacity */}

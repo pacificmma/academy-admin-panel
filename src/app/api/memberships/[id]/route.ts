@@ -16,7 +16,7 @@ const updateMembershipPlanSchema = z.object({
   price: z.number().min(0.01).max(10000).optional(),
   classTypes: z.array(z.enum(['mma', 'bjj', 'boxing', 'muay_thai', 'kickboxing', 'wrestling', 'judo', 'fitness', 'yoga', 'all_access'])).min(1).optional(),
   status: z.enum(['active', 'inactive', 'draft']).optional(),
-  currency: z.string().optional(),
+  currency: z.literal('USD').optional(),
 });
 
 // GET /api/memberships/[id] - Get specific membership plan

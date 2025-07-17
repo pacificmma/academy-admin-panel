@@ -34,7 +34,7 @@ import {
   MembershipStatus,
   formatDuration,
 } from '../../types/membership';
-import { CLASS_TYPE_OPTIONS } from '../../types/class';
+import DynamicClassTypeSelector from '../ui/DynamicClassTypeSelector';
 
 interface MembershipFormDialogProps {
   open: boolean;
@@ -52,12 +52,6 @@ const DURATION_TYPES: Array<{ value: DurationType; label: string }> = [
   { value: 'years', label: 'Years' },
 ];
 
-const CURRENCIES = [
-  { value: 'USD', label: 'USD ($)' },
-  { value: 'EUR', label: 'EUR (€)' },
-  { value: 'GBP', label: 'GBP (£)' },
-  { value: 'TRY', label: 'TRY (₺)' },
-];
 
 const MEMBERSHIP_STATUSES: Array<{ value: MembershipStatus; label: string; color: string }> = [
   { value: 'active', label: 'Active', color: 'success' },
@@ -65,20 +59,6 @@ const MEMBERSHIP_STATUSES: Array<{ value: MembershipStatus; label: string; color
   { value: 'draft', label: 'Draft', color: 'grey' },
 ];
 
-// Mapping between display format and backend format
-const CLASS_TYPE_MAPPING: { [key: string]: string } = {
-  'All Access': 'all_access',
-  'MMA': 'mma',
-  'BJJ': 'bjj',
-  'Boxing': 'boxing',
-  'Muay Thai': 'muay_thai',
-  'Wrestling': 'wrestling',
-  'Judo': 'judo',
-  'Kickboxing': 'kickboxing',
-  'Fitness': 'fitness',
-  'Yoga': 'yoga',
-  'Kids Martial Arts': 'kids_martial_arts'
-};
 
 // Reverse mapping for display
 const BACKEND_TO_DISPLAY_MAPPING: { [key: string]: string } = {
@@ -108,15 +88,7 @@ const DEFAULT_FORM_DATA: MembershipPlanFormData = {
 
 // Utility function for currency formatting
 const formatCurrency = (amount: number, currency: string): string => {
-  const currencySymbols: Record<string, string> = {
-    USD: '$',
-    EUR: '€',
-    GBP: '£',
-    TRY: '₺',
-  };
-  
-  const symbol = currencySymbols[currency] || currency;
-  return `${symbol}${amount.toFixed(2)}`;
+  return `$${amount.toFixed(2)}`;
 };
 
 export default function MembershipFormDialog({
@@ -139,8 +111,8 @@ export default function MembershipFormDialog({
           durationValue: membership.durationValue,
           durationType: membership.durationType,
           price: membership.price,
-          currency: membership.currency,
-          classTypes: membership.classTypes, // Keep in backend format for form state
+          currency: 'USD',
+          classTypes: membership.classTypes || [],
           status: membership.status,
         });
       } else {
@@ -181,10 +153,6 @@ export default function MembershipFormDialog({
       newErrors.durationValue = 'Duration must be greater than 0';
     }
 
-    if (!formData.currency) {
-      newErrors.currency = 'Currency is required';
-    }
-
     if (formData.classTypes.length === 0) {
       newErrors.classTypes = 'At least one class type must be selected';
     }
@@ -195,7 +163,7 @@ export default function MembershipFormDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!validateForm()) {
       return;
     }
@@ -218,8 +186,8 @@ export default function MembershipFormDialog({
   };
 
   return (
-    <Dialog 
-      open={open} 
+    <Dialog
+      open={open}
       onClose={handleClose}
       maxWidth="md"
       fullWidth
@@ -231,9 +199,9 @@ export default function MembershipFormDialog({
       }}
     >
       <form onSubmit={handleSubmit}>
-        <DialogTitle sx={{ 
-          pb: 1, 
-          fontSize: '1.5rem', 
+        <DialogTitle sx={{
+          pb: 1,
+          fontSize: '1.5rem',
           fontWeight: 600,
           borderBottom: '1px solid',
           borderColor: 'divider',
@@ -308,11 +276,11 @@ export default function MembershipFormDialog({
             </Grid>
 
             {/* Price and Currency */}
-            <Grid item xs={12} sm={6}>
+            <Grid item xs={12}>
               <TextField
                 fullWidth
                 type="number"
-                label="Price"
+                label="Price (USD)"
                 value={formData.price}
                 onChange={(e) => handleInputChange('price', parseFloat(e.target.value) || 0)}
                 error={!!errors.price}
@@ -320,74 +288,25 @@ export default function MembershipFormDialog({
                 disabled={loading}
                 required
                 InputProps={{
-                  startAdornment: <InputAdornment position="start"><MoneyIcon /></InputAdornment>,
+                  startAdornment: <InputAdornment position="start">$</InputAdornment>,
                   inputProps: { min: 0, step: 0.01 }
                 }}
               />
             </Grid>
 
-            <Grid item xs={12} sm={6}>
-              <FormControl fullWidth disabled={loading}>
-                <InputLabel>Currency</InputLabel>
-                <Select
-                  value={formData.currency}
-                  onChange={(e) => handleInputChange('currency', e.target.value)}
-                  label="Currency"
-                >
-                  {CURRENCIES.map((currency) => (
-                    <MenuItem key={currency.value} value={currency.value}>
-                      {currency.label}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-
             {/* Class Types */}
             <Grid item xs={12}>
-              <FormControl fullWidth error={!!errors.classTypes} disabled={loading}>
-                <Autocomplete
-                  multiple
-                  options={CLASS_TYPE_OPTIONS}
-                  value={formData.classTypes.map(type => BACKEND_TO_DISPLAY_MAPPING[type] || type)}
-                  onChange={(event, newValue) => {
-                    // Convert display values back to backend format
-                    const backendValues = newValue.map(displayValue => 
-                      CLASS_TYPE_MAPPING[displayValue] || displayValue.toLowerCase().replace(/\s+/g, '_')
-                    );
-                    handleInputChange('classTypes', backendValues);
-                  }}
-                  renderTags={(value, getTagProps) =>
-                    value.map((option, index) => {
-                      const { key, ...chipProps } = getTagProps({ index });
-                      return (
-                        <Chip
-                          key={key}
-                          label={option}
-                          {...chipProps}
-                          size="small"
-                          sx={{
-                            bgcolor: 'primary.main',
-                            color: 'white',
-                            '& .MuiChip-deleteIcon': {
-                              color: 'white',
-                            },
-                          }}
-                        />
-                      );
-                    })
-                  }
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label="Class Types"
-                      error={!!errors.classTypes}
-                      helperText={errors.classTypes || 'Select the class types included in this membership plan'}
-                      placeholder="Select class types"
-                    />
-                  )}
-                />
-              </FormControl>
+              <DynamicClassTypeSelector
+                value={formData.classTypes}
+                onChange={(classTypes) => handleInputChange('classTypes', classTypes)}
+                multiple={true}
+                label="Class Types"
+                placeholder="Type to add new class type..."
+                error={!!errors.classTypes}
+                helperText={errors.classTypes || "Select which class types this membership includes"}
+                disabled={loading}
+                required
+              />
             </Grid>
 
             {/* Status */}
@@ -441,7 +360,7 @@ export default function MembershipFormDialog({
                   <strong>Price:</strong> {formatCurrency(formData.price, formData.currency)}
                 </Typography>
                 <Typography variant="body1">
-                  <strong>Class Types:</strong> 
+                  <strong>Class Types:</strong>
                 </Typography>
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
                   {formData.classTypes.map(type => (

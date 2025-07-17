@@ -82,17 +82,17 @@ export const requireAdmin = (handler: ApiHandler) =>
   withAuth(handler, { requiredRoles: ['admin'] });
 
 export const requireStaff = (handler: ApiHandler) =>
-  withAuth(handler, { requiredRoles: ['admin', 'staff'] });
+  withAuth(handler, { requiredRoles: ['admin', 'visiting_trainer'] });
 
 export const requireTrainer = (handler: ApiHandler) =>
   withAuth(handler, { requiredRoles: ['admin', 'trainer'] });
 
 export const requireStaffOrTrainer = (handler: ApiHandler) =>
-  withAuth(handler, { requiredRoles: ['admin', 'staff', 'trainer'] });
+  withAuth(handler, { requiredRoles: ['admin', 'visiting_trainer', 'trainer'] });
 
 // Self-access wrappers
 export const requireSelfOrAdmin = (handler: ApiHandler, selfField = 'uid') =>
-  withAuth(handler, { requiredRoles: ['admin', 'staff', 'trainer'], allowSelf: true, selfField });
+  withAuth(handler, { requiredRoles: ['admin', 'visiting_trainer', 'trainer'], allowSelf: true, selfField });
 
 export const requireAdminOrSelf = (handler: ApiHandler, selfField = 'uid') =>
   withAuth(handler, { requiredRoles: ['admin'], allowSelf: true, selfField });
@@ -108,14 +108,14 @@ export const requireTrainerAccess = (handler: ApiHandler) =>
     }
     
     // Trainer can only access assigned classes
-    if (session.role === 'trainer' && params?.id) {
+    if (session.role === 'trainer' || session.role === 'visiting_trainer' && params?.id) {
       // TODO: Check if trainer is assigned to this class
       // This will be implemented when we have the classes collection
 
     }
     
     return await handler(request, context);
-  }, { requiredRoles: ['admin', 'trainer'] });
+  }, { requiredRoles: ['admin', 'trainer', 'visiting_trainer'] });
 
 // Create standardized error responses
 export function createErrorResponse(

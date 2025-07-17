@@ -41,7 +41,7 @@ interface ClassCalendarProps {
   onClassClick?: (classInstance: ClassInstance) => void;
   onDateClick?: (date: Date) => void;
   selectedDate?: Date;
-  userRole: 'admin' | 'trainer' | 'staff' | 'member';
+  userRole: 'admin' | 'trainer' | 'visiting_trainer' | 'member';
   onEditClass: (data: ClassSchedule | ClassInstance) => void;
   onDeleteClass: (data: ClassInstance, type: 'instance') => void;
   onStartClass?: (instanceId: string) => void;

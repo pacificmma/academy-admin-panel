@@ -23,7 +23,7 @@ import ClassCard from '@/app/components/ui/ClassCards';
 import ClassCalendar from '@/app/components/ui/ClassCalendar';
 import ClassFormDialog from '@/app/components/forms/ClassFormDialog';
 import DeleteConfirmationDialog from '@/app/components/ui/DeleteConfirmationDialog';
-import { ClassSchedule, ClassInstance, ClassFormData, ClassFilters, CLASS_TYPE_OPTIONS } from '@/app/types/class';
+import { ClassSchedule, ClassInstance, ClassFormData, ClassFilters } from '@/app/types/class';
 import { useAuth } from '@/app/contexts/AuthContext';
 import { format, parseISO, isWithinInterval, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isSameDay } from 'date-fns';
 import { SessionData } from '../types';
@@ -53,6 +53,8 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
   );
 
   const [currentCalendarDate, setCurrentCalendarDate] = useState(new Date());
+  const [classTypes, setClassTypes] = useState<Array<{ id: string, name: string, color?: string }>>([]);
+  const [classTypesLoading, setClassTypesLoading] = useState(true);
 
   const [filters, setFilters] = useState<ClassFilters>({
     classType: undefined,
@@ -60,6 +62,36 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
     date: format(new Date(), 'yyyy-MM-dd'),
     searchTerm: '',
   });
+
+  // Fetch class types function
+  const fetchClassTypes = useCallback(async () => {
+    try {
+      setClassTypesLoading(true);
+      const response = await fetch('/api/class-types', {
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch class types');
+      }
+
+      const data = await response.json();
+      if (data.success) {
+        setClassTypes(data.data || []);
+      } else {
+        throw new Error(data.error || 'Failed to fetch class types');
+      }
+    } catch (error) {
+      console.error('Error fetching class types:', error);
+      setError('Failed to load class types');
+    } finally {
+      setClassTypesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchClassTypes();
+  }, [fetchClassTypes]);
 
   // Load instructors once
   const loadInstructors = useCallback(async () => {
@@ -469,7 +501,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
           <Typography variant="h4" component="h1">
             Class Management
           </Typography>
-          {(session?.role === 'admin' || session?.role === 'staff') && (
+          {(session?.role === 'admin' || session?.role === 'visiting_trainer') && (
             <Button
               variant="contained"
               startIcon={<AddIcon />}
@@ -553,14 +585,28 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps): 
                         value={filters.classType || ''}
                         label="Class Type"
                         onChange={(e) => handleFilterChange('classType', e.target.value || undefined)}
+                        disabled={classTypesLoading}
                       >
                         <MenuItem value="">All Types</MenuItem>
-                        {CLASS_TYPE_OPTIONS.map((type) => (
-                          <MenuItem key={type} value={type}>{type}</MenuItem>
+                        {classTypes.map((type) => (
+                          <MenuItem key={type.id} value={type.name}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Box
+                                sx={{
+                                  width: 12,
+                                  height: 12,
+                                  borderRadius: '50%',
+                                  bgcolor: type.color || '#718096',
+                                }}
+                              />
+                              {type.name}
+                            </Box>
+                          </MenuItem>
                         ))}
                       </Select>
                     </FormControl>
                   </Grid>
+
                   <Grid item xs={12} sm={2}>
                     <FormControl fullWidth>
                       <InputLabel>Instructor</InputLabel>

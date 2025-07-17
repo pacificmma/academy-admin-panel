@@ -9,31 +9,31 @@ export const PERMISSIONS = {
     read: ['admin'] as UserRole[],
     update: ['admin'] as UserRole[],
     delete: ['admin'] as UserRole[],
-    viewBasicInfo: ['admin', 'staff', 'trainer'] as UserRole[]
+    viewBasicInfo: ['admin', 'visiting_trainer', 'trainer'] as UserRole[]
   },
 
   // Member management  
   members: {
     create: ['admin'] as UserRole[],
-    read: ['admin', 'staff'] as UserRole[],
+    read: ['admin', 'visiting_trainer'] as UserRole[],
     update: ['admin'] as UserRole[],
     delete: ['admin'] as UserRole[],
-    viewBasicInfo: ['admin', 'staff', 'trainer'] as UserRole[]
+    viewBasicInfo: ['admin', 'visiting_trainer', 'trainer'] as UserRole[]
   },
 
   // Membership plan management
   membershipPlans: {
     create: ['admin'] as UserRole[],
-    read: ['admin', 'staff'] as UserRole[],
+    read: ['admin', 'visiting_trainer'] as UserRole[],
     update: ['admin'] as UserRole[],
     delete: ['admin'] as UserRole[],
-    viewPublic: ['admin', 'staff', 'trainer'] as UserRole[]
+    viewPublic: ['admin', 'visiting_trainer', 'trainer'] as UserRole[]
   },
 
   // Member membership instances
   memberMemberships: {
     create: ['admin'] as UserRole[],
-    read: ['admin', 'staff'] as UserRole[],
+    read: ['admin', 'visiting_trainer'] as UserRole[],
     update: ['admin'] as UserRole[],
     cancel: ['admin'] as UserRole[],
     suspend: ['admin'] as UserRole[],
@@ -43,11 +43,11 @@ export const PERMISSIONS = {
   // Class management
   classes: {
     create: ['admin'] as UserRole[],
-    read: ['admin', 'staff', 'trainer'] as UserRole[],
+    read: ['admin', 'visiting_trainer', 'trainer'] as UserRole[],
     update: ['admin'] as UserRole[],
     updateOwn: ['trainer'] as UserRole[], // Trainers can only update their assigned classes
     delete: ['admin'] as UserRole[],
-    viewSchedule: ['admin', 'staff', 'trainer'] as UserRole[]
+    viewSchedule: ['admin', 'visiting_trainer', 'trainer'] as UserRole[]
   },
 
   // Discount management
@@ -61,7 +61,7 @@ export const PERMISSIONS = {
   // Analytics and reports
   analytics: {
     viewDashboard: ['admin'] as UserRole[],
-    viewBasicStats: ['admin', 'staff'] as UserRole[],
+    viewBasicStats: ['admin', 'visiting_trainer'] as UserRole[],
     viewFinancials: ['admin'] as UserRole[],
     exportData: ['admin'] as UserRole[]
   },
