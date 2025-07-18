@@ -1,4 +1,6 @@
-// src/app/components/ui/ClassCards.tsx - FIXED PROPS VERSION
+// src/app/components/ui/ClassCards.tsx - FIXED VERSION
+'use client';
+
 import React, { useState } from 'react';
 import {
   Card,
@@ -6,7 +8,6 @@ import {
   Typography,
   Box,
   Chip,
-  Button,
   IconButton,
   Menu,
   MenuItem,
@@ -27,17 +28,17 @@ import {
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { ClassSchedule, ClassInstance, getClassTypeColor } from '@/app/types/class';
-import { useAuth } from '@/app/contexts/AuthContext';
 
 interface ClassCardProps {
   classData: ClassSchedule | ClassInstance;
   type: 'schedule' | 'instance';
   onEdit?: (data: ClassSchedule | ClassInstance) => void;
-  onDelete?: (id: string, type: 'schedule' | 'instance') => void;
+  onDelete?: (data: ClassSchedule | ClassInstance) => void;
+  canEdit?: boolean;
+  canDelete?: boolean;
   onStartClass?: (instanceId: string) => void;
   onEndClass?: (instanceId: string) => void;
   onCancelClass?: (instanceId: string) => void;
-  instructorName?: string;
 }
 
 export default function ClassCard({
@@ -45,12 +46,12 @@ export default function ClassCard({
   type,
   onEdit,
   onDelete,
+  canEdit = false,
+  canDelete = false,
   onStartClass,
   onEndClass,
   onCancelClass,
-  instructorName,
 }: ClassCardProps) {
-  const { user } = useAuth();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const open = Boolean(anchorEl);
 
@@ -68,7 +69,7 @@ export default function ClassCard({
   };
 
   const handleDelete = () => {
-    onDelete?.(classData.id, type);
+    onDelete?.(classData);
     handleMenuClose();
   };
 
@@ -108,12 +109,10 @@ export default function ClassCard({
     }
   };
 
-  const canEdit = user?.role === 'admin';
-  const canDelete = user?.role === 'admin';
-  const canManageInstance = user?.role === 'admin' && isInstance;
+  const canManageInstance = canEdit && isInstance;
 
   return (
-    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', mb: 2 }}>
       <CardContent sx={{ flexGrow: 1 }}>
         {/* Header with title and menu */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
@@ -183,18 +182,17 @@ export default function ClassCard({
 
           {/* Instructor */}
           <Typography variant="body2" color="text.secondary">
-            <strong>Instructor:</strong> {instructorName || classData.instructorName}
+            <strong>Instructor:</strong> {classData.instructorName}
           </Typography>
 
           {/* Participants */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <PeopleIcon fontSize="small" color="action" />
             <Typography variant="body2" color="text.secondary">
-              {isInstance ? (
-                `${instanceData?.registeredParticipants?.length || 0}/${classData.maxParticipants}`
-              ) : (
-                `Max: ${classData.maxParticipants}`
-              )}
+              {isInstance 
+                ? `${instanceData?.registeredParticipants?.length || 0}/${classData.maxParticipants} enrolled`
+                : `Max ${classData.maxParticipants} participants`
+              }
             </Typography>
           </Box>
 
@@ -208,10 +206,10 @@ export default function ClassCard({
             </Box>
           )}
 
-          {/* Waitlist for instances */}
-          {isInstance && instanceData?.waitlist && instanceData.waitlist.length > 0 && (
-            <Typography variant="caption" color="warning.main">
-              Waitlist: {instanceData.waitlist.length}
+          {/* Notes */}
+          {classData.notes && (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1, fontStyle: 'italic' }}>
+              {classData.notes}
             </Typography>
           )}
         </Box>
@@ -222,8 +220,14 @@ export default function ClassCard({
         anchorEl={anchorEl}
         open={open}
         onClose={handleMenuClose}
-        transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-        anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+        anchorOrigin={{
+          vertical: 'top',
+          horizontal: 'right',
+        }}
+        transformOrigin={{
+          vertical: 'top',
+          horizontal: 'right',
+        }}
       >
         {canEdit && (
           <MenuItem onClick={handleEdit}>
@@ -262,9 +266,9 @@ export default function ClassCard({
         )}
 
         {canDelete && (
-          <MenuItem onClick={handleDelete} sx={{ color: 'error.main' }}>
+          <MenuItem onClick={handleDelete}>
             <ListItemIcon>
-              <DeleteIcon fontSize="small" color="error" />
+              <DeleteIcon fontSize="small" />
             </ListItemIcon>
             <ListItemText>Delete</ListItemText>
           </MenuItem>

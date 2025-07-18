@@ -1,6 +1,4 @@
-// src/app/types/staff.ts - COMPLETE AND CONSISTENT VERSION
-// ============================================
-
+// src/app/types/staff.ts - FIXED VERSION
 import { UserRole } from './auth';
 
 export interface StaffRecord {
@@ -11,6 +9,7 @@ export interface StaffRecord {
   phoneNumber?: string;
   role: UserRole;
   isActive: boolean;
+  specializations?: string[];
   emergencyContact?: {
     name: string;
     phone: string;
@@ -41,6 +40,7 @@ export interface CreateStaffRequest {
   phoneNumber?: string;
   password: string;
   role: UserRole;
+  specializations?: string[];
   emergencyContact?: {
     name: string;
     phone: string;
@@ -61,6 +61,7 @@ export interface UpdateStaffRequest {
   phoneNumber?: string;
   role?: UserRole;
   isActive?: boolean;
+  specializations?: string[];
   emergencyContact?: {
     name: string;
     phone: string;
@@ -102,6 +103,7 @@ export interface StaffFormData {
   password: string;
   confirmPassword: string;
   role: UserRole;
+  specializations: string[];
   emergencyContact: {
     name: string;
     phone: string;

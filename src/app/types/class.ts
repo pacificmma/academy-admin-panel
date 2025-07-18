@@ -1,4 +1,4 @@
-// src/app/types/class.ts - UPDATED WITH EXTENDED ClassFilters
+// src/app/types/class.ts - FIXED VERSION WITH getClassTypeColor
 export interface ClassSchedule {
   id: string;
   name: string;
@@ -12,7 +12,7 @@ export interface ClassSchedule {
   recurrence: RecurrencePattern;
   location?: string;
   notes?: string;
-  isActive: boolean; // Added missing property
+  isActive: boolean;
   createdAt: string;
   updatedAt: string;
   createdBy: string;
@@ -61,8 +61,8 @@ export interface ClassFilters {
   instructorId?: string;
   date?: string;
   searchTerm?: string;
-  status?: 'all' | 'active' | 'inactive'; // Added missing property
-  dateRange?: 'all' | 'today' | 'week' | 'month'; // Added missing property
+  status?: 'all' | 'active' | 'inactive';
+  dateRange?: 'all' | 'today' | 'week' | 'month';
 }
 
 export interface RecurrencePattern {
@@ -84,7 +84,7 @@ export interface ClassScheduleWithoutIdAndTimestamps {
   recurrence: RecurrencePattern;
   location?: string;
   notes?: string;
-  isActive: boolean; // Added missing property
+  isActive: boolean;
   createdBy: string;
   updatedBy?: string;
 }
@@ -109,27 +109,25 @@ export function generateRecurringClassDates(
   endDate?: string,
   maxOccurrences?: number
 ): Array<{ date: string; time: string }> {
-  const dates: Array<{ date: string; time: string }> = [];
+  const occurrences: Array<{ date: string; time: string }> = [];
   const start = new Date(startDate);
-  const end = endDate ? new Date(endDate) : new Date(start.getTime() + 365 * 24 * 60 * 60 * 1000); // 1 year default
-  const maxCount = maxOccurrences || 52; // 52 weeks default
+  const end = endDate ? new Date(endDate) : new Date(start.getTime() + (365 * 24 * 60 * 60 * 1000)); // Default to 1 year
   
   let currentDate = new Date(start);
   let count = 0;
-
-  while (currentDate <= end && count < maxCount) {
-    const dayOfWeek = currentDate.getDay();
-    if (daysOfWeek.includes(dayOfWeek)) {
-      dates.push({
-        date: currentDate.toISOString().split('T')[0], // YYYY-MM-DD format
+  
+  while (currentDate <= end && (!maxOccurrences || count < maxOccurrences)) {
+    if (daysOfWeek.includes(currentDate.getDay())) {
+      occurrences.push({
+        date: currentDate.toISOString().split('T')[0],
         time: startTime
       });
       count++;
     }
     currentDate.setDate(currentDate.getDate() + 1);
   }
-
-  return dates;
+  
+  return occurrences;
 }
 
 // Helper function to get class type color
@@ -145,6 +143,7 @@ export function getClassTypeColor(classType: string): string {
     'Fitness': '#48bb78',
     'Yoga': '#ed64a6',
     'Kids Martial Arts': '#718096',
+    'All Access': '#2d3748',
   };
   return colors[classType] || '#718096';
 }

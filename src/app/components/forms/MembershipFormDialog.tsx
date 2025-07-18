@@ -1,4 +1,4 @@
-// src/app/components/forms/MembershipFormDialog.tsx - Updated with MultiClassTypeSelector
+// src/app/components/forms/MembershipFormDialog.tsx - FIXED VERSION
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -19,6 +19,9 @@ import {
   InputAdornment,
   FormHelperText,
   CircularProgress,
+  Chip,
+  OutlinedInput,
+  SelectChangeEvent,
 } from '@mui/material';
 import {
   Save as SaveIcon,
@@ -30,7 +33,13 @@ import {
   DurationType,
   MembershipStatus,
 } from '../../types/membership';
-import MultiClassTypeSelector from '../ui/MultiClassTypeSelector';
+
+interface ClassType {
+  id: string;
+  name: string;
+  color?: string;
+  isActive: boolean;
+}
 
 interface MembershipFormDialogProps {
   open: boolean;
@@ -80,10 +89,53 @@ export default function MembershipFormDialog({
   const [formData, setFormData] = useState<MembershipPlanFormData>(DEFAULT_FORM_DATA);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [classTypes, setClassTypes] = useState<ClassType[]>([]);
+  const [classTypesLoading, setClassTypesLoading] = useState(false);
+
+  // Load class types
+  const loadClassTypes = async () => {
+    try {
+      setClassTypesLoading(true);
+      const response = await fetch('/api/class-types', {
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch class types');
+      }
+
+      const data = await response.json();
+      if (data.success) {
+        setClassTypes(data.data || []);
+      } else {
+        throw new Error(data.error || 'Failed to fetch class types');
+      }
+    } catch (error) {
+      console.error('Error loading class types:', error);
+      // Set default class types if fetch fails
+      setClassTypes([
+        { id: '1', name: 'MMA', isActive: true },
+        { id: '2', name: 'BJJ', isActive: true },
+        { id: '3', name: 'Boxing', isActive: true },
+        { id: '4', name: 'Muay Thai', isActive: true },
+        { id: '5', name: 'Wrestling', isActive: true },
+        { id: '6', name: 'Judo', isActive: true },
+        { id: '7', name: 'Kickboxing', isActive: true },
+        { id: '8', name: 'Fitness', isActive: true },
+        { id: '9', name: 'Yoga', isActive: true },
+        { id: '10', name: 'Kids Martial Arts', isActive: true },
+        { id: '11', name: 'All Access', isActive: true },
+      ]);
+    } finally {
+      setClassTypesLoading(false);
+    }
+  };
 
   // Initialize form data when dialog opens or membership data changes
   useEffect(() => {
     if (open) {
+      loadClassTypes();
+      
       if (membership && mode === 'edit') {
         setFormData({
           name: membership.name,
@@ -115,6 +167,12 @@ export default function MembershipFormDialog({
         [field]: '',
       }));
     }
+  };
+
+  const handleClassTypesChange = (event: SelectChangeEvent<string[]>) => {
+    const value = event.target.value;
+    const selectedTypes = typeof value === 'string' ? value.split(',') : value;
+    handleInputChange('classTypes', selectedTypes);
   };
 
   const validateForm = (): boolean => {
@@ -173,6 +231,8 @@ export default function MembershipFormDialog({
     
     return `${value} ${unit}${value !== 1 ? 's' : ''}`;
   };
+
+  const activeClassTypes = classTypes.filter(ct => ct.isActive);
 
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
@@ -316,18 +376,72 @@ export default function MembershipFormDialog({
             </FormControl>
           </Grid>
 
-          {/* Class Types */}
+          {/* Class Types - Multiple Select */}
           <Grid item xs={12}>
-            <MultiClassTypeSelector
-              value={formData.classTypes}
-              onChange={(classTypes) => handleInputChange('classTypes', classTypes)}
-              label="Class Types"
-              placeholder="Select class types included in this membership..."
-              error={!!errors.classTypes}
-              helperText={errors.classTypes || "Select which class types this membership includes. Admins can type to add new class types."}
-              disabled={loading}
-              required
-            />
+            <FormControl fullWidth error={!!errors.classTypes} disabled={loading || classTypesLoading}>
+              <InputLabel>Class Types</InputLabel>
+              <Select
+                multiple
+                value={formData.classTypes}
+                onChange={handleClassTypesChange}
+                input={<OutlinedInput label="Class Types" />}
+                renderValue={(selected) => (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {(selected as string[]).map((value) => {
+                      const classType = activeClassTypes.find(ct => ct.name === value);
+                      return (
+                        <Chip
+                          key={value}
+                          label={value}
+                          size="small"
+                          sx={{
+                            backgroundColor: classType?.color || '#e0e0e0',
+                            color: 'white',
+                            fontWeight: 'bold',
+                          }}
+                        />
+                      );
+                    })}
+                  </Box>
+                )}
+                required
+              >
+                {classTypesLoading ? (
+                  <MenuItem disabled>
+                    <CircularProgress size={20} sx={{ mr: 1 }} />
+                    Loading class types...
+                  </MenuItem>
+                ) : activeClassTypes.length === 0 ? (
+                  <MenuItem disabled>No class types available</MenuItem>
+                ) : (
+                  activeClassTypes.map((classType) => (
+                    <MenuItem key={classType.id} value={classType.name}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        {classType.color && (
+                          <Box
+                            sx={{
+                              width: 12,
+                              height: 12,
+                              borderRadius: '50%',
+                              backgroundColor: classType.color,
+                            }}
+                          />
+                        )}
+                        {classType.name}
+                      </Box>
+                    </MenuItem>
+                  ))
+                )}
+              </Select>
+              {errors.classTypes && (
+                <FormHelperText>{errors.classTypes}</FormHelperText>
+              )}
+              {!errors.classTypes && (
+                <FormHelperText>
+                  Select which class types this membership includes
+                </FormHelperText>
+              )}
+            </FormControl>
           </Grid>
 
           {/* Price Preview */}
