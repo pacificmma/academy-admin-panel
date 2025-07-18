@@ -582,10 +582,14 @@ return (
             <ClassCalendar
               instances={filteredInstances}
               viewMode={calendarViewMode}
-              currentDate={currentCalendarDate}
-              onDateChange={setCurrentCalendarDate}
-              onInstanceClick={(instance: ClassInstance) => handleEditClass(instance)}
-              instructors={instructors}
+              onViewModeChange={setCalendarViewMode}
+              onClassClick={(instance: ClassInstance) => handleEditClass(instance)}
+              onDateClick={setCurrentCalendarDate}
+              selectedDate={currentCalendarDate}
+              userRole={user?.role || 'member'}
+              onEditClass={handleEditClass}
+              onDeleteClass={(instance:any, type: any) => handleDeleteClass(instance.id, type)}
+              userId={user?.uid || ''}
             />
           )}
         </Box>
