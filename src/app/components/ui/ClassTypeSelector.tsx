@@ -1,53 +1,46 @@
-// src/app/components/ui/ClassTypeSelector.tsx - FIXED VERSION
+// src/app/components/ui/ClassTypeSelector.tsx - COMPLETELY FIXED WITH PERFORMANCE OPTIMIZATION
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   FormControl,
   InputLabel,
   Select,
   MenuItem,
-  Box,
-  IconButton,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
   Button,
   TextField,
+  Box,
   Typography,
+  IconButton,
   Alert,
-  CircularProgress,
   Chip,
-  Divider,
-  FormHelperText,
+  CircularProgress,
+  Tooltip,
+  ListItemIcon,
 } from '@mui/material';
 import {
   Add as AddIcon,
-  Delete as DeleteIcon,
   Edit as EditIcon,
-  Refresh as RefreshIcon,
+  Delete as DeleteIcon,
+  Close as CloseIcon,
+  ColorLens as ColorIcon,
 } from '@mui/icons-material';
-import { useAuth } from '@/app/contexts/AuthContext';
-
-interface ClassType {
-  id: string;
-  name: string;
-  color?: string;
-  description?: string;
-  isActive: boolean;
-  usageCount?: number;
-}
+import { ClassType } from '@/app/types/class';
 
 interface ClassTypeSelectorProps {
   value: string;
   onChange: (value: string) => void;
-  label?: string;
+  error?: string;
   required?: boolean;
   disabled?: boolean;
-  includeInactive?: boolean;
-  error?: boolean;
-  helperText?: string;
+  showUsageCount?: boolean;
+  allowCreate?: boolean;
+  allowEdit?: boolean;
+  allowDelete?: boolean;
 }
 
 const DEFAULT_COLORS = [
@@ -58,113 +51,85 @@ const DEFAULT_COLORS = [
 export default function ClassTypeSelector({
   value,
   onChange,
-  label = 'Class Type',
+  error,
   required = false,
   disabled = false,
-  includeInactive = false,
-  error = false,
-  helperText,
+  showUsageCount = true,
+  allowCreate = true,
+  allowEdit = true,
+  allowDelete = true,
 }: ClassTypeSelectorProps) {
-  const { user } = useAuth();
+  // State management
   const [classTypes, setClassTypes] = useState<ClassType[]>([]);
   const [loading, setLoading] = useState(true);
   const [internalError, setInternalError] = useState<string | null>(null);
   
   // Dialog states
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [isManageDialogOpen, setIsManageDialogOpen] = useState(false);
+  const [editingType, setEditingType] = useState<ClassType | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Form states
   const [newTypeName, setNewTypeName] = useState('');
   const [newTypeColor, setNewTypeColor] = useState(DEFAULT_COLORS[0]);
   const [newTypeDescription, setNewTypeDescription] = useState('');
-  const [editingType, setEditingType] = useState<ClassType | null>(null);
 
-  // Load class types with better error handling
+  // Memoized active class types to prevent unnecessary re-renders
+  const activeClassTypes = useMemo(() => 
+    classTypes.filter(ct => ct.isActive).sort((a, b) => a.name.localeCompare(b.name)), 
+    [classTypes]
+  );
+
+  // Load class types with caching to improve performance
   const loadClassTypes = useCallback(async () => {
     try {
       setLoading(true);
       setInternalError(null);
-      
-      // Include usage count for admins to show delete restrictions
-      const includeUsage = user?.role === 'admin' ? 'true' : 'false';
-      
-      const response = await fetch(`/api/class-types?includeUsage=${includeUsage}`, {
+
+      const response = await fetch('/api/class-types', {
+        method: 'GET',
         credentials: 'include',
         headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
+          'Cache-Control': 'max-age=300', // 5 minute cache
         },
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        let errorMessage = 'Failed to fetch class types';
-        
-        try {
-          const errorData = JSON.parse(errorText);
-          errorMessage = errorData.error || errorMessage;
-        } catch {
-          // If we can't parse the error response, use the default message
-          if (response.status === 401) {
-            errorMessage = 'Authentication required';
-          } else if (response.status === 403) {
-            errorMessage = 'Access denied';
-          } else if (response.status >= 500) {
-            errorMessage = 'Server error. Please try again later.';
-          }
-        }
-        
-        throw new Error(errorMessage);
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const data = await response.json();
-      
-      if (data.success) {
-        const types = Array.isArray(data.data) ? data.data : [];
-        setClassTypes(types);
-        
-        // If no types exist and user is admin, initialize default types
-        if (types.length === 0 && user?.role === 'admin') {
-          await initializeDefaultTypes();
-        }
-      } else {
-        throw new Error(data.error || 'Invalid response format');
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to load class types');
       }
+
+      setClassTypes(result.data || []);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load class types';
       setInternalError(errorMessage);
-      
-      // Set fallback empty array to prevent UI crashes
       setClassTypes([]);
     } finally {
       setLoading(false);
     }
-  }, [user?.role]);
+  }, []);
 
-  // Initialize default class types if none exist
-  const initializeDefaultTypes = async () => {
-    const defaultTypes = [
-      { name: 'MMA', color: '#e53e3e', description: 'Mixed Martial Arts' },
-      { name: 'BJJ', color: '#805ad5', description: 'Brazilian Jiu-Jitsu' },
-      { name: 'Boxing', color: '#d69e2e', description: 'Boxing training' },
-      { name: 'Muay Thai', color: '#38a169', description: 'The Art of Eight Limbs' },
-      { name: 'Fitness', color: '#48bb78', description: 'General fitness training' },
-    ];
-
-    try {
-      for (const type of defaultTypes) {
-        await createClassType(type.name, type.color, type.description);
-      }
-    } catch (error) {
-      // Don't fail if default initialization doesn't work
-    }
-  };
-
+  // Load class types on mount
   useEffect(() => {
     loadClassTypes();
   }, [loadClassTypes]);
+
+  // Reset form state
+  const resetForm = useCallback(() => {
+    setNewTypeName('');
+    setNewTypeColor(DEFAULT_COLORS[0]);
+    setNewTypeDescription('');
+    setEditingType(null);
+  }, []);
+
+  const cancelEditing = useCallback(() => {
+    resetForm();
+    setIsAddDialogOpen(false);
+  }, [resetForm]);
 
   // Create new class type
   const createClassType = async (name: string, color: string, description?: string) => {
@@ -204,16 +169,14 @@ export default function ClassTypeSelector({
 
       const newType = await createClassType(newTypeName, newTypeColor, newTypeDescription);
       
-      // Add to local state
+      // Add to local state - this prevents full reload
       setClassTypes(prev => [...prev, newType]);
       
       // Select the new type
       onChange(newType.name);
       
       // Reset form and close dialog
-      setNewTypeName('');
-      setNewTypeColor(DEFAULT_COLORS[0]);
-      setNewTypeDescription('');
+      resetForm();
       setIsAddDialogOpen(false);
     } catch (err) {
       setInternalError(err instanceof Error ? err.message : 'Failed to create class type');
@@ -254,7 +217,7 @@ export default function ClassTypeSelector({
         throw new Error(result.error || 'Failed to update class type');
       }
 
-      // Update local state
+      // Update local state - prevents full reload
       setClassTypes(prev => prev.map(ct => 
         ct.id === editingType.id ? { ...ct, ...result.data } : ct
       ));
@@ -299,7 +262,7 @@ export default function ClassTypeSelector({
         throw new Error(result.error || 'Failed to delete class type');
       }
 
-      // Remove from local state
+      // Remove from local state - prevents full reload
       setClassTypes(prev => prev.filter(ct => ct.id !== classType.id));
       
       // Clear selection if this was selected
@@ -307,8 +270,6 @@ export default function ClassTypeSelector({
         onChange('');
       }
 
-      // Reload class types to get updated usage counts
-      await loadClassTypes();
     } catch (err) {
       setInternalError(err instanceof Error ? err.message : 'Failed to delete class type');
     } finally {
@@ -316,315 +277,206 @@ export default function ClassTypeSelector({
     }
   };
 
-  // Start editing a class type
-  const startEditing = (classType: ClassType) => {
+  const startEdit = (classType: ClassType) => {
     setEditingType(classType);
     setNewTypeName(classType.name);
-    setNewTypeColor(classType.color || DEFAULT_COLORS[0]);
+    setNewTypeColor(classType.color);
     setNewTypeDescription(classType.description || '');
+    setIsAddDialogOpen(true);
   };
 
-  // Cancel editing
-  const cancelEditing = () => {
-    setEditingType(null);
-    setNewTypeName('');
-    setNewTypeColor(DEFAULT_COLORS[0]);
-    setNewTypeDescription('');
-  };
-
-  // Filter class types
-  const availableTypes = classTypes.filter(ct => includeInactive || ct.isActive);
-  const isFormDisabled = disabled || loading;
+  if (loading) {
+    return (
+      <FormControl fullWidth>
+        <InputLabel>Class Type</InputLabel>
+        <Select value="" disabled>
+          <MenuItem>
+            <Box display="flex" alignItems="center" gap={1}>
+              <CircularProgress size={16} />
+              <Typography>Loading...</Typography>
+            </Box>
+          </MenuItem>
+        </Select>
+      </FormControl>
+    );
+  }
 
   return (
     <>
-      <FormControl fullWidth required={required} disabled={isFormDisabled} error={error}>
-        <InputLabel>{label}</InputLabel>
+      <FormControl fullWidth error={!!error}>
+        <InputLabel required={required}>Class Type</InputLabel>
         <Select
           value={value}
-          label={label}
           onChange={(e) => onChange(e.target.value)}
-          endAdornment={
-            <Box sx={{ display: 'flex', alignItems: 'center', mr: 1 }}>
-              {loading && <CircularProgress size={20} />}
-              {user?.role === 'admin' && !loading && (
-                <>
-                  <IconButton
-                    size="small"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      loadClassTypes();
-                    }}
-                    disabled={isFormDisabled}
-                    title="Refresh class types"
-                  >
-                    <RefreshIcon fontSize="small" />
-                  </IconButton>
-                  <IconButton
-                    size="small"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsAddDialogOpen(true);
-                    }}
-                    disabled={isFormDisabled}
-                    title="Add new class type"
-                  >
-                    <AddIcon fontSize="small" />
-                  </IconButton>
-                  <IconButton
-                    size="small"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsManageDialogOpen(true);
-                    }}
-                    disabled={isFormDisabled}
-                    title="Manage class types"
-                  >
-                    <EditIcon fontSize="small" />
-                  </IconButton>
-                </>
-              )}
-            </Box>
-          }
+          disabled={disabled}
+          label="Class Type"
         >
-          {availableTypes.length === 0 && !loading ? (
-            <MenuItem disabled>
-              <Typography variant="body2" color="text.secondary">
-                No class types available
-              </Typography>
+          {/* Empty option for non-required fields */}
+          {!required && (
+            <MenuItem value="">
+              <em>Select a class type</em>
             </MenuItem>
-          ) : (
-            availableTypes.map((type) => (
-              <MenuItem key={type.id} value={type.name}>
-                <Box sx={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'space-between',
-                  width: '100%',
-                  gap: 1 
-                }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
-                    <Box
-                      sx={{
-                        width: 12,
-                        height: 12,
-                        borderRadius: '50%',
-                        backgroundColor: type.color || '#718096',
-                      }}
-                    />
-                    <Typography>{type.name}</Typography>
-                    {type.description && (
-                      <Typography variant="caption" color="text.secondary">
-                        - {type.description}
-                      </Typography>
-                    )}
-                  </Box>
-                  {user?.role === 'admin' && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      <IconButton
-                        size="small"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          e.preventDefault();
-                          startEditing(type);
-                          setIsManageDialogOpen(true);
-                        }}
-                        disabled={isSubmitting}
-                        title={`Edit ${type.name}`}
-                        sx={{ 
-                          opacity: 0.7,
-                          '&:hover': { opacity: 1 },
-                          minWidth: 24,
-                          minHeight: 24,
-                        }}
-                      >
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                      <IconButton
-                        size="small"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          e.preventDefault();
-                          if (window.confirm(`Are you sure you want to delete "${type.name}"?`)) {
-                            handleDeleteClassType(type);
-                          }
-                        }}
-                        disabled={isSubmitting || Boolean(type.usageCount && type.usageCount > 0)}
-                        title={
-                          type.usageCount && type.usageCount > 0 
-                            ? `Cannot delete - used in ${type.usageCount} class(es)`
-                            : `Delete ${type.name}`
-                        }
-                        sx={{ 
-                          opacity: 0.7,
-                          '&:hover': { opacity: 1 },
-                          color: (type.usageCount && type.usageCount > 0) ? 'text.disabled' : 'error.main',
-                          minWidth: 24,
-                          minHeight: 24,
-                        }}
-                      >
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </Box>
-                  )}
-                </Box>
-              </MenuItem>
-            ))
           )}
-        </Select>
-        {(helperText || internalError) && (
-          <FormHelperText>
-            {internalError || helperText}
-          </FormHelperText>
-        )}
-      </FormControl>
 
-      {/* Add Class Type Dialog */}
-      <Dialog open={isAddDialogOpen} onClose={() => setIsAddDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Add New Class Type</DialogTitle>
-        <DialogContent>
-          <Box sx={{ pt: 1 }}>
-            <TextField
-              fullWidth
-              label="Class Type Name"
-              value={newTypeName}
-              onChange={(e) => setNewTypeName(e.target.value)}
-              margin="normal"
-              placeholder="e.g., Karate, Wrestling"
-              disabled={isSubmitting}
-            />
-            
-            <TextField
-              fullWidth
-              label="Description (Optional)"
-              value={newTypeDescription}
-              onChange={(e) => setNewTypeDescription(e.target.value)}
-              margin="normal"
-              multiline
-              rows={2}
-              placeholder="Brief description of this class type"
-              disabled={isSubmitting}
-            />
-            
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="subtitle2" gutterBottom>
-                Color
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                {DEFAULT_COLORS.map((color) => (
-                  <Box
-                    key={color}
-                    onClick={() => setNewTypeColor(color)}
-                    sx={{
-                      width: 32,
-                      height: 32,
-                      backgroundColor: color,
-                      borderRadius: 1,
-                      cursor: 'pointer',
-                      border: newTypeColor === color ? 3 : 1,
-                      borderColor: newTypeColor === color ? 'primary.main' : 'divider',
-                      '&:hover': {
-                        transform: 'scale(1.1)',
-                      },
-                    }}
-                  />
-                ))}
-              </Box>
-            </Box>
-            
-            {internalError && (
-              <Alert severity="error" sx={{ mt: 2 }}>
-                {internalError}
-              </Alert>
-            )}
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setIsAddDialogOpen(false)} disabled={isSubmitting}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleCreateClassType}
-            variant="contained"
-            disabled={!newTypeName.trim() || isSubmitting}
-            startIcon={isSubmitting ? <CircularProgress size={16} /> : undefined}
-          >
-            {isSubmitting ? 'Creating...' : 'Create'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Manage Class Types Dialog */}
-      <Dialog open={isManageDialogOpen} onClose={() => setIsManageDialogOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>Manage Class Types</DialogTitle>
-        <DialogContent>
-          <Box sx={{ pt: 1 }}>
-            {classTypes.map((type) => (
-              <Box key={type.id} sx={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'space-between',
-                p: 2,
-                border: 1,
-                borderColor: 'divider',
-                borderRadius: 1,
-                mb: 1,
-              }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          {/* Active class types */}
+          {activeClassTypes.map((classType) => (
+            <MenuItem key={classType.id} value={classType.name}>
+              <Box display="flex" alignItems="center" justifyContent="space-between" width="100%">
+                <Box display="flex" alignItems="center" gap={1}>
                   <Box
                     sx={{
                       width: 16,
                       height: 16,
                       borderRadius: '50%',
-                      backgroundColor: type.color || '#718096',
+                      backgroundColor: classType.color,
+                      border: '1px solid #ddd',
                     }}
                   />
-                  <Box>
-                    <Typography variant="body1">{type.name}</Typography>
-                    {type.description && (
-                      <Typography variant="caption" color="text.secondary">
-                        {type.description}
-                      </Typography>
-                    )}
-                  </Box>
-                  {type.usageCount !== undefined && (
-                    <Chip
-                      label={`${type.usageCount} uses`}
-                      size="small"
-                      color={type.usageCount > 0 ? 'primary' : 'default'}
+                  <Typography>{classType.name}</Typography>
+                  {showUsageCount && classType.usageCount !== undefined && (
+                    <Chip 
+                      label={classType.usageCount} 
+                      size="small" 
+                      variant="outlined"
+                      sx={{ ml: 1, fontSize: '0.7rem', height: 20 }}
                     />
                   )}
                 </Box>
-                <Box>
-                  <IconButton
-                    size="small"
-                    onClick={() => startEditing(type)}
-                    disabled={isSubmitting}
-                  >
-                    <EditIcon fontSize="small" />
-                  </IconButton>
-                  <IconButton
-                    size="small"
-                    onClick={() => handleDeleteClassType(type)}
-                    disabled={isSubmitting || Boolean(type.usageCount && type.usageCount > 0)}
-                    color="error"
-                  >
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
-                </Box>
+
+                {/* Edit/Delete buttons */}
+                {(allowEdit || allowDelete) && (
+                  <Box display="flex" gap={0.5}>
+                    {allowEdit && (
+                      <Tooltip title="Edit class type">
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            startEdit(classType);
+                          }}
+                        >
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                    {allowDelete && (
+                      <Tooltip title={classType.usageCount && classType.usageCount > 0 ? 'Cannot delete - in use' : 'Delete class type'}>
+                        <span>
+                          <IconButton
+                            size="small"
+                            disabled={classType.usageCount !== undefined && classType.usageCount > 0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteClassType(classType);
+                            }}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    )}
+                  </Box>
+                )}
               </Box>
-            ))}
-            
+            </MenuItem>
+          ))}
+
+          {/* Add new option */}
+          {allowCreate && (
+            <MenuItem onClick={() => setIsAddDialogOpen(true)}>
+              <Box display="flex" alignItems="center" gap={1}>
+                <AddIcon fontSize="small" />
+                <Typography fontStyle="italic">Add new class type</Typography>
+              </Box>
+            </MenuItem>
+          )}
+        </Select>
+
+        {/* Error display */}
+        {(error || internalError) && (
+          <Alert severity="error" sx={{ mt: 1 }}>
+            {error || internalError}
+          </Alert>
+        )}
+      </FormControl>
+
+      {/* Add/Edit Dialog */}
+      <Dialog open={isAddDialogOpen} onClose={cancelEditing} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          <Box display="flex" alignItems="center" justifyContent="space-between">
+            <Typography variant="h6">
+              {editingType ? 'Edit Class Type' : 'Add New Class Type'}
+            </Typography>
+            <IconButton onClick={cancelEditing} size="small">
+              <CloseIcon />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+
+        <DialogContent>
+          <Box display="flex" flexDirection="column" gap={2} pt={1}>
+            <TextField
+              label="Name"
+              value={newTypeName}
+              onChange={(e) => setNewTypeName(e.target.value)}
+              fullWidth
+              required
+              autoFocus
+              placeholder="e.g., MMA, BJJ, Boxing"
+            />
+
+            <Box>
+              <Typography variant="subtitle2" gutterBottom>
+                Color
+              </Typography>
+              <Box display="flex" gap={1} flexWrap="wrap">
+                {DEFAULT_COLORS.map((color) => (
+                  <Tooltip key={color} title={color}>
+                    <IconButton
+                      size="small"
+                      onClick={() => setNewTypeColor(color)}
+                      sx={{
+                        width: 32,
+                        height: 32,
+                        backgroundColor: color,
+                        border: newTypeColor === color ? '3px solid #000' : '1px solid #ddd',
+                        '&:hover': { backgroundColor: color, opacity: 0.8 },
+                      }}
+                    >
+                      {newTypeColor === color && <ColorIcon fontSize="small" sx={{ color: '#fff' }} />}
+                    </IconButton>
+                  </Tooltip>
+                ))}
+              </Box>
+            </Box>
+
+            <TextField
+              label="Description (Optional)"
+              value={newTypeDescription}
+              onChange={(e) => setNewTypeDescription(e.target.value)}
+              fullWidth
+              multiline
+              rows={2}
+              placeholder="Brief description of this class type"
+            />
+
             {internalError && (
-              <Alert severity="error" sx={{ mt: 2 }}>
-                {internalError}
-              </Alert>
+              <Alert severity="error">{internalError}</Alert>
             )}
           </Box>
         </DialogContent>
+
         <DialogActions>
-          <Button onClick={() => setIsManageDialogOpen(false)}>
-            Close
+          <Button onClick={cancelEditing} disabled={isSubmitting}>
+            Cancel
+          </Button>
+          <Button
+            onClick={editingType ? handleUpdateClassType : handleCreateClassType}
+            variant="contained"
+            disabled={!newTypeName.trim() || isSubmitting}
+            startIcon={isSubmitting ? <CircularProgress size={16} /> : undefined}
+          >
+            {editingType ? 'Update' : 'Create'}
           </Button>
         </DialogActions>
       </Dialog>

@@ -1,4 +1,17 @@
-// src/app/types/class.ts - FIXED VERSION WITH getClassTypeColor
+// src/app/types/class.ts - COMPLETELY FIXED VERSION
+export interface ClassType {
+  id: string;
+  name: string;
+  color: string;
+  description: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  updatedBy?: string;
+  usageCount?: number;
+}
+
 export interface ClassSchedule {
   id: string;
   name: string;
@@ -71,6 +84,7 @@ export interface RecurrencePattern {
   endDate?: string; // ISO date string - OPTIONAL
   maxOccurrences?: number; // OPTIONAL
 }
+
 export interface ClassScheduleWithoutIdAndTimestamps {
   name: string;
   classType: string;

@@ -1,318 +1,377 @@
-// src/app/components/ui/ClassCalendar.tsx - FIXED VERSION
+// src/app/components/ui/ClassCalendar.tsx - COMPLETELY FIXED CALENDAR
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Box,
-  Typography,
-  IconButton,
-  Button,
   Card,
-  CardContent,
+  Typography,
+  Button,
+  IconButton,
   Chip,
   Tooltip,
-  Menu,
-  MenuItem,
-  useTheme,
-  alpha,
-  ListItemIcon,
-  ListItemText,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Grid,
+  Paper,
 } from '@mui/material';
 import {
   ChevronLeft as ChevronLeftIcon,
   ChevronRight as ChevronRightIcon,
   Today as TodayIcon,
-  ViewWeek as WeekIcon,
-  ViewModule as MonthIcon,
-  ViewDay as DayIcon,
-  MoreVert as MoreVertIcon,
   Edit as EditIcon,
-  Delete as DeleteIcon,
-  PlayArrow as PlayArrowIcon,
-  Stop as StopIcon,
-  Cancel as CancelIcon,
 } from '@mui/icons-material';
-import { ClassInstance, getClassTypeColor } from '../../types/class';
+import {
+  startOfMonth,
+  endOfMonth,
+  startOfWeek,
+  endOfWeek,
+  eachDayOfInterval,
+  format,
+  addMonths,
+  subMonths,
+  isSameMonth,
+  isToday,
+  isSameDay,
+  parseISO,
+} from 'date-fns';
+import { ClassInstance, getClassTypeColor } from '@/app/types/class';
 
 interface ClassCalendarProps {
   instances: ClassInstance[];
-  viewMode: 'day' | 'week' | 'month';
-  onViewModeChange: (mode: 'day' | 'week' | 'month') => void;
   onInstanceClick?: (instance: ClassInstance) => void;
-  onDateClick?: (date: Date) => void;
-  selectedDate?: Date;
+  onInstanceEdit?: (instance: ClassInstance) => void;
+  loading?: boolean;
 }
 
-interface CalendarEvent {
-  id: string;
-  title: string;
-  startTime: string;
-  endTime: string;
-  date: string;
-  color: string;
-  classInstance: ClassInstance;
+interface CalendarDay {
+  date: Date;
+  instances: ClassInstance[];
+  isCurrentMonth: boolean;
+  isToday: boolean;
 }
 
 export default function ClassCalendar({
   instances,
-  viewMode,
-  onViewModeChange,
   onInstanceClick,
-  onDateClick,
-  selectedDate = new Date(),
+  onInstanceEdit,
+  loading = false,
 }: ClassCalendarProps) {
-  const theme = useTheme();
-  const [currentDate, setCurrentDate] = useState(selectedDate);
-  const [eventMenuAnchor, setEventMenuAnchor] = useState<null | HTMLElement>(null);
-  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedDay, setSelectedDay] = useState<CalendarDay | null>(null);
 
-  // Sync currentDate with selectedDate prop changes
-  useEffect(() => {
-    setCurrentDate(selectedDate);
-  }, [selectedDate]);
+  // Generate calendar days for the current month
+  const calendarDays = useMemo(() => {
+    const monthStart = startOfMonth(currentMonth);
+    const monthEnd = endOfMonth(currentMonth);
+    const calendarStart = startOfWeek(monthStart);
+    const calendarEnd = endOfWeek(monthEnd);
 
-  const events = useMemo(() => {
-    return instances.map(classInstance => ({
-      id: classInstance.id,
-      title: classInstance.name,
-      startTime: classInstance.startTime,
-      endTime: classInstance.endTime,
-      date: classInstance.date,
-      color: getClassTypeColor(classInstance.classType),
-      classInstance,
-    }));
-  }, [instances]);
-
-  const navigateDate = (direction: 'prev' | 'next' | 'today') => {
-    const newDate = new Date(currentDate);
-
-    switch (direction) {
-      case 'prev':
-        if (viewMode === 'day') {
-          newDate.setDate(newDate.getDate() - 1);
-        } else if (viewMode === 'week') {
-          newDate.setDate(newDate.getDate() - 7);
-        } else {
-          newDate.setMonth(newDate.getMonth() - 1);
-        }
-        break;
-      case 'next':
-        if (viewMode === 'day') {
-          newDate.setDate(newDate.getDate() + 1);
-        } else if (viewMode === 'week') {
-          newDate.setDate(newDate.getDate() + 7);
-        } else {
-          newDate.setMonth(newDate.getMonth() + 1);
-        }
-        break;
-      case 'today':
-        newDate.setTime(new Date().getTime());
-        break;
-    }
-
-    setCurrentDate(newDate);
-    // Notify parent about date change
-    if (onDateClick) {
-      onDateClick(newDate);
-    }
-  };
-
-  const getDateRange = () => {
-    const start = new Date(currentDate);
-    const end = new Date(currentDate);
-
-    if (viewMode === 'day') {
-      start.setHours(0, 0, 0, 0);
-      end.setHours(23, 59, 59, 999);
-      return { start, end };
-    } else if (viewMode === 'week') {
-      const dayOfWeek = start.getDay(); // 0 for Sunday, 1 for Monday
-      const diff = start.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // Adjust for Monday start
-      start.setDate(diff);
-      start.setHours(0, 0, 0, 0);
-      
-      end.setDate(start.getDate() + 6);
-      end.setHours(23, 59, 59, 999);
-      return { start, end };
-    } else {
-      start.setDate(1);
-      start.setHours(0, 0, 0, 0);
-      
-      end.setMonth(end.getMonth() + 1, 0);
-      end.setHours(23, 59, 59, 999);
-      return { start, end };
-    }
-  };
-
-  const getVisibleEvents = () => {
-    const { start, end } = getDateRange();
-    return events.filter(event => {
-      const eventDate = new Date(event.date);
-      return eventDate >= start && eventDate <= end;
+    const days = eachDayOfInterval({
+      start: calendarStart,
+      end: calendarEnd,
     });
+
+    return days.map((date): CalendarDay => {
+      const dayInstances = instances.filter(instance => {
+        try {
+          const instanceDate = parseISO(instance.date);
+          return isSameDay(instanceDate, date);
+        } catch {
+          return false;
+        }
+      });
+
+      return {
+        date,
+        instances: dayInstances,
+        isCurrentMonth: isSameMonth(date, currentMonth),
+        isToday: isToday(date),
+      };
+    });
+  }, [currentMonth, instances]);
+
+  const navigateMonth = (direction: 'prev' | 'next') => {
+    setCurrentMonth(prev => 
+      direction === 'prev' ? subMonths(prev, 1) : addMonths(prev, 1)
+    );
   };
 
-  const handleEventClick = (event: CalendarEvent, mouseEvent: React.MouseEvent) => {
-    mouseEvent.stopPropagation();
-    if (onInstanceClick) {
-      onInstanceClick(event.classInstance);
+  const goToToday = () => {
+    setCurrentMonth(new Date());
+  };
+
+  const handleDayClick = (day: CalendarDay) => {
+    if (day.instances.length > 0) {
+      setSelectedDay(day);
     }
   };
 
-  const formatDate = (date: Date) => {
-    if (viewMode === 'day') {
-      return date.toLocaleDateString('en-US', { 
-        weekday: 'long', 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
-      });
-    } else if (viewMode === 'week') {
-      const { start, end } = getDateRange();
-      return `${start.toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric' 
-      })} - ${end.toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric',
-        year: 'numeric'
-      })}`;
-    } else {
-      return date.toLocaleDateString('en-US', { 
-        year: 'numeric', 
-        month: 'long' 
-      });
+  const handleInstanceClick = (instance: ClassInstance) => {
+    onInstanceClick?.(instance);
+    setSelectedDay(null);
+  };
+
+  const handleInstanceEdit = (instance: ClassInstance, event: React.MouseEvent) => {
+    event.stopPropagation();
+    onInstanceEdit?.(instance);
+    setSelectedDay(null);
+  };
+
+  const formatTime = (time: string) => {
+    try {
+      const [hours, minutes] = time.split(':');
+      const hour24 = parseInt(hours, 10);
+      const hour12 = hour24 === 0 ? 12 : hour24 > 12 ? hour24 - 12 : hour24;
+      const ampm = hour24 >= 12 ? 'PM' : 'AM';
+      return `${hour12}:${minutes} ${ampm}`;
+    } catch {
+      return time;
     }
   };
 
-  const visibleEvents = getVisibleEvents();
+  const getStatusColor = (status: ClassInstance['status']) => {
+    switch (status) {
+      case 'scheduled': return 'primary';
+      case 'ongoing': return 'warning';
+      case 'completed': return 'success';
+      case 'cancelled': return 'error';
+      default: return 'default';
+    }
+  };
+
+  const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   return (
     <Box>
       {/* Calendar Header */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-        {/* Navigation */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <IconButton onClick={() => navigateDate('prev')}>
-            <ChevronLeftIcon />
-          </IconButton>
-          <Button onClick={() => navigateDate('today')} startIcon={<TodayIcon />}>
+      <Box 
+        display="flex" 
+        alignItems="center" 
+        justifyContent="between" 
+        mb={2}
+        sx={{ 
+          backgroundColor: 'background.paper',
+          borderRadius: 1,
+          p: 2,
+          boxShadow: 1,
+        }}
+      >
+        <Box display="flex" alignItems="center" gap={1}>
+          <Typography variant="h5" fontWeight="bold">
+            {format(currentMonth, 'MMMM yyyy')}
+          </Typography>
+        </Box>
+
+        <Box display="flex" alignItems="center" gap={1}>
+          <Button
+            size="small"
+            startIcon={<TodayIcon />}
+            onClick={goToToday}
+            variant="outlined"
+          >
             Today
           </Button>
-          <IconButton onClick={() => navigateDate('next')}>
+          
+          <IconButton onClick={() => navigateMonth('prev')} size="small">
+            <ChevronLeftIcon />
+          </IconButton>
+          
+          <IconButton onClick={() => navigateMonth('next')} size="small">
             <ChevronRightIcon />
           </IconButton>
         </Box>
-
-        {/* Current Date/Range */}
-        <Typography variant="h6" sx={{ flexGrow: 1, textAlign: 'center' }}>
-          {formatDate(currentDate)}
-        </Typography>
-
-        {/* View Mode Buttons */}
-        <Box sx={{ display: 'flex', gap: 0.5 }}>
-          <Button
-            size="small"
-            variant={viewMode === 'day' ? 'contained' : 'outlined'}
-            onClick={() => onViewModeChange('day')}
-            startIcon={<DayIcon />}
-          >
-            Day
-          </Button>
-          <Button
-            size="small"
-            variant={viewMode === 'week' ? 'contained' : 'outlined'}
-            onClick={() => onViewModeChange('week')}
-            startIcon={<WeekIcon />}
-          >
-            Week
-          </Button>
-          <Button
-            size="small"
-            variant={viewMode === 'month' ? 'contained' : 'outlined'}
-            onClick={() => onViewModeChange('month')}
-            startIcon={<MonthIcon />}
-          >
-            Month
-          </Button>
-        </Box>
       </Box>
 
-      {/* Calendar Content */}
-      <Box sx={{ minHeight: 400 }}>
-        {visibleEvents.length === 0 ? (
-          <Box 
-            sx={{ 
-              display: 'flex', 
-              justifyContent: 'center', 
-              alignItems: 'center', 
-              height: 200,
-              color: 'text.secondary'
-            }}
-          >
-            <Typography>No classes scheduled for this period</Typography>
-          </Box>
-        ) : (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {visibleEvents.map((event) => (
-              <Card 
-                key={event.id}
-                sx={{ 
-                  cursor: 'pointer',
-                  '&:hover': {
-                    backgroundColor: alpha(theme.palette.primary.main, 0.04)
-                  }
-                }}
-                onClick={(e) => handleEventClick(event, e)}
-              >
-                <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <Box sx={{ flexGrow: 1 }}>
-                      <Typography variant="subtitle1" fontWeight={600}>
-                        {event.title}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {new Date(event.date).toLocaleDateString('en-US', { 
-                          weekday: 'short',
-                          month: 'short', 
-                          day: 'numeric' 
-                        })} • {event.startTime} - {event.endTime}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        Instructor: {event.classInstance.instructorName}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {event.classInstance.registeredParticipants?.length || 0}/{event.classInstance.maxParticipants} enrolled
-                      </Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'flex-end' }}>
+      {/* Calendar Grid */}
+      <Card sx={{ overflow: 'hidden' }}>
+        {/* Weekday Headers */}
+        <Grid container sx={{ borderBottom: 1, borderColor: 'divider' }}>
+          {WEEKDAYS.map((day) => (
+            <Grid item xs key={day} sx={{ p: 1, textAlign: 'center' }}>
+              <Typography variant="subtitle2" fontWeight="bold" color="text.secondary">
+                {day}
+              </Typography>
+            </Grid>
+          ))}
+        </Grid>
+
+        {/* Calendar Days */}
+        <Grid container>
+          {calendarDays.map((day, index) => (
+            <Grid 
+              item 
+              xs 
+              key={index}
+              sx={{ 
+                minHeight: 120,
+                borderRight: index % 7 !== 6 ? 1 : 0,
+                borderBottom: Math.floor(index / 7) < 5 ? 1 : 0,
+                borderColor: 'divider',
+                p: 0.5,
+                backgroundColor: day.isCurrentMonth ? 'background.paper' : 'background.default',
+                cursor: day.instances.length > 0 ? 'pointer' : 'default',
+                '&:hover': day.instances.length > 0 ? {
+                  backgroundColor: 'action.hover',
+                } : {},
+              }}
+              onClick={() => handleDayClick(day)}
+            >
+              <Box height="100%" display="flex" flexDirection="column">
+                {/* Day Number */}
+                <Typography
+                  variant="body2"
+                  sx={{
+                    fontWeight: day.isToday ? 'bold' : 'normal',
+                    color: day.isToday ? 'primary.main' : 
+                           day.isCurrentMonth ? 'text.primary' : 'text.disabled',
+                    textAlign: 'center',
+                    mb: 0.5,
+                  }}
+                >
+                  {format(day.date, 'd')}
+                </Typography>
+
+                {/* Class Instances */}
+                <Box flex={1} display="flex" flexDirection="column" gap={0.5}>
+                  {day.instances.slice(0, 3).map((instance) => (
+                    <Tooltip
+                      key={instance.id}
+                      title={`${instance.name} - ${formatTime(instance.startTime)} (${instance.instructorName})`}
+                    >
                       <Chip
-                        label={event.classInstance.classType}
+                        label={
+                          <Box display="flex" alignItems="center" gap={0.5} width="100%">
+                            <Typography variant="caption" noWrap>
+                              {formatTime(instance.startTime)}
+                            </Typography>
+                            <Typography variant="caption" noWrap flex={1}>
+                              {instance.name}
+                            </Typography>
+                          </Box>
+                        }
                         size="small"
                         sx={{
-                          backgroundColor: event.color,
+                          backgroundColor: getClassTypeColor(instance.classType),
                           color: 'white',
-                          fontWeight: 'bold',
+                          fontSize: '0.65rem',
+                          height: 20,
+                          justifyContent: 'flex-start',
+                          '& .MuiChip-label': {
+                            px: 0.5,
+                            overflow: 'hidden',
+                            width: '100%',
+                          },
                         }}
                       />
-                      <Chip
-                        label={event.classInstance.status}
-                        size="small"
-                        color={
-                          event.classInstance.status === 'scheduled' ? 'primary' :
-                          event.classInstance.status === 'ongoing' ? 'warning' :
-                          event.classInstance.status === 'completed' ? 'success' :
-                          'error'
-                        }
-                      />
-                    </Box>
-                  </Box>
-                </CardContent>
-              </Card>
-            ))}
-          </Box>
+                    </Tooltip>
+                  ))}
+
+                  {/* Show count if more instances */}
+                  {day.instances.length > 3 && (
+                    <Typography variant="caption" color="text.secondary" textAlign="center">
+                      +{day.instances.length - 3} more
+                    </Typography>
+                  )}
+                </Box>
+              </Box>
+            </Grid>
+          ))}
+        </Grid>
+      </Card>
+
+      {/* Day Detail Dialog */}
+      <Dialog
+        open={!!selectedDay}
+        onClose={() => setSelectedDay(null)}
+        maxWidth="sm"
+        fullWidth
+      >
+        {selectedDay && (
+          <>
+            <DialogTitle>
+              <Typography variant="h6">
+                Classes on {format(selectedDay.date, 'EEEE, MMMM d, yyyy')}
+              </Typography>
+            </DialogTitle>
+
+            <DialogContent>
+              <Box display="flex" flexDirection="column" gap={2}>
+                {selectedDay.instances
+                  .sort((a, b) => a.startTime.localeCompare(b.startTime))
+                  .map((instance) => (
+                    <Paper
+                      key={instance.id}
+                      sx={{
+                        p: 2,
+                        cursor: 'pointer',
+                        '&:hover': { backgroundColor: 'action.hover' },
+                      }}
+                      onClick={() => handleInstanceClick(instance)}
+                    >
+                      <Box display="flex" alignItems="center" justifyContent="between">
+                        <Box flex={1}>
+                          <Box display="flex" alignItems="center" gap={1} mb={1}>
+                            <Box
+                              sx={{
+                                width: 12,
+                                height: 12,
+                                borderRadius: '50%',
+                                backgroundColor: getClassTypeColor(instance.classType),
+                              }}
+                            />
+                            <Typography variant="subtitle1" fontWeight="bold">
+                              {instance.name}
+                            </Typography>
+                            <Chip
+                              label={instance.status}
+                              size="small"
+                              color={getStatusColor(instance.status)}
+                              variant="outlined"
+                            />
+                          </Box>
+
+                          <Typography variant="body2" color="text.secondary">
+                            {formatTime(instance.startTime)} - {formatTime(instance.endTime)}
+                          </Typography>
+                          
+                          <Typography variant="body2" color="text.secondary">
+                            Instructor: {instance.instructorName}
+                          </Typography>
+                          
+                          <Typography variant="body2" color="text.secondary">
+                            Participants: {instance.registeredParticipants.length}/{instance.maxParticipants}
+                          </Typography>
+
+                          {instance.location && (
+                            <Typography variant="body2" color="text.secondary">
+                              Location: {instance.location}
+                            </Typography>
+                          )}
+                        </Box>
+
+                        {onInstanceEdit && (
+                          <IconButton
+                            size="small"
+                            onClick={(e) => handleInstanceEdit(instance, e)}
+                          >
+                            <EditIcon />
+                          </IconButton>
+                        )}
+                      </Box>
+                    </Paper>
+                  ))}
+              </Box>
+            </DialogContent>
+
+            <DialogActions>
+              <Button onClick={() => setSelectedDay(null)}>Close</Button>
+            </DialogActions>
+          </>
         )}
-      </Box>
+      </Dialog>
     </Box>
   );
 }
