@@ -1,120 +1,44 @@
-// src/app/types/auth.ts (Updated to include 'role' in AuthUser)
-export type UserRole = 'admin' | 'visiting_trainer' | 'trainer' | 'member';
+// src/app/types/auth.ts - UPDATED ROLES
+export type UserRole = 'admin' | 'trainer' | 'visiting_trainer';
 
-export interface AuthSession {
-  uid: string;
-  email: string;
-  fullName: string;
-  role: UserRole;
-  isActive: boolean;
+// Role hierarchy and permissions
+export const ROLE_HIERARCHY = {
+  admin: 3,
+  trainer: 2,
+  visiting_trainer: 1,
+} as const;
+
+// Permission checking functions
+export function hasAdminPermission(role: UserRole): boolean {
+  return role === 'admin';
 }
 
-export interface User {
-  uid: string;
-  email: string;
-  fullName: string;
-  role: UserRole; // This was already here, keeping for consistency
-  isActive: boolean;
+export function hasTrainerPermission(role: UserRole): boolean {
+  return ['admin', 'trainer', 'visiting_trainer'].includes(role);
 }
 
-export interface SessionData {
-  uid: string;
-  email: string;
-  role: UserRole;
-  fullName: string;
-  isActive: boolean;
-  createdAt: number;
-  expiresAt: number;
-  lastActivity: number;
+export function canManageStaff(role: UserRole): boolean {
+  return role === 'admin';
 }
 
-export interface LoginCredentials {
-  email: string;
-  password: string;
+export function canManageClasses(role: UserRole): boolean {
+  return ['admin', 'trainer'].includes(role);
 }
 
-export interface AuthUser {
-  uid: string;
-  email: string;
-  role: UserRole; // Added this property to resolve the compilation error when using `user?.role`
-  fullName: string;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt?: string;
-  lastLoginAt?: string;
+export function canViewClasses(role: UserRole): boolean {
+  return ['admin', 'trainer', 'visiting_trainer'].includes(role);
 }
 
-export interface PermissionCheck {
-  allowedRoles?: UserRole[];
-  requiredPermission?: string;
-}
+// Role display names
+export const ROLE_DISPLAY_NAMES: Record<UserRole, string> = {
+  admin: 'Administrator',
+  trainer: 'Trainer',
+  visiting_trainer: 'Visiting Trainer',
+};
 
-export interface AuthContextType {
-  user: AuthUser | null;
-  sessionData: SessionData | null;
-  loading: boolean;
-  logout: () => Promise<void>;
-  refreshSession: () => Promise<void>;
-  protectSession: () => void;
-  unprotectSession: () => void;
-}
-
-// API Response interfaces
-export interface LoginResponse {
-  success: boolean;
-  data?: {
-    role: UserRole;
-    redirectTo: string;
-  };
-  message?: string;
-  error?: string;
-}
-
-export interface SessionResponse {
-  success: boolean;
-  session?: {
-    uid: string;
-    email: string;
-    role: UserRole;
-    fullName: string;
-    isActive: boolean;
-  };
-  error?: string;
-}
-
-export interface LogoutResponse {
-  success: boolean;
-  message: string;
-}
-
-// Security interfaces
-export interface RateLimitInfo {
-  allowed: boolean;
-  resetTime: number;
-  remainingRequests?: number;
-}
-
-export interface SecurityEvent {
-  type: 'login_failed' | 'login_success' | 'session_expired' | 'unauthorized_access';
-  ip: string;
-  userAgent?: string;
-  email?: string;
-  timestamp: string;
-  details?: Record<string, any>;
-}
-
-// Enhanced security types
-export interface SecureUserData {
-  lastLoginIP?: string;
-  lastLoginUserAgent?: string;
-  failedLoginAttempts?: number;
-  lastFailedLoginAt?: string;
-  accountLockoutUntil?: string;
-  securityFlags?: string[];
-  password?: string;
-}
-
-export interface UserDocument extends AuthUser, SecureUserData {
-}
-
-export type ClientSafeUser = Omit<UserDocument, keyof SecureUserData>;
+// Role descriptions
+export const ROLE_DESCRIPTIONS: Record<UserRole, string> = {
+  admin: 'Full system access - can manage all users, classes, and settings',
+  trainer: 'Can manage assigned classes and view schedules',
+  visiting_trainer: 'Can view and manage only assigned classes with limited access',
+};

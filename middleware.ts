@@ -1,10 +1,16 @@
-//src/app/lib/api/middleware.ts - UPDATED MIDDLEWARE
+// src/app/lib/api/middleware.ts - UPDATED FOR NEW ROLE SYSTEM
 import { NextRequest, NextResponse } from 'next/server';
 import { validateApiSession } from '@/app/lib/auth/session';
 import { UserRole } from '@/app/types';
 import { ApiResponse } from '@/app/types/api';
 
-// Internal request context for our handlers
+// Request handler type
+export type ApiHandler = (
+  request: NextRequest,
+  context: RequestContext
+) => Promise<NextResponse>;
+
+// Request context with user session
 export interface RequestContext {
   session: {
     uid: string;
@@ -13,14 +19,8 @@ export interface RequestContext {
     fullName: string;
     isActive: boolean;
   };
-  params?: { [key: string]: string | string[] };
+  params?: Record<string, string | string[]>;
 }
-
-// Our internal handler type
-export type ApiHandler = (
-  request: NextRequest,
-  context: RequestContext
-) => Promise<NextResponse>;
 
 // Middleware options
 interface MiddlewareOptions {
@@ -29,18 +29,38 @@ interface MiddlewareOptions {
   selfField?: string;
 }
 
-// Main auth wrapper that returns a Next.js 15 compatible handler
+// Main auth wrapper that handles Next.js 15 route patterns
 export function withAuth(
   handler: ApiHandler,
   options: MiddlewareOptions = {}
 ) {
-  return async (request: NextRequest, routeContext?: { params?: Promise<{ [key: string]: string | string[] }> | { [key: string]: string | string[] } }) => {
+  return async (
+    request: NextRequest, 
+    routeContext?: { params?: Promise<{ [key: string]: string | string[] }> | { [key: string]: string | string[] } }
+  ) => {
     try {
-      // Validate session
-      const session = await validateApiSession(request);
+      // Enhanced error logging
+      console.log(`[API] ${request.method} ${request.url}`);
+      
+      // Validate session with enhanced error handling
+      let session;
+      try {
+        session = await validateApiSession(request);
+        console.log(`[API] Session validated for user: ${session.email} (${session.role})`);
+      } catch (authError: any) {
+        console.error('[API] Session validation failed:', authError.message);
+        return createErrorResponse('Authentication required', 401);
+      }
+
+      // Check if user account is active
+      if (!session.isActive) {
+        console.error(`[API] Inactive user attempted access: ${session.email}`);
+        return createErrorResponse('Account is deactivated', 403);
+      }
 
       // Check role permissions
       if (options.requiredRoles && !options.requiredRoles.includes(session.role)) {
+        console.error(`[API] Insufficient permissions for ${session.email}: required ${options.requiredRoles}, has ${session.role}`);
         return createErrorResponse('Insufficient permissions', 403);
       }
 
@@ -66,14 +86,26 @@ export function withAuth(
         const resourceId = internalContext.params.id;
         
         if (resourceId && String(session[selfField as keyof typeof session]) !== String(resourceId)) {
+          console.error(`[API] Self-access denied for ${session.email}: accessing ${resourceId}, own ID is ${session.uid}`);
           return createErrorResponse('Access denied: can only access your own resources', 403);
         }
       }
 
       // Call our handler with the internal context
-      return await handler(request, internalContext);
+      const result = await handler(request, internalContext);
+      console.log(`[API] Request completed successfully for ${session.email}`);
+      return result;
 
     } catch (error: any) {
+      // Enhanced error logging
+      console.error('[API] Middleware error:', {
+        message: error.message,
+        stack: error.stack,
+        url: request.url,
+        method: request.method,
+        timestamp: new Date().toISOString()
+      });
+
       if (error.message === 'No valid session found') {
         return createErrorResponse('Authentication required', 401);
       }
@@ -87,22 +119,22 @@ export function withAuth(
   };
 }
 
-// Role-specific wrappers
+// Role-specific wrappers - UPDATED FOR NEW ROLE SYSTEM
 export const requireAdmin = (handler: ApiHandler) =>
   withAuth(handler, { requiredRoles: ['admin'] });
 
-export const requireStaff = (handler: ApiHandler) =>
-  withAuth(handler, { requiredRoles: ['admin', 'staff'] });
-
 export const requireTrainer = (handler: ApiHandler) =>
+  withAuth(handler, { requiredRoles: ['admin', 'trainer', 'visiting_trainer'] });
+
+export const requireFullTrainer = (handler: ApiHandler) =>
   withAuth(handler, { requiredRoles: ['admin', 'trainer'] });
 
 export const requireStaffOrTrainer = (handler: ApiHandler) =>
-  withAuth(handler, { requiredRoles: ['admin', 'staff', 'trainer'] });
+  withAuth(handler, { requiredRoles: ['admin', 'trainer', 'visiting_trainer'] });
 
 // Self-access wrappers
 export const requireSelfOrAdmin = (handler: ApiHandler, selfField = 'uid') =>
-  withAuth(handler, { requiredRoles: ['admin', 'staff', 'trainer'], allowSelf: true, selfField });
+  withAuth(handler, { requiredRoles: ['admin', 'trainer', 'visiting_trainer'], allowSelf: true, selfField });
 
 export const requireAdminOrSelf = (handler: ApiHandler, selfField = 'uid') =>
   withAuth(handler, { requiredRoles: ['admin'], allowSelf: true, selfField });
@@ -128,64 +160,4 @@ export function createErrorResponse(
       'Content-Type': 'application/json',
     },
   });
-}
-
-// Create standardized success responses
-export function createSuccessResponse<T>(
-  data?: T,
-  message?: string,
-  status: number = 200
-): NextResponse {
-  const response: ApiResponse<T> = {
-    success: true,
-    ...(data && { data }),
-    ...(message && { message }),
-  };
-
-  return NextResponse.json(response, { 
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-}
-
-// Pagination helper
-export interface PaginationParams {
-  page: number;
-  limit: number;
-  skip: number;
-}
-
-export function getPaginationParams(request: NextRequest): PaginationParams {
-  const url = new URL(request.url);
-  const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
-  const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '10')));
-  const skip = (page - 1) * limit;
-
-  return { page, limit, skip };
-}
-
-// Search/filter helper
-export function getSearchParams(request: NextRequest) {
-  const url = new URL(request.url);
-  const search = url.searchParams.get('search') || '';
-  const sortBy = url.searchParams.get('sortBy') || 'createdAt';
-  const sortOrder = url.searchParams.get('sortOrder') === 'asc' ? 'asc' : 'desc';
-  
-  // Get all filter parameters (anything that starts with 'filter_')
-  const filters: Record<string, string> = {};
-  for (const [key, value] of url.searchParams.entries()) {
-    if (key.startsWith('filter_')) {
-      const filterKey = key.replace('filter_', '');
-      filters[filterKey] = value;
-    }
-  }
-
-  return {
-    search,
-    sortBy,
-    sortOrder,
-    filters,
-  };
 }

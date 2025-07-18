@@ -88,26 +88,65 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
   // Load instructors data
   const loadInstructors = useCallback(async () => {
     try {
-      // Get all active staff members, then filter for trainers on client side
-      const response = await fetch('/api/staff?status=active');
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          // Filter for trainers and visiting trainers on client side
-          const trainers = (data.data || []).filter((staff: StaffRecord) => 
-            staff.role === 'trainer' || staff.role === 'visiting_trainer'
-          );
-          setInstructors(trainers);
-        } else {
-          console.error('Failed to load instructors:', data.error);
-          setInstructors([]);
+      setError(null);
+      console.log('[Classes] Loading instructors...');
+
+      // Get all active staff members (now only admin, trainer, visiting_trainer)
+      const response = await fetch('/api/staff?status=active', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      });
+
+      console.log('[Classes] Staff API response status:', response.status);
+
+      if (!response.ok) {
+        let errorMessage = `HTTP ${response.status}: Failed to load instructors`;
+
+        try {
+          const errorText = await response.text();
+          console.error('[Classes] Staff API error response:', errorText);
+
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.error || errorMessage;
+          console.error('[Classes] Parsed error data:', errorData);
+        } catch (parseError) {
+          console.error('[Classes] Failed to parse error response:', parseError);
         }
+
+        setError(errorMessage);
+        setInstructors([]);
+        return;
+      }
+
+      const data = await response.json();
+      console.log('[Classes] Staff API success response data length:', data.data?.length || 0);
+
+      if (data.success) {
+        // Filter for trainers and visiting trainers only (admins can also be instructors)
+        const allStaff = data.data || [];
+        const instructors = allStaff.filter((staff: StaffRecord) =>
+          staff.role === 'trainer' ||
+          staff.role === 'visiting_trainer' ||
+          staff.role === 'admin' // Admins can also be instructors
+        );
+
+        console.log('[Classes] Total staff members:', allStaff.length);
+        console.log('[Classes] Available instructors:', instructors.length);
+        console.log('[Classes] Instructor roles found:', instructors.map((t: StaffRecord) => t.role));
+        console.log('[Classes] Instructor names:', instructors.map((t: StaffRecord) => t.fullName));
+
+        setInstructors(instructors);
       } else {
-        console.error('Failed to load instructors: HTTP', response.status);
+        console.error('[Classes] Staff API returned unsuccessful response:', data);
+        setError(data.error || 'Failed to load instructors');
         setInstructors([]);
       }
     } catch (error) {
-      console.error('Error loading instructors:', error);
+      console.error('[Classes] Network error loading instructors:', error);
+      setError('Network error: Failed to load instructors. Please check your connection and try again.');
       setInstructors([]);
     }
   }, []);
@@ -144,7 +183,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       await Promise.all([
         loadSchedules(),
@@ -192,7 +231,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
   // Combine and filter data
   const filteredData = useMemo(() => {
     const combined = [...schedules, ...allInstances];
-    
+
     return combined.filter(item => {
       // Search term filter
       if (filters.searchTerm) {
@@ -200,22 +239,22 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
         const matchesName = item.name?.toLowerCase().includes(searchLower);
         const matchesInstructor = item.instructorName?.toLowerCase().includes(searchLower);
         const matchesType = item.classType?.toLowerCase().includes(searchLower);
-        
+
         if (!matchesName && !matchesInstructor && !matchesType) {
           return false;
         }
       }
-      
+
       // Class type filter
       if (filters.classType && item.classType !== filters.classType) {
         return false;
       }
-      
+
       // Instructor filter
       if (filters.instructorId && item.instructorId !== filters.instructorId) {
         return false;
       }
-      
+
       // Status filter for instances
       if ('status' in item && filters.status !== 'all') {
         if (filters.status === 'active' && item.status === 'cancelled') {
@@ -225,7 +264,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
           return false;
         }
       }
-      
+
       return true;
     });
   }, [schedules, allInstances, filters]);
@@ -234,12 +273,12 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
   const handleFormSubmit = async (formData: ClassFormData, scheduleId?: string) => {
     setSubmitLoading(true);
     try {
-      const endpoint = scheduleId 
+      const endpoint = scheduleId
         ? `/api/classes/schedules/${scheduleId}`
         : '/api/classes/schedules';
-      
+
       const method = scheduleId ? 'PUT' : 'POST';
-      
+
       const response = await fetch(endpoint, {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -248,8 +287,8 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
 
       if (response.ok) {
         setSuccessMessage(
-          formMode === 'create' 
-            ? 'Class created successfully!' 
+          formMode === 'create'
+            ? 'Class created successfully!'
             : 'Class updated successfully!'
         );
         await loadData();
@@ -270,16 +309,16 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
   // Handle delete
   const handleDelete = async () => {
     if (!deletingClass) return;
-    
+
     setSubmitLoading(true);
     try {
       const isInstance = 'scheduleId' in deletingClass;
-      const endpoint = isInstance 
+      const endpoint = isInstance
         ? `/api/classes/instances/${deletingClass.id}`
         : `/api/classes/schedules/${deletingClass.id}`;
-      
+
       const response = await fetch(endpoint, { method: 'DELETE' });
-      
+
       if (response.ok) {
         setSuccessMessage(
           `${isInstance ? 'Class instance' : 'Class schedule'} deleted successfully!`
@@ -327,7 +366,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
       const response = await fetch(`/api/classes/instances/${instanceId}/start`, {
         method: 'PATCH',
       });
-      
+
       if (response.ok) {
         setSuccessMessage('Class started successfully!');
         await loadData();
@@ -345,7 +384,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
       const response = await fetch(`/api/classes/instances/${instanceId}/end`, {
         method: 'PATCH',
       });
-      
+
       if (response.ok) {
         setSuccessMessage('Class ended successfully!');
         await loadData();
@@ -363,7 +402,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
       const response = await fetch(`/api/classes/instances/${instanceId}/cancel`, {
         method: 'PATCH',
       });
-      
+
       if (response.ok) {
         setSuccessMessage('Class cancelled successfully!');
         await loadData();
@@ -391,14 +430,14 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
 
   return (
     <Layout session={session}>
-      <Container maxWidth="xl">
+      <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
         <Box display="flex" flexDirection="column" gap={3}>
           {/* Header */}
           <Box display="flex" justifyContent="space-between" alignItems="center">
             <Typography variant="h4" fontWeight="bold">
               Class Management
             </Typography>
-            
+
             <Box display="flex" gap={2}>
               <Button
                 startIcon={<RefreshIcon />}
@@ -407,7 +446,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
               >
                 Refresh
               </Button>
-              
+
               {session.role === 'admin' && (
                 <Button
                   variant="contained"
@@ -542,7 +581,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
                       No classes found
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      {filters.searchTerm || filters.classType || filters.instructorId 
+                      {filters.searchTerm || filters.classType || filters.instructorId
                         ? 'Try adjusting your filters or search terms.'
                         : 'Create your first class to get started.'}
                     </Typography>

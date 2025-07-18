@@ -1,4 +1,4 @@
-// src/app/types/staff.ts - FIXED VERSION
+// src/app/types/staff.ts - UPDATED FOR NEW ROLE SYSTEM
 import { UserRole } from './auth';
 
 export interface StaffRecord {
@@ -7,7 +7,7 @@ export interface StaffRecord {
   email: string;
   fullName: string;
   phoneNumber?: string;
-  role: UserRole;
+  role: UserRole; // Now only 'admin' | 'trainer' | 'visiting_trainer'
   isActive: boolean;
   specializations?: string[];
   emergencyContact?: {
@@ -39,7 +39,7 @@ export interface CreateStaffRequest {
   fullName: string;
   phoneNumber?: string;
   password: string;
-  role: UserRole;
+  role: UserRole; // Only 'admin' | 'trainer' | 'visiting_trainer'
   specializations?: string[];
   emergencyContact?: {
     name: string;
@@ -59,7 +59,7 @@ export interface CreateStaffRequest {
 export interface UpdateStaffRequest {
   fullName?: string;
   phoneNumber?: string;
-  role?: UserRole;
+  role?: UserRole; // Only 'admin' | 'trainer' | 'visiting_trainer'
   isActive?: boolean;
   specializations?: string[];
   emergencyContact?: {
@@ -78,7 +78,7 @@ export interface UpdateStaffRequest {
 }
 
 export interface StaffFilters {
-  role?: UserRole;
+  role?: UserRole; // Only 'admin' | 'trainer' | 'visiting_trainer'
   isActive?: boolean;
   searchTerm?: string;
 }
@@ -89,7 +89,7 @@ export interface StaffStats {
   inactiveStaff: number;
   adminCount: number;
   trainerCount: number;
-  staffCount: number;
+  visitingTrainerCount: number; // Added for visiting trainers
 }
 
 // Client-safe version (without sensitive fields)
@@ -102,7 +102,7 @@ export interface StaffFormData {
   phoneNumber: string;
   password: string;
   confirmPassword: string;
-  role: UserRole;
+  role: UserRole; // Only 'admin' | 'trainer' | 'visiting_trainer'
   specializations: string[];
   emergencyContact: {
     name: string;
@@ -117,4 +117,31 @@ export interface StaffFormData {
     country: string;
   };
   notes: string;
+}
+
+// Role display utilities
+export function getRoleDisplayName(role: UserRole): string {
+  switch (role) {
+    case 'admin':
+      return 'Administrator';
+    case 'trainer':
+      return 'Trainer';
+    case 'visiting_trainer':
+      return 'Visiting Trainer';
+    default:
+      return 'Unknown';
+  }
+}
+
+export function getRoleDescription(role: UserRole): string {
+  switch (role) {
+    case 'admin':
+      return 'Full system access - can manage all users, classes, and settings';
+    case 'trainer':
+      return 'Can manage assigned classes and view schedules';
+    case 'visiting_trainer':
+      return 'Can view and manage only assigned classes with limited access';
+    default:
+      return 'Unknown role';
+  }
 }

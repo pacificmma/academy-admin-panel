@@ -346,19 +346,6 @@ export default function ClassTypeSelector({
                 {/* Edit/Delete buttons */}
                 {(allowEdit || allowDelete) && (
                   <Box display="flex" gap={0.5}>
-                    {allowEdit && (
-                      <Tooltip title="Edit class type">
-                        <IconButton
-                          size="small"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            startEdit(classType);
-                          }}
-                        >
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    )}
                     {allowDelete && (
                       <Tooltip title={classType.usageCount && classType.usageCount > 0 ? 'Cannot delete - in use' : 'Delete class type'}>
                         <span>
