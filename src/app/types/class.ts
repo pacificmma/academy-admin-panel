@@ -67,11 +67,10 @@ export interface ClassFilters {
 
 export interface RecurrencePattern {
   scheduleType: 'single' | 'recurring';
-  daysOfWeek?: number[]; // 0-6 (Sunday-Saturday)
-  endDate?: string; // ISO date string
-  maxOccurrences?: number;
+  daysOfWeek?: number[]; // 0-6 (Sunday-Saturday) - OPTIONAL
+  endDate?: string; // ISO date string - OPTIONAL
+  maxOccurrences?: number; // OPTIONAL
 }
-
 export interface ClassScheduleWithoutIdAndTimestamps {
   name: string;
   classType: string;
@@ -82,8 +81,8 @@ export interface ClassScheduleWithoutIdAndTimestamps {
   startDate: string;
   startTime: string;
   recurrence: RecurrencePattern;
-  location?: string;
-  notes?: string;
+  location?: string; // OPTIONAL
+  notes?: string; // OPTIONAL
   isActive: boolean;
   createdBy: string;
   updatedBy?: string;
