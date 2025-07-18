@@ -1,4 +1,4 @@
-// src/app/components/ui/ClassTypeSelector.tsx - COMPLETE AND FIXED VERSION
+// src/app/components/ui/ClassTypeSelector.tsx - CLEANED AND FIXED VERSION
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -81,12 +81,7 @@ export default function ClassTypeSelector({
       setLoading(true);
       setError(null);
       
-      const params = new URLSearchParams({
-        includeInactive: includeInactive.toString(),
-        includeUsage: 'true',
-      });
-      
-      const response = await fetch(`/api/class-types?${params}`, {
+      const response = await fetch('/api/class-types', {
         credentials: 'include',
       });
 
@@ -100,8 +95,8 @@ export default function ClassTypeSelector({
       } else {
         throw new Error(data.error || 'Failed to fetch class types');
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to load class types');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load class types');
     } finally {
       setLoading(false);
     }
@@ -109,14 +104,11 @@ export default function ClassTypeSelector({
 
   useEffect(() => {
     loadClassTypes();
-  }, [includeInactive]);
+  }, []);
 
-  // Add new class type
-  const handleAddClassType = async () => {
-    if (!newTypeName.trim()) {
-      setError('Class type name is required');
-      return;
-    }
+  // Create new class type
+  const handleCreateClassType = async () => {
+    if (!newTypeName.trim()) return;
 
     try {
       setIsSubmitting(true);
@@ -124,12 +116,14 @@ export default function ClassTypeSelector({
 
       const response = await fetch('/api/class-types', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         credentials: 'include',
         body: JSON.stringify({
           name: newTypeName.trim(),
           color: newTypeColor,
-          description: newTypeDescription.trim(),
+          description: newTypeDescription.trim() || undefined,
           isActive: true,
         }),
       });
@@ -140,21 +134,74 @@ export default function ClassTypeSelector({
       }
 
       const result = await response.json();
-      
-      // Add to local state
-      setClassTypes(prev => [...prev, result.data]);
-      
-      // Select the new class type
-      onChange(result.data.name);
-      
-      // Reset form
-      setNewTypeName('');
-      setNewTypeColor(DEFAULT_COLORS[0]);
-      setNewTypeDescription('');
-      setIsAddDialogOpen(false);
-      
-    } catch (err: any) {
-      setError(err.message || 'Failed to create class type');
+      if (result.success) {
+        // Add to local state
+        setClassTypes(prev => [...prev, result.data]);
+        
+        // Select the new type
+        onChange(result.data.name);
+        
+        // Reset form and close dialog
+        setNewTypeName('');
+        setNewTypeColor(DEFAULT_COLORS[0]);
+        setNewTypeDescription('');
+        setIsAddDialogOpen(false);
+      } else {
+        throw new Error(result.error || 'Failed to create class type');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create class type');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Update class type
+  const handleUpdateClassType = async () => {
+    if (!editingType || !newTypeName.trim()) return;
+
+    try {
+      setIsSubmitting(true);
+      setError(null);
+
+      const response = await fetch(`/api/class-types/${editingType.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: newTypeName.trim(),
+          color: newTypeColor,
+          description: newTypeDescription.trim() || undefined,
+          isActive: true,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to update class type');
+      }
+
+      const result = await response.json();
+      if (result.success) {
+        // Update local state
+        setClassTypes(prev => prev.map(ct => 
+          ct.id === editingType.id ? { ...ct, ...result.data } : ct
+        ));
+        
+        // Update selection if this was the selected value
+        if (value === editingType.name) {
+          onChange(result.data.name);
+        }
+        
+        // Reset form
+        cancelEditing();
+      } else {
+        throw new Error(result.error || 'Failed to update class type');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update class type');
     } finally {
       setIsSubmitting(false);
     }
@@ -162,9 +209,8 @@ export default function ClassTypeSelector({
 
   // Delete class type
   const handleDeleteClassType = async (classType: ClassType) => {
-    if (!window.confirm(
-      `Are you sure you want to delete "${classType.name}"? This action cannot be undone.`
-    )) {
+    if (classType.usageCount && classType.usageCount > 0) {
+      setError(`Cannot delete "${classType.name}" - it is being used by ${classType.usageCount} class(es)`);
       return;
     }
 
@@ -182,69 +228,20 @@ export default function ClassTypeSelector({
         throw new Error(errorData.error || 'Failed to delete class type');
       }
 
-      // Remove from local state
-      setClassTypes(prev => prev.filter(ct => ct.id !== classType.id));
-      
-      // If this was the selected value, clear selection
-      if (value === classType.name) {
-        onChange('');
-      }
-      
-    } catch (err: any) {
-      setError(err.message || 'Failed to delete class type');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Update class type
-  const handleUpdateClassType = async () => {
-    if (!editingType || !newTypeName.trim()) {
-      setError('Class type name is required');
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-      setError(null);
-
-      const response = await fetch(`/api/class-types/${editingType.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          name: newTypeName.trim(),
-          color: newTypeColor,
-          description: newTypeDescription.trim(),
-          isActive: true,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to update class type');
-      }
-
       const result = await response.json();
-      
-      // Update local state
-      setClassTypes(prev => prev.map(ct => 
-        ct.id === editingType.id ? { ...ct, ...result.data } : ct
-      ));
-      
-      // Update selection if this was the selected value
-      if (value === editingType.name) {
-        onChange(result.data.name);
+      if (result.success) {
+        // Remove from local state
+        setClassTypes(prev => prev.filter(ct => ct.id !== classType.id));
+        
+        // Clear selection if this was selected
+        if (value === classType.name) {
+          onChange('');
+        }
+      } else {
+        throw new Error(result.error || 'Failed to delete class type');
       }
-      
-      // Reset form
-      setEditingType(null);
-      setNewTypeName('');
-      setNewTypeColor(DEFAULT_COLORS[0]);
-      setNewTypeDescription('');
-      
-    } catch (err: any) {
-      setError(err.message || 'Failed to update class type');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete class type');
     } finally {
       setIsSubmitting(false);
     }
@@ -265,6 +262,9 @@ export default function ClassTypeSelector({
     setNewTypeColor(DEFAULT_COLORS[0]);
     setNewTypeDescription('');
   };
+
+  // Filter class types
+  const availableTypes = classTypes.filter(ct => includeInactive || ct.isActive);
 
   return (
     <>
@@ -303,25 +303,26 @@ export default function ClassTypeSelector({
         >
           {loading ? (
             <MenuItem disabled>
-              <CircularProgress size={20} />
-              <Typography sx={{ ml: 1 }}>Loading...</Typography>
+              <CircularProgress size={20} sx={{ mr: 1 }} />
+              Loading...
             </MenuItem>
+          ) : availableTypes.length === 0 ? (
+            <MenuItem disabled>No class types available</MenuItem>
           ) : (
-            classTypes.map((type) => (
+            availableTypes.map((type) => (
               <MenuItem key={type.id} value={type.name}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Box
-                    sx={{
-                      width: 12,
-                      height: 12,
-                      borderRadius: '50%',
-                      bgcolor: type.color || '#718096',
-                    }}
-                  />
-                  {type.name}
-                  {!type.isActive && (
-                    <Chip label="Inactive" size="small" color="warning" sx={{ ml: 1 }} />
+                  {type.color && (
+                    <Box
+                      sx={{
+                        width: 12,
+                        height: 12,
+                        borderRadius: '50%',
+                        backgroundColor: type.color,
+                      }}
+                    />
                   )}
+                  {type.name}
                 </Box>
               </MenuItem>
             ))
@@ -329,15 +330,11 @@ export default function ClassTypeSelector({
         </Select>
       </FormControl>
 
-      {/* Add New Class Type Dialog */}
-      <Dialog open={isAddDialogOpen} onClose={() => setIsAddDialogOpen(false)} maxWidth="sm" fullWidth>
+      {/* Add Class Type Dialog */}
+      <Dialog open={isAddDialogOpen} onClose={() => !isSubmitting && setIsAddDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Add New Class Type</DialogTitle>
         <DialogContent>
-          {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {error}
-            </Alert>
-          )}
+          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
           
           <TextField
             autoFocus
@@ -346,12 +343,12 @@ export default function ClassTypeSelector({
             fullWidth
             value={newTypeName}
             onChange={(e) => setNewTypeName(e.target.value)}
-            required
             disabled={isSubmitting}
+            sx={{ mb: 2 }}
           />
           
-          <Box sx={{ mt: 2, mb: 2 }}>
-            <Typography variant="body2" color="text.secondary" gutterBottom>
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="subtitle2" gutterBottom>
               Color
             </Typography>
             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
@@ -359,10 +356,10 @@ export default function ClassTypeSelector({
                 <Box
                   key={color}
                   sx={{
-                    width: 32,
-                    height: 32,
+                    width: 24,
+                    height: 24,
                     borderRadius: '50%',
-                    bgcolor: color,
+                    backgroundColor: color,
                     cursor: 'pointer',
                     border: newTypeColor === color ? '3px solid #000' : '1px solid #ccc',
                     '&:hover': {
@@ -391,24 +388,20 @@ export default function ClassTypeSelector({
             Cancel
           </Button>
           <Button
-            onClick={handleAddClassType}
+            onClick={handleCreateClassType}
             variant="contained"
             disabled={isSubmitting || !newTypeName.trim()}
           >
-            {isSubmitting ? <CircularProgress size={20} /> : 'Add Class Type'}
+            {isSubmitting ? <CircularProgress size={20} /> : 'Create'}
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Manage Class Types Dialog */}
-      <Dialog open={isManageDialogOpen} onClose={() => setIsManageDialogOpen(false)} maxWidth="md" fullWidth>
+      <Dialog open={isManageDialogOpen} onClose={() => !isSubmitting && setIsManageDialogOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle>Manage Class Types</DialogTitle>
         <DialogContent>
-          {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {error}
-            </Alert>
-          )}
+          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
           
           {editingType && (
             <Box sx={{ mb: 3, p: 2, border: '1px solid #e0e0e0', borderRadius: 1 }}>
@@ -422,13 +415,12 @@ export default function ClassTypeSelector({
                 fullWidth
                 value={newTypeName}
                 onChange={(e) => setNewTypeName(e.target.value)}
-                required
                 disabled={isSubmitting}
                 sx={{ mb: 2 }}
               />
               
               <Box sx={{ mb: 2 }}>
-                <Typography variant="body2" color="text.secondary" gutterBottom>
+                <Typography variant="subtitle2" gutterBottom>
                   Color
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
@@ -436,10 +428,10 @@ export default function ClassTypeSelector({
                     <Box
                       key={color}
                       sx={{
-                        width: 32,
-                        height: 32,
+                        width: 24,
+                        height: 24,
                         borderRadius: '50%',
-                        bgcolor: color,
+                        backgroundColor: color,
                         cursor: 'pointer',
                         border: newTypeColor === color ? '3px solid #000' : '1px solid #ccc',
                         '&:hover': {
@@ -499,47 +491,49 @@ export default function ClassTypeSelector({
                     p: 2,
                     border: '1px solid #e0e0e0',
                     borderRadius: 1,
-                    bgcolor: editingType?.id === type.id ? '#f5f5f5' : 'transparent',
+                    bgcolor: editingType?.id === type.id ? 'rgba(25, 118, 210, 0.04)' : 'transparent',
                   }}
                 >
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
-                    <Box
-                      sx={{
-                        width: 16,
-                        height: 16,
-                        borderRadius: '50%',
-                        bgcolor: type.color || '#718096',
-                      }}
-                    />
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    {type.color && (
+                      <Box
+                        sx={{
+                          width: 16,
+                          height: 16,
+                          borderRadius: '50%',
+                          backgroundColor: type.color,
+                        }}
+                      />
+                    )}
                     <Box>
-                      <Typography variant="body1" fontWeight="medium">
-                        {type.name}
-                      </Typography>
+                      <Typography variant="subtitle1">{type.name}</Typography>
                       {type.description && (
                         <Typography variant="body2" color="text.secondary">
                           {type.description}
                         </Typography>
                       )}
-                      {type.usageCount !== undefined && (
-                        <Typography variant="caption" color="text.secondary">
-                          Used in {type.usageCount} classes/memberships
-                        </Typography>
-                      )}
                     </Box>
+                    {type.usageCount !== undefined && (
+                      <Chip
+                        label={`${type.usageCount} classes`}
+                        size="small"
+                        variant="outlined"
+                      />
+                    )}
                   </Box>
                   
                   <Box sx={{ display: 'flex', gap: 1 }}>
                     <IconButton
                       size="small"
                       onClick={() => startEditing(type)}
-                      disabled={isSubmitting || editingType?.id === type.id}
+                      disabled={isSubmitting}
                     >
                       <EditIcon fontSize="small" />
                     </IconButton>
                     <IconButton
                       size="small"
                       onClick={() => handleDeleteClassType(type)}
-                      disabled={isSubmitting || (type.usageCount || 0) > 0}
+                      disabled={isSubmitting || (type.usageCount && type.usageCount > 0)}
                       color="error"
                     >
                       <DeleteIcon fontSize="small" />
