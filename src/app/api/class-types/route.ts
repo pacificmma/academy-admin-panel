@@ -1,4 +1,4 @@
-// src/app/api/class-types/route.ts - IMPROVED WITH BETTER ERROR HANDLING
+// src/app/api/class-types/route.ts - FIXED VERSION WITH BETTER ERROR HANDLING
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/app/lib/firebase/admin';
 import { z } from 'zod';
@@ -8,9 +8,16 @@ import { FieldValue } from 'firebase-admin/firestore';
 
 // Class type validation schema
 const classTypeSchema = z.object({
-  name: z.string().min(1).max(50).trim(),
-  color: z.string().regex(/^#[0-9A-F]{6}$/i).optional(),
-  description: z.string().max(500).optional(),
+  name: z.string().min(1, 'Name is required').max(50, 'Name must be less than 50 characters').trim(),
+  color: z.string().regex(/^#[0-9A-F]{6}$/i, 'Color must be a valid hex color').optional(),
+  description: z.string().max(500, 'Description must be less than 500 characters').optional(),
+  isActive: z.boolean().optional(),
+});
+
+const updateClassTypeSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(50, 'Name must be less than 50 characters').trim().optional(),
+  color: z.string().regex(/^#[0-9A-F]{6}$/i, 'Color must be a valid hex color').optional(),
+  description: z.string().max(500, 'Description must be less than 500 characters').optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -48,7 +55,6 @@ async function initializeDefaultClassTypes(createdBy: string) {
     const snapshot = await adminDb.collection('classTypes').limit(1).get();
     
     if (snapshot.empty) {
-      console.log('Initializing default class types...');
       const batch = adminDb.batch();
       
       for (const defaultType of DEFAULT_CLASS_TYPES) {
@@ -65,11 +71,10 @@ async function initializeDefaultClassTypes(createdBy: string) {
       }
       
       await batch.commit();
-      console.log('Default class types initialized successfully');
     }
   } catch (error) {
-    console.error('Error initializing default class types:', error);
     // Don't throw - this is optional initialization
+    console.error('Error initializing default class types:', error);
   }
 }
 
@@ -81,22 +86,22 @@ export const GET = requireStaffOrTrainer(async (request: NextRequest, context: R
     const includeInactive = url.searchParams.get('includeInactive') === 'true';
     const includeUsage = url.searchParams.get('includeUsage') === 'true';
 
-    // Initialize default types if this is the first call
-    await initializeDefaultClassTypes(session.uid);
-
-    let query: any = adminDb.collection('classTypes');
-    
-    if (!includeInactive) {
-      query = query.where('isActive', '==', true);
+    // Initialize default types if this is the first call and user is admin
+    if (session.role === 'admin') {
+      await initializeDefaultClassTypes(session.uid);
     }
-    
-    query = query.orderBy('name', 'asc');
 
-    const snapshot = await query.get();
+    // Fetch all class types and filter/sort in memory to avoid index requirements
+    const snapshot = await adminDb.collection('classTypes').get();
     const classTypes: ClassType[] = [];
 
     for (const doc of snapshot.docs) {
       const data = doc.data();
+      
+      // Skip inactive types if not requested
+      if (!includeInactive && data.isActive === false) {
+        continue;
+      }
       
       let usageCount = 0;
       
@@ -117,22 +122,25 @@ export const GET = requireStaffOrTrainer(async (request: NextRequest, context: R
       
       classTypes.push({
         id: doc.id,
-        name: data.name,
-        color: data.color,
+        name: data.name || '',
+        color: data.color || '#718096',
         description: data.description || '',
         isActive: data.isActive ?? true,
         createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
         updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-        createdBy: data.createdBy,
+        createdBy: data.createdBy || '',
         updatedBy: data.updatedBy,
         usageCount,
       });
     }
 
+    // Sort by name in memory
+    classTypes.sort((a, b) => a.name.localeCompare(b.name));
+
     return successResponse(classTypes);
   } catch (error) {
     console.error('Error fetching class types:', error);
-    return errorResponse('Failed to fetch class types');
+    return errorResponse('Failed to fetch class types', 500);
   }
 });
 
@@ -145,7 +153,8 @@ export const POST = requireAdmin(async (request: NextRequest, context: RequestCo
     // Validate input
     const validationResult = classTypeSchema.safeParse(body);
     if (!validationResult.success) {
-      return badRequestResponse(validationResult.error.errors[0]?.message || 'Invalid input');
+      const firstError = validationResult.error.errors[0];
+      return badRequestResponse(firstError?.message || 'Invalid input');
     }
 
     const { name, color, description, isActive } = validationResult.data;
@@ -192,115 +201,12 @@ export const POST = requireAdmin(async (request: NextRequest, context: RequestCo
     return createdResponse(newClassType);
   } catch (error) {
     console.error('Error creating class type:', error);
-    return errorResponse('Failed to create class type');
-  }
-});
-
-// PUT /api/class-types/[id] - Update class type
-export const PUT = requireAdmin(async (request: NextRequest, context: RequestContext) => {
-  try {
-    const { session, params } = context;
     
-    if (!params?.id) {
-      return badRequestResponse('Class type ID is required');
+    if (error instanceof z.ZodError) {
+      return badRequestResponse('Validation failed: ' + error.errors[0]?.message);
     }
-
-    const body = await request.json();
     
-    // Validate input
-    const validationResult = classTypeSchema.partial().safeParse(body);
-    if (!validationResult.success) {
-      return badRequestResponse(validationResult.error.errors[0]?.message || 'Invalid input');
-    }
-
-    const updateData = validationResult.data;
-
-    // Check if class type exists
-    const docRef = adminDb.collection('classTypes').doc(params.id);
-    const doc = await docRef.get();
-
-    if (!doc.exists) {
-      return errorResponse('Class type not found', 404);
-    }
-
-    // If updating name, check for duplicates
-    if (updateData.name) {
-      const existingType = await adminDb.collection('classTypes')
-        .where('name', '==', updateData.name)
-        .where('__name__', '!=', params.id)
-        .limit(1)
-        .get();
-
-      if (!existingType.empty) {
-        return badRequestResponse('Class type with this name already exists');
-      }
-    }
-
-    // Update the class type
-    await docRef.update({
-      ...updateData,
-      updatedAt: FieldValue.serverTimestamp(),
-      updatedBy: session.uid,
-    });
-
-    // Fetch updated document
-    const updatedDoc = await docRef.get();
-    const updatedData = updatedDoc.data();
-
-    const updatedClassType: ClassType = {
-      id: updatedDoc.id,
-      name: updatedData!.name,
-      color: updatedData!.color,
-      description: updatedData!.description || '',
-      isActive: updatedData!.isActive ?? true,
-      createdAt: updatedData!.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      createdBy: updatedData!.createdBy,
-      updatedBy: session.uid,
-    };
-
-    return successResponse(updatedClassType);
-  } catch (error) {
-    console.error('Error updating class type:', error);
-    return errorResponse('Failed to update class type');
-  }
-});
-
-// DELETE /api/class-types/[id] - Delete class type
-export const DELETE = requireAdmin(async (request: NextRequest, context: RequestContext) => {
-  try {
-    const { params } = context;
-    
-    if (!params?.id) {
-      return badRequestResponse('Class type ID is required');
-    }
-
-    const docRef = adminDb.collection('classTypes').doc(params.id);
-    const doc = await docRef.get();
-
-    if (!doc.exists) {
-      return errorResponse('Class type not found', 404);
-    }
-
-    const classTypeData = doc.data();
-
-    // Check if class type is being used
-    const [classUsage, membershipUsage] = await Promise.all([
-      adminDb.collection('classSchedules').where('classType', '==', classTypeData!.name).limit(1).get(),
-      adminDb.collection('membershipPlans').where('classTypes', 'array-contains', classTypeData!.name).limit(1).get()
-    ]);
-
-    if (!classUsage.empty || !membershipUsage.empty) {
-      return badRequestResponse('Cannot delete class type that is currently in use');
-    }
-
-    // Delete the class type
-    await docRef.delete();
-
-    return successResponse({ message: 'Class type deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting class type:', error);
-    return errorResponse('Failed to delete class type');
+    return errorResponse('Failed to create class type', 500);
   }
 });
 

@@ -1,36 +1,43 @@
-// src/app/api/class-types/[id]/route.ts - Individual Class Type Management (Fixed)
+// src/app/api/class-types/[id]/route.ts - FIXED VERSION
 import { NextRequest } from 'next/server';
 import { adminDb } from '@/app/lib/firebase/admin';
 import { z } from 'zod';
-import { requireAdmin, RequestContext } from '@/app/lib/api/middleware';
-import { successResponse, errorResponse, notFoundResponse, badRequestResponse } from '@/app/lib/api/response-utils';
+import { requireAdmin, requireStaffOrTrainer, RequestContext } from '@/app/lib/api/middleware';
+import { successResponse, errorResponse, badRequestResponse, notFoundResponse } from '@/app/lib/api/response-utils';
 import { FieldValue } from 'firebase-admin/firestore';
 
-// Validation schema for updating class type
+// Update class type validation schema
 const updateClassTypeSchema = z.object({
-  name: z.string()
-    .min(2, 'Class type name must be at least 2 characters')
-    .max(50, 'Class type name must be less than 50 characters')
-    .regex(/^[a-zA-Z0-9\s\-&]+$/, 'Class type name can only contain letters, numbers, spaces, hyphens, and ampersands')
-    .optional(),
-  color: z.string()
-    .regex(/^#[0-9A-F]{6}$/i, 'Color must be a valid hex color')
-    .optional(),
-  description: z.string()
-    .max(200, 'Description must be less than 200 characters')
-    .optional(),
+  name: z.string().min(1, 'Name is required').max(50, 'Name must be less than 50 characters').trim().optional(),
+  color: z.string().regex(/^#[0-9A-F]{6}$/i, 'Color must be a valid hex color').optional(),
+  description: z.string().max(500, 'Description must be less than 500 characters').optional(),
   isActive: z.boolean().optional(),
 });
 
+interface ClassType {
+  id: string;
+  name: string;
+  color: string;
+  description: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  updatedBy?: string;
+  usageCount?: number;
+}
+
 // GET /api/class-types/[id] - Get specific class type
-export const GET = requireAdmin(async (request: NextRequest, context: RequestContext) => {
+export const GET = requireStaffOrTrainer(async (request: NextRequest, context: RequestContext) => {
   try {
     const { params } = context;
+    
     if (!params?.id) {
       return badRequestResponse('Class type ID is required');
     }
 
-    const classTypeDoc = await adminDb.collection('classTypes').doc(params.id).get();
+    const classTypeRef = adminDb.collection('classTypes').doc(params.id);
+    const classTypeDoc = await classTypeRef.get();
 
     if (!classTypeDoc.exists) {
       return notFoundResponse('Class type');
@@ -44,15 +51,15 @@ export const GET = requireAdmin(async (request: NextRequest, context: RequestCon
       adminDb.collection('membershipPlans').where('classTypes', 'array-contains', data.name).get()
     ]);
 
-    const classType = {
+    const classType: ClassType = {
       id: classTypeDoc.id,
-      name: data.name,
-      color: data.color,
-      description: data.description,
-      isActive: data.isActive,
+      name: data.name || '',
+      color: data.color || '#718096',
+      description: data.description || '',
+      isActive: data.isActive ?? true,
       createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
       updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-      createdBy: data.createdBy,
+      createdBy: data.createdBy || '',
       updatedBy: data.updatedBy,
       usageCount: classUsage.size + membershipUsage.size,
     };
@@ -60,7 +67,7 @@ export const GET = requireAdmin(async (request: NextRequest, context: RequestCon
     return successResponse(classType);
   } catch (error) {
     console.error('Error fetching class type:', error);
-    return errorResponse('Failed to fetch class type');
+    return errorResponse('Failed to fetch class type', 500);
   }
 });
 
@@ -68,6 +75,7 @@ export const GET = requireAdmin(async (request: NextRequest, context: RequestCon
 export const PUT = requireAdmin(async (request: NextRequest, context: RequestContext) => {
   try {
     const { params, session } = context;
+    
     if (!params?.id) {
       return badRequestResponse('Class type ID is required');
     }
@@ -76,7 +84,8 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
     const validationResult = updateClassTypeSchema.safeParse(body);
     
     if (!validationResult.success) {
-      return badRequestResponse(validationResult.error.errors[0]?.message || 'Invalid input');
+      const firstError = validationResult.error.errors[0];
+      return badRequestResponse(firstError?.message || 'Invalid input');
     }
 
     const classTypeRef = adminDb.collection('classTypes').doc(params.id);
@@ -111,20 +120,27 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
     const updatedDoc = await classTypeRef.get();
     const updatedData = updatedDoc.data()!;
 
-    return successResponse({
+    const updatedClassType: ClassType = {
       id: updatedDoc.id,
-      name: updatedData.name,
-      color: updatedData.color,
-      description: updatedData.description,
-      isActive: updatedData.isActive,
+      name: updatedData.name || '',
+      color: updatedData.color || '#718096',
+      description: updatedData.description || '',
+      isActive: updatedData.isActive ?? true,
       createdAt: updatedData.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-      updatedAt: updatedData.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-      createdBy: updatedData.createdBy,
-      updatedBy: updatedData.updatedBy,
-    });
+      updatedAt: new Date().toISOString(),
+      createdBy: updatedData.createdBy || '',
+      updatedBy: session.uid,
+    };
+
+    return successResponse(updatedClassType);
   } catch (error) {
     console.error('Error updating class type:', error);
-    return errorResponse('Failed to update class type');
+    
+    if (error instanceof z.ZodError) {
+      return badRequestResponse('Validation failed: ' + error.errors[0]?.message);
+    }
+    
+    return errorResponse('Failed to update class type', 500);
   }
 });
 
@@ -132,6 +148,7 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
 export const DELETE = requireAdmin(async (request: NextRequest, context: RequestContext) => {
   try {
     const { params } = context;
+    
     if (!params?.id) {
       return badRequestResponse('Class type ID is required');
     }
@@ -162,6 +179,6 @@ export const DELETE = requireAdmin(async (request: NextRequest, context: Request
     return successResponse({ message: 'Class type deleted successfully' });
   } catch (error) {
     console.error('Error deleting class type:', error);
-    return errorResponse('Failed to delete class type');
+    return errorResponse('Failed to delete class type', 500);
   }
 });
