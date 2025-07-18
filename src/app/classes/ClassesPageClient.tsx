@@ -1,4 +1,4 @@
-// src/app/classes/ClassesPageClient.tsx - COMPLETELY FIXED VERSION
+// src/app/classes/ClassesPageClient.tsx - Fixed controlled/uncontrolled issues
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -54,6 +54,15 @@ interface ClassFilters {
 
 type ViewMode = 'list' | 'calendar';
 
+// Initialize with default values to prevent controlled/uncontrolled warnings
+const DEFAULT_FILTERS: ClassFilters = {
+  searchTerm: '',
+  classType: '',
+  instructorId: '',
+  status: 'all',
+  dateRange: 'all',
+};
+
 export default function ClassesPageClient({ session }: ClassesPageClientProps) {
   // State management
   const [schedules, setSchedules] = useState<ClassSchedule[]>([]);
@@ -73,150 +82,142 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
   const [deletingClass, setDeletingClass] = useState<ClassSchedule | ClassInstance | null>(null);
   const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
 
-  // Filters
-  const [filters, setFilters] = useState<ClassFilters>({
-    searchTerm: '',
-    classType: '',
-    instructorId: '',
-    status: 'all',
-    dateRange: 'all',
-  });
+  // Filters - Initialize with default values to prevent controlled/uncontrolled issues
+  const [filters, setFilters] = useState<ClassFilters>(DEFAULT_FILTERS);
 
-  // Load data functions
+  // Load instructors data
   const loadInstructors = useCallback(async () => {
     try {
-      const response = await fetch('/api/staff', {
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to load instructors');
+      // Get all active staff members, then filter for trainers on client side
+      const response = await fetch('/api/staff?status=active');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          // Filter for trainers and visiting trainers on client side
+          const trainers = (data.data || []).filter((staff: StaffRecord) => 
+            staff.role === 'trainer' || staff.role === 'visiting_trainer'
+          );
+          setInstructors(trainers);
+        } else {
+          console.error('Failed to load instructors:', data.error);
+          setInstructors([]);
+        }
+      } else {
+        console.error('Failed to load instructors: HTTP', response.status);
+        setInstructors([]);
       }
-
-      const result = await response.json();
-      if (result.success) {
-        const trainers = result.data.filter((staff: StaffRecord) => 
-          staff.role === 'trainer' || staff.role === 'visiting_trainer'
-        );
-        setInstructors(trainers);
-      }
-    } catch (err) {
-      console.error('Error loading instructors:', err);
+    } catch (error) {
+      console.error('Error loading instructors:', error);
       setInstructors([]);
     }
   }, []);
 
+  // Load class schedules
   const loadSchedules = useCallback(async () => {
     try {
-      const response = await fetch('/api/classes/schedules', {
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to load class schedules');
+      const response = await fetch('/api/classes/schedules');
+      if (response.ok) {
+        const data = await response.json();
+        setSchedules(data.data || []);
       }
-
-      const result = await response.json();
-      if (result.success) {
-        setSchedules(result.data || []);
-      } else {
-        throw new Error(result.error || 'Failed to load schedules');
-      }
-    } catch (err) {
-      console.error('Error loading schedules:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load schedules');
-      setSchedules([]);
+    } catch (error) {
+      console.error('Error loading schedules:', error);
+      setError('Failed to load class schedules');
     }
   }, []);
 
+  // Load class instances
   const loadInstances = useCallback(async () => {
     try {
-      const response = await fetch('/api/classes/instances', {
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to load class instances');
+      const response = await fetch('/api/classes/instances');
+      if (response.ok) {
+        const data = await response.json();
+        setAllInstances(data.data || []);
       }
-
-      const result = await response.json();
-      if (result.success) {
-        setAllInstances(result.data || []);
-      } else {
-        throw new Error(result.error || 'Failed to load instances');
-      }
-    } catch (err) {
-      console.error('Error loading instances:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load instances');
-      setAllInstances([]);
+    } catch (error) {
+      console.error('Error loading instances:', error);
+      setError('Failed to load class instances');
     }
   }, []);
 
-  const loadAllData = useCallback(async () => {
+  // Load all data
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     
     try {
       await Promise.all([
-        loadInstructors(),
         loadSchedules(),
         loadInstances(),
+        loadInstructors(),
       ]);
-    } catch (err) {
-      setError('Failed to load class data');
+    } catch (error) {
+      console.error('Error loading data:', error);
+      setError('Failed to load data');
     } finally {
       setLoading(false);
     }
-  }, [loadInstructors, loadSchedules, loadInstances]);
+  }, [loadSchedules, loadInstances, loadInstructors]);
 
-  // Transform StaffRecord to instructor format for ClassFormDialog
-  const instructorsForForm = useMemo(() => 
-    instructors.map(instructor => ({
-      id: instructor.id,
-      name: instructor.fullName, // Map fullName to name
-      specialties: instructor.specializations || [], // Map specializations to specialties
-    })), 
-    [instructors]
-  );
-
-  // Load data on mount
+  // Initial data load
   useEffect(() => {
-    loadAllData();
-  }, [loadAllData]);
+    loadData();
+  }, [loadData]);
 
-  // Filtered data
+  // Handle filter changes with proper typing
+  const handleFilterChange = useCallback((key: keyof ClassFilters, value: string) => {
+    setFilters(prev => ({
+      ...prev,
+      [key]: value || '', // Ensure we never set undefined values
+    }));
+  }, []);
+
+  // Clear all filters
+  const clearFilters = useCallback(() => {
+    setFilters(DEFAULT_FILTERS);
+  }, []);
+
+  // Get unique class types for filter
+  const uniqueClassTypes = useMemo(() => {
+    const types = new Set<string>();
+    schedules.forEach(schedule => {
+      if (schedule.classType) types.add(schedule.classType);
+    });
+    allInstances.forEach(instance => {
+      if (instance.classType) types.add(instance.classType);
+    });
+    return Array.from(types).sort();
+  }, [schedules, allInstances]);
+
+  // Combine and filter data
   const filteredData = useMemo(() => {
-    let items: (ClassSchedule | ClassInstance)[] = [];
+    const combined = [...schedules, ...allInstances];
     
-    if (viewMode === 'list') {
-      items = [...schedules, ...allInstances];
-    } else {
-      items = allInstances; // Calendar only shows instances
-    }
-
-    return items.filter(item => {
+    return combined.filter(item => {
       // Search term filter
       if (filters.searchTerm) {
         const searchLower = filters.searchTerm.toLowerCase();
-        if (!item.name.toLowerCase().includes(searchLower) &&
-            !item.instructorName.toLowerCase().includes(searchLower) &&
-            !item.classType.toLowerCase().includes(searchLower)) {
+        const matchesName = item.name?.toLowerCase().includes(searchLower);
+        const matchesInstructor = item.instructorName?.toLowerCase().includes(searchLower);
+        const matchesType = item.classType?.toLowerCase().includes(searchLower);
+        
+        if (!matchesName && !matchesInstructor && !matchesType) {
           return false;
         }
       }
-
+      
       // Class type filter
       if (filters.classType && item.classType !== filters.classType) {
         return false;
       }
-
+      
       // Instructor filter
       if (filters.instructorId && item.instructorId !== filters.instructorId) {
         return false;
       }
-
+      
       // Status filter for instances
-      if (filters.status !== 'all' && 'status' in item) {
+      if ('status' in item && filters.status !== 'all') {
         if (filters.status === 'active' && item.status === 'cancelled') {
           return false;
         }
@@ -224,28 +225,81 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
           return false;
         }
       }
-
+      
       return true;
     });
-  }, [schedules, allInstances, filters, viewMode]);
+  }, [schedules, allInstances, filters]);
 
-  // Get unique class types for filter
-  const uniqueClassTypes = useMemo(() => {
-    const types = new Set([
-      ...schedules.map(s => s.classType),
-      ...allInstances.map(i => i.classType),
-    ]);
-    return Array.from(types).sort();
-  }, [schedules, allInstances]);
+  // Handle form submission
+  const handleFormSubmit = async (formData: ClassFormData, scheduleId?: string) => {
+    setSubmitLoading(true);
+    try {
+      const endpoint = scheduleId 
+        ? `/api/classes/schedules/${scheduleId}`
+        : '/api/classes/schedules';
+      
+      const method = scheduleId ? 'PUT' : 'POST';
+      
+      const response = await fetch(endpoint, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
 
-  // Form handlers
-  const handleCreateClass = () => {
-    setEditingClass(null);
-    setEditingType('schedule');
-    setFormMode('create');
-    setIsFormDialogOpen(true);
+      if (response.ok) {
+        setSuccessMessage(
+          formMode === 'create' 
+            ? 'Class created successfully!' 
+            : 'Class updated successfully!'
+        );
+        await loadData();
+        setIsFormDialogOpen(false);
+        setEditingClass(null);
+      } else {
+        const errorData = await response.json();
+        setError(errorData.message || 'Failed to save class');
+      }
+    } catch (error) {
+      console.error('Error submitting form:', error);
+      setError('Failed to save class');
+    } finally {
+      setSubmitLoading(false);
+    }
   };
 
+  // Handle delete
+  const handleDelete = async () => {
+    if (!deletingClass) return;
+    
+    setSubmitLoading(true);
+    try {
+      const isInstance = 'scheduleId' in deletingClass;
+      const endpoint = isInstance 
+        ? `/api/classes/instances/${deletingClass.id}`
+        : `/api/classes/schedules/${deletingClass.id}`;
+      
+      const response = await fetch(endpoint, { method: 'DELETE' });
+      
+      if (response.ok) {
+        setSuccessMessage(
+          `${isInstance ? 'Class instance' : 'Class schedule'} deleted successfully!`
+        );
+        await loadData();
+        setIsDeleteDialogOpen(false);
+        setDeletingClass(null);
+      } else {
+        const errorData = await response.json();
+        setError(errorData.message || 'Failed to delete class');
+      }
+    } catch (error) {
+      console.error('Error deleting class:', error);
+      setError('Failed to delete class');
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
+
+  // Handle edit class
   const handleEditClass = (classData: ClassSchedule | ClassInstance) => {
     setEditingClass(classData);
     setEditingType('scheduleId' in classData ? 'instance' : 'schedule');
@@ -253,153 +307,82 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
     setIsFormDialogOpen(true);
   };
 
+  // Handle delete class
   const handleDeleteClass = (classData: ClassSchedule | ClassInstance) => {
     setDeletingClass(classData);
     setIsDeleteDialogOpen(true);
   };
 
-  const handleFormSubmit = async (data: ClassFormData, scheduleId?: string) => {
-    setSubmitLoading(true);
+  // Handle create new class
+  const handleCreateClass = () => {
+    setEditingClass(null);
+    setEditingType('schedule');
+    setFormMode('create');
+    setIsFormDialogOpen(true);
+  };
+
+  // Class management actions (for instances)
+  const handleStartClass = async (instanceId: string) => {
     try {
-      let response: Response;
+      const response = await fetch(`/api/classes/instances/${instanceId}/start`, {
+        method: 'PATCH',
+      });
       
-      if (formMode === 'create') {
-        // Creating new schedule
-        response = await fetch('/api/classes/schedules', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include',
-          body: JSON.stringify(data),
-        });
+      if (response.ok) {
+        setSuccessMessage('Class started successfully!');
+        await loadData();
       } else {
-        // Editing existing
-        if (editingType === 'schedule' && editingClass && 'recurrence' in editingClass) {
-          response = await fetch(`/api/classes/schedules/${editingClass.id}`, {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            credentials: 'include',
-            body: JSON.stringify(data),
-          });
-        } else if (editingType === 'instance' && editingClass && 'scheduleId' in editingClass) {
-          response = await fetch(`/api/classes/instances/${editingClass.id}`, {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            credentials: 'include',
-            body: JSON.stringify(data),
-          });
-        } else {
-          throw new Error('Invalid editing configuration');
-        }
+        setError('Failed to start class');
       }
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to save class');
-      }
-
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to save class');
-      }
-
-      setSuccessMessage(
-        formMode === 'create' ? 'Class created successfully' : 'Class updated successfully'
-      );
-      
-      // Reload data to get updated lists
-      await loadAllData();
-      
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save class');
-    } finally {
-      setSubmitLoading(false);
+    } catch (error) {
+      console.error('Error starting class:', error);
+      setError('Failed to start class');
     }
   };
 
-  const handleDeleteConfirm = async () => {
-    if (!deletingClass) return;
-
+  const handleEndClass = async (instanceId: string) => {
     try {
-      setSubmitLoading(true);
-      let response: Response;
-
-      if ('recurrence' in deletingClass) {
-        // Deleting schedule
-        response = await fetch(`/api/classes/schedules/${deletingClass.id}`, {
-          method: 'DELETE',
-          credentials: 'include',
-        });
+      const response = await fetch(`/api/classes/instances/${instanceId}/end`, {
+        method: 'PATCH',
+      });
+      
+      if (response.ok) {
+        setSuccessMessage('Class ended successfully!');
+        await loadData();
       } else {
-        // Deleting instance
-        response = await fetch(`/api/classes/instances/${deletingClass.id}`, {
-          method: 'DELETE',
-          credentials: 'include',
-        });
+        setError('Failed to end class');
       }
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to delete class');
-      }
-
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to delete class');
-      }
-
-      setSuccessMessage('Class deleted successfully');
-      setIsDeleteDialogOpen(false);
-      setDeletingClass(null);
-      
-      // Reload data
-      await loadAllData();
-      
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete class');
-    } finally {
-      setSubmitLoading(false);
+    } catch (error) {
+      console.error('Error ending class:', error);
+      setError('Failed to end class');
     }
   };
 
-  const handleFilterChange = (field: keyof ClassFilters, value: string) => {
-    setFilters(prev => ({ ...prev, [field]: value }));
-  };
-
-  const clearFilters = () => {
-    setFilters({
-      searchTerm: '',
-      classType: '',
-      instructorId: '',
-      status: 'all',
-      dateRange: 'all',
-    });
-  };
-
-  const handleRefresh = () => {
-    loadAllData();
+  const handleCancelClass = async (instanceId: string) => {
+    try {
+      const response = await fetch(`/api/classes/instances/${instanceId}/cancel`, {
+        method: 'PATCH',
+      });
+      
+      if (response.ok) {
+        setSuccessMessage('Class cancelled successfully!');
+        await loadData();
+      } else {
+        setError('Failed to cancel class');
+      }
+    } catch (error) {
+      console.error('Error cancelling class:', error);
+      setError('Failed to cancel class');
+    }
   };
 
   if (loading) {
     return (
       <Layout session={session}>
         <Container maxWidth="xl">
-          <Box py={3}>
-            <Skeleton variant="text" width={200} height={40} />
-            <Box mt={2}>
-              <Grid container spacing={2}>
-                {[1, 2, 3, 4].map((i) => (
-                  <Grid item xs={12} md={6} lg={4} key={i}>
-                    <Skeleton variant="rectangular" height={200} />
-                  </Grid>
-                ))}
-              </Grid>
-            </Box>
+          <Box display="flex" flexDirection="column" gap={3}>
+            <Skeleton variant="rectangular" height={60} />
+            <Skeleton variant="rectangular" height={400} />
           </Box>
         </Container>
       </Layout>
@@ -409,22 +392,17 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
   return (
     <Layout session={session}>
       <Container maxWidth="xl">
-        <Box py={3}>
+        <Box display="flex" flexDirection="column" gap={3}>
           {/* Header */}
-          <Box display="flex" alignItems="center" justifyContent="between" mb={3}>
-            <Box>
-              <Typography variant="h4" fontWeight="bold" gutterBottom>
-                Classes
-              </Typography>
-              <Typography variant="body1" color="text.secondary">
-                Manage class schedules and instances
-              </Typography>
-            </Box>
-
-            <Box display="flex" gap={1}>
+          <Box display="flex" justifyContent="space-between" alignItems="center">
+            <Typography variant="h4" fontWeight="bold">
+              Class Management
+            </Typography>
+            
+            <Box display="flex" gap={2}>
               <Button
                 startIcon={<RefreshIcon />}
-                onClick={handleRefresh}
+                onClick={loadData}
                 disabled={loading}
               >
                 Refresh
@@ -444,39 +422,38 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
 
           {/* Error Alert */}
           {error && (
-            <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+            <Alert severity="error" onClose={() => setError(null)}>
               {error}
             </Alert>
           )}
 
-          {/* View Mode Tabs */}
-          <Paper sx={{ mb: 3 }}>
-            <Tabs
-              value={viewMode}
-              onChange={(_, newValue) => setViewMode(newValue)}
-              sx={{ borderBottom: 1, borderColor: 'divider' }}
-            >
-              <Tab
-                value="list"
-                label="List View"
-                icon={<ListIcon />}
-                iconPosition="start"
-              />
-              <Tab
-                value="calendar"
-                label="Calendar View"
-                icon={<CalendarIcon />}
-                iconPosition="start"
-              />
-            </Tabs>
+          {/* View Toggle */}
+          <Paper sx={{ p: 2 }}>
+            <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+              <Tabs
+                value={viewMode}
+                onChange={(_, newValue) => setViewMode(newValue)}
+              >
+                <Tab
+                  icon={<ListIcon />}
+                  label="List View"
+                  value="list"
+                />
+                <Tab
+                  icon={<CalendarIcon />}
+                  label="Calendar View"
+                  value="calendar"
+                />
+              </Tabs>
+            </Box>
 
             {/* Filters */}
-            <Box p={2}>
+            <Box>
               <Grid container spacing={2} alignItems="center">
-                <Grid item xs={12} md={3}>
+                <Grid item xs={12} md={4}>
                   <TextField
-                    fullWidth
                     size="small"
+                    fullWidth
                     placeholder="Search classes..."
                     value={filters.searchTerm}
                     onChange={(e) => handleFilterChange('searchTerm', e.target.value)}
@@ -541,7 +518,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
                   </FormControl>
                 </Grid>
 
-                <Grid item xs={12} md={3}>
+                <Grid item xs={12} md={2}>
                   <Box display="flex" gap={1}>
                     <Button size="small" onClick={clearFilters}>
                       Clear Filters
@@ -581,66 +558,82 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
                       onDelete={session.role === 'admin' ? handleDeleteClass : undefined}
                       canEdit={session.role === 'admin'}
                       canDelete={session.role === 'admin'}
+                      onStartClass={handleStartClass}
+                      onEndClass={handleEndClass}
+                      onCancelClass={handleCancelClass}
                     />
                   </Grid>
                 ))
               )}
             </Grid>
           ) : (
-            <ClassCalendar
-              instances={allInstances}
-              onInstanceEdit={session.role === 'admin' ? handleEditClass : undefined}
-              loading={loading}
-            />
-          )}
-
-          {/* Floating Action Button for mobile */}
-          {session.role === 'admin' && (
-            <Fab
-              color="primary"
-              sx={{
-                position: 'fixed',
-                bottom: 16,
-                right: 16,
-                display: { xs: 'flex', md: 'none' },
-              }}
-              onClick={handleCreateClass}
-            >
-              <AddIcon />
-            </Fab>
+            <Paper sx={{ p: 2 }}>
+              <ClassCalendar
+                instances={allInstances}
+                onInstanceClick={handleEditClass}
+                onInstanceEdit={handleEditClass}
+                loading={loading}
+              />
+            </Paper>
           )}
         </Box>
+
+        {/* Create Class FAB */}
+        {session.role === 'admin' && (
+          <Fab
+            color="primary"
+            sx={{ position: 'fixed', bottom: 16, right: 16 }}
+            onClick={handleCreateClass}
+          >
+            <AddIcon />
+          </Fab>
+        )}
+
+        {/* Dialogs */}
+        <ClassFormDialog
+          open={isFormDialogOpen}
+          onClose={() => {
+            setIsFormDialogOpen(false);
+            setEditingClass(null);
+          }}
+          onSubmit={handleFormSubmit}
+          classData={editingClass}
+          type={editingType}
+          mode={formMode}
+          instructors={instructors.map(instructor => ({
+            id: instructor.id,
+            name: instructor.fullName,
+            // Remove specialties since it doesn't exist on StaffRecord
+          }))}
+          loading={submitLoading}
+        />
+
+        <DeleteConfirmationDialog
+          open={isDeleteDialogOpen}
+          onClose={() => {
+            setIsDeleteDialogOpen(false);
+            setDeletingClass(null);
+          }}
+          onConfirm={handleDelete}
+          title={`Delete ${deletingClass && 'scheduleId' in deletingClass ? 'Class Instance' : 'Class Schedule'}`}
+          itemName={deletingClass?.name || ''}
+          itemType={deletingClass && 'scheduleId' in deletingClass ? 'class instance' : 'class schedule'}
+          loading={submitLoading}
+          warningMessage="This action will permanently remove all associated data."
+          additionalInfo={deletingClass ? [
+            { label: 'Class Type', value: deletingClass.classType },
+            { label: 'Instructor', value: deletingClass.instructorName },
+          ] : []}
+        />
+
+        {/* Success Snackbar */}
+        <Snackbar
+          open={!!successMessage}
+          autoHideDuration={6000}
+          onClose={() => setSuccessMessage(null)}
+          message={successMessage}
+        />
       </Container>
-
-      {/* Dialogs */}
-      <ClassFormDialog
-        open={isFormDialogOpen}
-        onClose={() => setIsFormDialogOpen(false)}
-        onSubmit={handleFormSubmit}
-        classData={editingClass}
-        type={editingType}
-        mode={formMode}
-        instructors={instructorsForForm}
-        loading={submitLoading}
-      />
-
-      <DeleteConfirmationDialog
-        open={isDeleteDialogOpen}
-        onClose={() => setIsDeleteDialogOpen(false)}
-        onConfirm={handleDeleteConfirm}
-        title="Delete Class"
-        itemName={deletingClass?.name || ''}
-        itemType={deletingClass && 'scheduleId' in deletingClass ? 'instance' : 'schedule'}
-        loading={submitLoading}
-      />
-
-      {/* Success Snackbar */}
-      <Snackbar
-        open={!!successMessage}
-        autoHideDuration={6000}
-        onClose={() => setSuccessMessage(null)}
-        message={successMessage}
-      />
     </Layout>
   );
 }

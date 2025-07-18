@@ -1,6 +1,4 @@
-//src/app/api/staff/route.ts - FIXED VERSION
-// ============================================
-
+// src/app/api/staff/route.ts - FIXED HTTP 500 ERROR
 import { NextRequest } from 'next/server';
 import { adminDb } from '@/app/lib/firebase/admin';
 import { requireStaffOrTrainer } from '@/app/lib/api/middleware';
@@ -17,47 +15,79 @@ export const GET = requireStaffOrTrainer(async (request: NextRequest, context) =
     const limit = parseInt(url.searchParams.get('limit') || '50');
     const offset = parseInt(url.searchParams.get('offset') || '0');
 
-    try {
-      // Build query
-      let query: any = adminDb.collection('staff').orderBy('createdAt', 'desc');
+    // Build query - start with basic collection reference
+    let query: any = adminDb.collection('staff');
 
-      // Apply filters
-      if (role && ['admin', 'trainer', 'staff'].includes(role)) {
-        query = query.where('role', '==', role);
-      }
-
-      if (status === 'active') {
-        query = query.where('isActive', '==', true);
-      } else if (status === 'inactive') {
-        query = query.where('isActive', '==', false);
-      }
-
-      const snapshot = await query.offset(offset).limit(limit).get();
-      let staffMembers = snapshot.docs.map((doc: any) => {
-        const data = doc.data();
-        return {
-          uid: doc.id,
-          ...data,
-          createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-          lastLoginAt: data.lastLoginAt?.toDate?.()?.toISOString() || null,
-        };
-      });
-
-      // Apply search filtering
-      if (search) {
-        const searchLower = search.toLowerCase();
-        staffMembers = staffMembers.filter((staff: any) =>
-          staff.fullName.toLowerCase().includes(searchLower) ||
-          staff.email.toLowerCase().includes(searchLower)
-        );
-      }
-
-      return successResponse(staffMembers);
-    } catch (dbError: any) {
-      throw new Error('Failed to fetch staff members from database');
+    // Apply role filter - FIXED: Include visiting_trainer
+    if (role && ['admin', 'trainer', 'visiting_trainer', 'staff'].includes(role)) {
+      query = query.where('role', '==', role);
     }
 
+    // Apply status filter
+    if (status === 'active') {
+      query = query.where('isActive', '==', true);
+    } else if (status === 'inactive') {
+      query = query.where('isActive', '==', false);
+    }
+
+    // Add ordering and limits
+    query = query.orderBy('createdAt', 'desc').offset(offset).limit(limit);
+
+    // Execute query with proper error handling
+    const snapshot = await query.get();
+    
+    let staffMembers = snapshot.docs.map((doc: any) => {
+      const data = doc.data();
+      
+      // Safe timestamp conversion
+      let createdAt: string;
+      let lastLoginAt: string | null = null;
+      
+      try {
+        createdAt = data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString();
+      } catch {
+        createdAt = new Date().toISOString();
+      }
+      
+      try {
+        lastLoginAt = data.lastLoginAt?.toDate?.()?.toISOString() || null;
+      } catch {
+        lastLoginAt = null;
+      }
+
+      return {
+        id: doc.id, // Use 'id' instead of 'uid' for consistency
+        uid: doc.id, // Keep uid for backward compatibility
+        fullName: data.fullName || '',
+        email: data.email || '',
+        role: data.role || 'staff',
+        isActive: data.isActive ?? true,
+        phoneNumber: data.phoneNumber || '',
+        createdAt,
+        lastLoginAt,
+        // Only include non-sensitive fields
+        emergencyContact: data.emergencyContact || null,
+        address: data.address || null,
+        notes: data.notes || '',
+      };
+    });
+
+    // Apply search filtering on processed data
+    if (search) {
+      const searchLower = search.toLowerCase();
+      staffMembers = staffMembers.filter((staff: any) =>
+        (staff.fullName || '').toLowerCase().includes(searchLower) ||
+        (staff.email || '').toLowerCase().includes(searchLower)
+      );
+    }
+
+    return successResponse(staffMembers);
+
   } catch (error: any) {
-    return errorResponse(error.message || 'Failed to list staff members', 500);
+    console.error('Staff API Error:', error);
+    return errorResponse(
+      error.message || 'Failed to load staff members', 
+      500
+    );
   }
 });

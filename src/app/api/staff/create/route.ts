@@ -13,7 +13,7 @@ const createStaffSchema = z.object({
     .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/, 'Password must contain at least one uppercase letter, one lowercase letter, and one number'),
   fullName: z.string().min(2, 'Full name must be at least 2 characters').max(100),
   phoneNumber: z.string().regex(/^[\+]?[0-9\s\-\(\)]{10,20}$/, 'Invalid phone number format'),
-  role: z.enum(['admin', 'trainer', 'staff'], { required_error: 'Role is required' }),
+  role: z.enum(['admin', 'trainer', 'visiting_trainer'], { required_error: 'Role is required' }),
   emergencyContact: z.object({
     name: z.string().min(2).max(100),
     phone: z.string().regex(/^[\+]?[0-9\s\-\(\)]{10,20}$/, 'Invalid emergency contact phone format'),

@@ -1,4 +1,4 @@
-// src/app/components/forms/ClassFormDialog.tsx - COMPLETELY FIXED
+// src/app/components/forms/ClassFormDialog.tsx - FIXED controlled/uncontrolled issues
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -49,6 +49,7 @@ interface ClassFormDialogProps {
   loading: boolean;
 }
 
+// Default form data to prevent controlled/uncontrolled issues
 const DEFAULT_FORM_DATA: ClassFormData = {
   name: '',
   classType: '',
@@ -59,6 +60,9 @@ const DEFAULT_FORM_DATA: ClassFormData = {
   startTime: '18:00',
   scheduleType: 'single',
   daysOfWeek: [],
+  recurrenceEndDate: '',
+  location: '',
+  notes: '',
 };
 
 const DAYS_OF_WEEK = [
@@ -88,77 +92,93 @@ export default function ClassFormDialog({
   const isEditingSchedule = mode === 'edit' && classData && type === 'schedule';
   const isEditingInstance = mode === 'edit' && classData && type === 'instance';
 
-  // Initialize form data when dialog opens or classData changes - FIXED to prevent cross-contamination
+  // Initialize form data when dialog opens or classData changes
   useEffect(() => {
     if (open) {
-      if (mode === 'edit' && classData) {
-        if (type === 'schedule' && 'recurrence' in classData) {
-          // This is definitely a ClassSchedule
-          const scheduleData = classData as ClassSchedule;
+      if (mode === 'create') {
+        // For new classes, use defaults
+        setFormData({ ...DEFAULT_FORM_DATA });
+      } else if (classData) {
+        // For editing, populate from existing data
+        if (type === 'schedule') {
+          const schedule = classData as ClassSchedule;
           setFormData({
-            name: scheduleData.name || '',
-            classType: scheduleData.classType || '',
-            instructorId: scheduleData.instructorId || '',
-            maxParticipants: scheduleData.maxParticipants || 20,
-            duration: scheduleData.duration || 60,
-            startDate: scheduleData.startDate || formatFns(new Date(), 'yyyy-MM-dd'),
-            startTime: scheduleData.startTime || '18:00',
-            scheduleType: scheduleData.recurrence?.scheduleType || 'single',
-            daysOfWeek: scheduleData.recurrence?.daysOfWeek || [],
-            recurrenceEndDate: scheduleData.recurrence?.endDate || undefined,
-            location: scheduleData.location || '',
-            notes: scheduleData.notes || '',
+            name: schedule.name || '',
+            classType: schedule.classType || '',
+            instructorId: schedule.instructorId || '',
+            maxParticipants: schedule.maxParticipants || 20,
+            duration: schedule.duration || 60,
+            startDate: schedule.startDate ? schedule.startDate.split('T')[0] : formatFns(new Date(), 'yyyy-MM-dd'),
+            startTime: schedule.startTime || '18:00',
+            scheduleType: schedule.recurrence?.scheduleType || 'single',
+            daysOfWeek: schedule.recurrence?.daysOfWeek || [],
+            recurrenceEndDate: schedule.recurrence?.endDate 
+              ? schedule.recurrence.endDate.split('T')[0] 
+              : '',
+            location: schedule.location || '',
+            notes: schedule.notes || '',
           });
-        } else if (type === 'instance' && 'scheduleId' in classData) {
-          // This is definitely a ClassInstance
-          const instanceData = classData as ClassInstance;
+        } else {
+          const instance = classData as ClassInstance;
           setFormData({
-            name: instanceData.name || '',
-            classType: instanceData.classType || '',
-            instructorId: instanceData.instructorId || '',
-            maxParticipants: instanceData.maxParticipants || 20,
-            duration: instanceData.duration || 60,
-            startDate: instanceData.date || formatFns(new Date(), 'yyyy-MM-dd'),
-            startTime: instanceData.startTime || '18:00',
+            name: instance.name || '',
+            classType: instance.classType || '',
+            instructorId: instance.instructorId || '',
+            maxParticipants: instance.maxParticipants || 20,
+            duration: instance.duration || 60,
+            startDate: instance.date ? instance.date.split('T')[0] : formatFns(new Date(), 'yyyy-MM-dd'),
+            startTime: instance.startTime || '18:00',
             scheduleType: 'single', // Instances are always single
             daysOfWeek: [],
-            location: instanceData.location || '',
-            notes: instanceData.notes || '',
+            recurrenceEndDate: '',
+            location: instance.location || '',
+            notes: instance.notes || '',
           });
         }
-      } else {
-        // Creating new - always use fresh default data
-        setFormData({ ...DEFAULT_FORM_DATA });
       }
       setErrors({});
     }
   }, [open, classData, mode, type]);
 
-  const handleInputChange = (field: keyof ClassFormData, value: any) => {
+  // Handle input changes - ensures we never set undefined values
+  const handleInputChange = <T extends keyof ClassFormData>(
+    field: T,
+    value: ClassFormData[T]
+  ) => {
     setFormData(prev => ({
       ...prev,
-      [field]: value,
+      [field]: value ?? (field === 'daysOfWeek' ? [] : ''), // Provide fallback for arrays/strings
     }));
-
+    
     // Clear error when user starts typing
     if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
+      setErrors(prev => ({
+        ...prev,
+        [field]: '',
+      }));
     }
   };
 
-  const handleDayToggle = (day: number) => {
-    setFormData(prev => ({
-      ...prev,
-      daysOfWeek: prev.daysOfWeek?.includes(day)
-        ? (prev.daysOfWeek || []).filter(d => d !== day)
-        : [...(prev.daysOfWeek || []), day].sort(),
-    }));
+  // Handle days of week change for recurring classes
+  const handleDaysOfWeekChange = (day: number, checked: boolean) => {
+    setFormData(prev => {
+      const currentDays = prev.daysOfWeek || [];
+      const newDays = checked 
+        ? [...currentDays, day].sort()
+        : currentDays.filter(d => d !== day);
+      
+      return {
+        ...prev,
+        daysOfWeek: newDays,
+      };
+    });
   };
 
+  // Validate form
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.name.trim()) {
+    if (!formData.name?.trim()) {
       newErrors.name = 'Class name is required';
     }
 
@@ -170,12 +190,12 @@ export default function ClassFormDialog({
       newErrors.instructorId = 'Instructor is required';
     }
 
-    if (formData.maxParticipants < 1 || formData.maxParticipants > 100) {
-      newErrors.maxParticipants = 'Max participants must be between 1 and 100';
+    if (!formData.maxParticipants || formData.maxParticipants < 1) {
+      newErrors.maxParticipants = 'Maximum participants must be at least 1';
     }
 
-    if (formData.duration < 15 || formData.duration > 240) {
-      newErrors.duration = 'Duration must be between 15 and 240 minutes';
+    if (!formData.duration || formData.duration < 15) {
+      newErrors.duration = 'Duration must be at least 15 minutes';
     }
 
     if (!formData.startDate) {
@@ -186,31 +206,25 @@ export default function ClassFormDialog({
       newErrors.startTime = 'Start time is required';
     }
 
-    if (formData.scheduleType === 'recurring') {
-      if (!formData.daysOfWeek || formData.daysOfWeek.length === 0) {
-        newErrors.daysOfWeek = 'At least one day must be selected for recurring classes';
-      }
-
-      // Recurrence end date validation
-      if (formData.recurrenceEndDate) {
-        const startDate = new Date(formData.startDate);
-        const endDate = new Date(formData.recurrenceEndDate);
-
-        if (endDate <= startDate) {
-          newErrors.recurrenceEndDate = 'End date must be after start date';
-        }
-      }
+    if (formData.scheduleType === 'recurring' && (!formData.daysOfWeek || formData.daysOfWeek.length === 0)) {
+      newErrors.daysOfWeek = 'Please select at least one day for recurring classes';
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async () => {
-    if (!validateForm()) return;
+  // Handle form submission
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!validateForm()) {
+      return;
+    }
 
     setLoading(true);
     try {
+      // Prepare submission data, excluding optional empty fields
       const submitData: ClassFormData = {
         name: formData.name.trim(),
         classType: formData.classType,
@@ -221,7 +235,9 @@ export default function ClassFormDialog({
         startTime: formData.startTime,
         scheduleType: formData.scheduleType,
         daysOfWeek: formData.scheduleType === 'recurring' ? (formData.daysOfWeek || []) : undefined,
-        recurrenceEndDate: formData.scheduleType === 'recurring' ? formData.recurrenceEndDate : undefined,
+        recurrenceEndDate: formData.scheduleType === 'recurring' && formData.recurrenceEndDate 
+          ? formData.recurrenceEndDate 
+          : undefined,
         location: formData.location?.trim() || undefined,
         notes: formData.notes?.trim() || undefined,
       };
@@ -271,7 +287,7 @@ export default function ClassFormDialog({
       </DialogTitle>
 
       <DialogContent>
-        <Box display="flex" flexDirection="column" gap={3} pt={2}>
+        <Box component="form" onSubmit={handleSubmit} display="flex" flexDirection="column" gap={3} pt={2}>
           {/* Basic Information */}
           <Grid container spacing={2}>
             <Grid item xs={12} md={6}>
@@ -284,6 +300,7 @@ export default function ClassFormDialog({
                 error={!!errors.name}
                 helperText={errors.name}
                 placeholder="e.g., Beginner MMA"
+                disabled={loading}
               />
             </Grid>
 
@@ -293,6 +310,7 @@ export default function ClassFormDialog({
                 onChange={(value) => handleInputChange('classType', value)}
                 error={errors.classType}
                 required
+                disabled={loading}
               />
             </Grid>
 
@@ -303,34 +321,46 @@ export default function ClassFormDialog({
                   value={formData.instructorId}
                   onChange={(e) => handleInputChange('instructorId', e.target.value)}
                   label="Instructor"
+                  disabled={loading || instructors.length === 0}
                 >
-                  {instructors.map((instructor) => (
-                    <MenuItem key={instructor.id} value={instructor.id}>
-                      {instructor.name}
-                      {instructor.specialties && instructor.specialties.length > 0 && (
-                        <Typography variant="caption" sx={{ ml: 1, color: 'text.secondary' }}>
-                          ({instructor.specialties.join(', ')})
-                        </Typography>
-                      )}
+                  {instructors.length === 0 ? (
+                    <MenuItem disabled>
+                      <Typography color="text.secondary">No instructors available</Typography>
                     </MenuItem>
-                  ))}
+                  ) : (
+                    instructors.map((instructor) => (
+                      <MenuItem key={instructor.id} value={instructor.id}>
+                        <Box>
+                          <Typography variant="body2">{instructor.name}</Typography>
+                          {instructor.specialties && instructor.specialties.length > 0 && (
+                            <Typography variant="caption" color="text.secondary">
+                              {instructor.specialties.join(', ')}
+                            </Typography>
+                          )}
+                        </Box>
+                      </MenuItem>
+                    ))
+                  )}
                 </Select>
-                {errors.instructorId && <FormHelperText>{errors.instructorId}</FormHelperText>}
+                {errors.instructorId && (
+                  <FormHelperText>{errors.instructorId}</FormHelperText>
+                )}
               </FormControl>
             </Grid>
 
             <Grid item xs={12} md={6}>
               <TextField
                 label="Location"
-                value={formData.location || ''}
+                value={formData.location}
                 onChange={(e) => handleInputChange('location', e.target.value)}
                 fullWidth
                 placeholder="e.g., Main Training Room"
+                disabled={loading}
               />
             </Grid>
           </Grid>
 
-          {/* Class Details */}
+          {/* Capacity and Duration */}
           <Grid container spacing={2}>
             <Grid item xs={12} md={4}>
               <TextField
@@ -343,6 +373,7 @@ export default function ClassFormDialog({
                 error={!!errors.maxParticipants}
                 helperText={errors.maxParticipants}
                 inputProps={{ min: 1, max: 100 }}
+                disabled={loading}
               />
             </Grid>
 
@@ -357,6 +388,7 @@ export default function ClassFormDialog({
                 error={!!errors.duration}
                 helperText={errors.duration}
                 inputProps={{ min: 15, max: 240, step: 15 }}
+                disabled={loading}
               />
             </Grid>
 
@@ -371,6 +403,7 @@ export default function ClassFormDialog({
                 error={!!errors.startTime}
                 helperText={errors.startTime}
                 InputLabelProps={{ shrink: true }}
+                disabled={loading}
               />
             </Grid>
           </Grid>
@@ -384,8 +417,18 @@ export default function ClassFormDialog({
                 onChange={(e) => handleInputChange('scheduleType', e.target.value as 'single' | 'recurring')}
                 row
               >
-                <FormControlLabel value="single" control={<Radio />} label="Single Class" />
-                <FormControlLabel value="recurring" control={<Radio />} label="Recurring Schedule" />
+                <FormControlLabel 
+                  value="single" 
+                  control={<Radio />} 
+                  label="Single Class" 
+                  disabled={loading}
+                />
+                <FormControlLabel 
+                  value="recurring" 
+                  control={<Radio />} 
+                  label="Recurring Schedule" 
+                  disabled={loading}
+                />
               </RadioGroup>
             </Box>
           )}
@@ -403,6 +446,7 @@ export default function ClassFormDialog({
                 error={!!errors.startDate}
                 helperText={errors.startDate}
                 InputLabelProps={{ shrink: true }}
+                disabled={loading}
               />
             </Grid>
 
@@ -411,22 +455,23 @@ export default function ClassFormDialog({
                 <TextField
                   label="End Date (Optional)"
                   type="date"
-                  value={formData.recurrenceEndDate || ''}
-                  onChange={(e) => handleInputChange('recurrenceEndDate', e.target.value || undefined)}
+                  value={formData.recurrenceEndDate}
+                  onChange={(e) => handleInputChange('recurrenceEndDate', e.target.value)}
                   fullWidth
                   error={!!errors.recurrenceEndDate}
-                  helperText={errors.recurrenceEndDate || 'Leave empty for ongoing schedule'}
+                  helperText={errors.recurrenceEndDate}
                   InputLabelProps={{ shrink: true }}
+                  disabled={loading}
                 />
               </Grid>
             )}
           </Grid>
 
-          {/* Days of Week - Only for recurring schedules */}
+          {/* Days of Week Selection for Recurring Classes */}
           {formData.scheduleType === 'recurring' && !isInstanceEdit && (
             <Box>
               <FormLabel component="legend" error={!!errors.daysOfWeek}>
-                Days of Week *
+                Days of the Week *
               </FormLabel>
               <FormGroup row>
                 {DAYS_OF_WEEK.map((day) => (
@@ -434,8 +479,9 @@ export default function ClassFormDialog({
                     key={day.value}
                     control={
                       <Checkbox
-                        checked={formData.daysOfWeek?.includes(day.value) || false}
-                        onChange={() => handleDayToggle(day.value)}
+                        checked={(formData.daysOfWeek || []).includes(day.value)}
+                        onChange={(e) => handleDaysOfWeekChange(day.value, e.target.checked)}
+                        disabled={loading}
                       />
                     }
                     label={day.short}
@@ -450,13 +496,14 @@ export default function ClassFormDialog({
 
           {/* Notes */}
           <TextField
-            label="Notes (Optional)"
-            value={formData.notes || ''}
+            label="Notes"
+            value={formData.notes}
             onChange={(e) => handleInputChange('notes', e.target.value)}
             fullWidth
             multiline
             rows={3}
-            placeholder="Additional information about this class..."
+            placeholder="Any additional information about this class..."
+            disabled={loading}
           />
         </Box>
       </DialogContent>
@@ -469,7 +516,7 @@ export default function ClassFormDialog({
           onClick={handleSubmit}
           variant="contained"
           disabled={loading || parentLoading}
-          startIcon={loading ? <CircularProgress size={16} /> : <SaveIcon />}
+          startIcon={loading ? <CircularProgress size={20} /> : <SaveIcon />}
         >
           {loading ? 'Saving...' : mode === 'create' ? 'Create Class' : 'Update Class'}
         </Button>

@@ -1,4 +1,4 @@
-// src/app/components/ui/ClassCards.tsx - COMPLETELY FIXED VERSION
+// src/app/components/ui/ClassCards.tsx - FIXED: Removed React Fragment from Menu
 'use client';
 
 import React, { useState } from 'react';
@@ -124,53 +124,98 @@ export default function ClassCard({
 
   const formatDate = (dateString: string) => {
     try {
-      const date = new Date(dateString);
-      return format(date, 'MMM dd, yyyy');
+      return format(new Date(dateString), 'MMM d, yyyy');
     } catch {
       return dateString;
     }
   };
 
   const getRecurrenceText = (recurrence: ClassSchedule['recurrence']) => {
-    if (recurrence.scheduleType === 'single') {
-      return 'One-time class';
-    }
-
-    const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const selectedDays = recurrence.daysOfWeek?.map(day => daysOfWeek[day]).join(', ') || '';
+    if (recurrence.scheduleType === 'single') return 'Single class';
     
-    return `Recurring: ${selectedDays}`;
+    const days = recurrence.daysOfWeek?.map(day => {
+      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      return dayNames[day];
+    }).join(', ');
+    
+    return `${recurrence.scheduleType} on ${days}`;
   };
 
-  return (
-    <Card 
-      sx={{ 
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        position: 'relative',
-        '&:hover': {
-          boxShadow: 3,
-        },
-      }}
-    >
-      {/* Color indicator strip */}
-      <Box
-        sx={{
-          height: 4,
-          backgroundColor: getClassTypeColor(classData.classType),
-        }}
-      />
+  // Create menu items array to avoid Fragment issues
+  const menuItems = [];
 
-      <CardContent sx={{ flex: 1, p: 2 }}>
+  // Edit option
+  if (canEdit) {
+    menuItems.push(
+      <MenuItem key="edit" onClick={handleEdit}>
+        <ListItemIcon>
+          <EditIcon fontSize="small" />
+        </ListItemIcon>
+        <ListItemText>Edit {type === 'schedule' ? 'Schedule' : 'Instance'}</ListItemText>
+      </MenuItem>
+    );
+  }
+
+  // Instance-specific actions
+  if (isInstance && instanceData) {
+    if (instanceData.status === 'scheduled' && onStartClass) {
+      menuItems.push(
+        <MenuItem key="start" onClick={handleStartClass}>
+          <ListItemIcon>
+            <PlayArrowIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Start Class</ListItemText>
+        </MenuItem>
+      );
+    }
+
+    if (instanceData.status === 'ongoing' && onEndClass) {
+      menuItems.push(
+        <MenuItem key="end" onClick={handleEndClass}>
+          <ListItemIcon>
+            <StopIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>End Class</ListItemText>
+        </MenuItem>
+      );
+    }
+
+    if (instanceData.status === 'scheduled' && onCancelClass) {
+      menuItems.push(
+        <MenuItem key="cancel" onClick={handleCancelClass}>
+          <ListItemIcon>
+            <CancelIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Cancel Class</ListItemText>
+        </MenuItem>
+      );
+    }
+  }
+
+  // Delete option
+  if (canDelete) {
+    menuItems.push(
+      <MenuItem key="delete" onClick={handleDelete} sx={{ color: 'error.main' }}>
+        <ListItemIcon>
+          <DeleteIcon fontSize="small" color="error" />
+        </ListItemIcon>
+        <ListItemText>Delete {type === 'schedule' ? 'Schedule' : 'Instance'}</ListItemText>
+      </MenuItem>
+    );
+  }
+
+  return (
+    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <CardContent sx={{ flex: 1 }}>
         {/* Header */}
-        <Box display="flex" alignItems="flex-start" justifyContent="between" mb={2}>
-          <Box flex={1} minWidth={0}>
-            <Typography variant="h6" fontWeight="bold" noWrap gutterBottom>
+        <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={1}>
+          <Box flex={1}>
+            <Typography variant="h6" component="h3" gutterBottom>
               {classData.name}
             </Typography>
             
-            <Box display="flex" alignItems="center" gap={1} mb={1}>
+            <Box display="flex" flexWrap="wrap" gap={1} mb={1}>
+              {/* Class Type */}
               <Chip
                 label={classData.classType}
                 size="small"
@@ -181,6 +226,7 @@ export default function ClassCard({
                 }}
               />
               
+              {/* Status for instances */}
               {isInstance && instanceData && (
                 <Chip
                   label={instanceData.status}
@@ -189,11 +235,12 @@ export default function ClassCard({
                   variant="outlined"
                 />
               )}
-
-              {isSchedule && (
+              
+              {/* Recurring indicator for schedules */}
+              {isSchedule && scheduleData && (
                 <Chip
                   icon={<RepeatIcon />}
-                  label={scheduleData?.recurrence.scheduleType === 'recurring' ? 'Recurring' : 'Single'}
+                  label={scheduleData.recurrence.scheduleType === 'single' ? 'Single' : 'Recurring'}
                   size="small"
                   variant="outlined"
                   color="primary"
@@ -297,7 +344,7 @@ export default function ClassCard({
         </Box>
       </CardContent>
 
-      {/* Action Menu */}
+      {/* Action Menu - Fixed: Removed Fragment, passed array directly */}
       <Menu
         anchorEl={anchorEl}
         open={open}
@@ -305,55 +352,7 @@ export default function ClassCard({
         transformOrigin={{ horizontal: 'right', vertical: 'top' }}
         anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
       >
-        {canEdit && (
-          <MenuItem onClick={handleEdit}>
-            <ListItemIcon>
-              <EditIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Edit {type === 'schedule' ? 'Schedule' : 'Instance'}</ListItemText>
-          </MenuItem>
-        )}
-
-        {/* Instance-specific actions */}
-        {isInstance && instanceData && (
-          <>
-            {instanceData.status === 'scheduled' && onStartClass && (
-              <MenuItem onClick={handleStartClass}>
-                <ListItemIcon>
-                  <PlayArrowIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>Start Class</ListItemText>
-              </MenuItem>
-            )}
-
-            {instanceData.status === 'ongoing' && onEndClass && (
-              <MenuItem onClick={handleEndClass}>
-                <ListItemIcon>
-                  <StopIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>End Class</ListItemText>
-              </MenuItem>
-            )}
-
-            {instanceData.status === 'scheduled' && onCancelClass && (
-              <MenuItem onClick={handleCancelClass}>
-                <ListItemIcon>
-                  <CancelIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>Cancel Class</ListItemText>
-              </MenuItem>
-            )}
-          </>
-        )}
-
-        {canDelete && (
-          <MenuItem onClick={handleDelete} sx={{ color: 'error.main' }}>
-            <ListItemIcon>
-              <DeleteIcon fontSize="small" color="error" />
-            </ListItemIcon>
-            <ListItemText>Delete {type === 'schedule' ? 'Schedule' : 'Instance'}</ListItemText>
-          </MenuItem>
-        )}
+        {menuItems}
       </Menu>
     </Card>
   );
