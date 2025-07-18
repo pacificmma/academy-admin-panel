@@ -19,6 +19,7 @@ const classScheduleUpdateSchema = z.object({
   startTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
   scheduleType: z.enum(['single', 'recurring']).optional(),
   daysOfWeek: z.array(z.number().int().min(0).max(6)).optional(),
+  recurrenceEndDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), // ADD THIS LINE
   location: z.string().optional(),
   notes: z.string().optional(),
 });
@@ -128,6 +129,7 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
       recurrencePattern = updates.scheduleType === 'recurring' ? {
         scheduleType: 'recurring' as const,
         daysOfWeek: updates.daysOfWeek || oldSchedule.recurrence?.daysOfWeek,
+        endDate: updates.recurrenceEndDate || oldSchedule.recurrence?.endDate, // ADD THIS LINE
       } : {
         scheduleType: 'single' as const,
       };
@@ -145,11 +147,12 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
 
     // Check if we need to regenerate instances
     const shouldRegenerate =
-      updates.scheduleType ||
-      updates.startDate ||
-      updates.startTime ||
-      updates.duration ||
-      (updates.scheduleType === 'recurring' && updates.daysOfWeek);
+    updates.scheduleType ||
+    updates.startDate ||
+    updates.startTime ||
+    updates.duration ||
+    updates.recurrenceEndDate || // ADD THIS LINE
+    (updates.scheduleType === 'recurring' && updates.daysOfWeek);
 
     if (shouldRegenerate) {
       // Delete existing instances for this schedule
@@ -231,15 +234,20 @@ async function generateClassInstances(scheduleId: string, schedule: any) {
       throw new Error('Invalid recurrence pattern for generating instances.');
     }
 
-    // Import the helper function if available, or implement basic generation
     const today = new Date();
-    const endDate = new Date();
-    endDate.setMonth(today.getMonth() + 3); // Generate for 3 months
+    let endDate: Date;
+    
+    // Use the endDate from recurrence pattern if provided
+    if (schedule.recurrence.endDate) {
+      endDate = new Date(schedule.recurrence.endDate);
+    } else {
+      endDate = new Date();
+      endDate.setMonth(today.getMonth() + 3); // Default to 3 months
+    }
 
     const batch = adminDb.batch();
     const instancesCollection = adminDb.collection('classInstances');
     
-    // Simple implementation - generate instances for the next 3 months
     const daysOfWeek = schedule.recurrence.daysOfWeek;
     const startDate = new Date(schedule.startDate);
     const currentDate = new Date(Math.max(today.getTime(), startDate.getTime()));
@@ -284,7 +292,6 @@ async function generateClassInstances(scheduleId: string, schedule: any) {
     throw error;
   }
 }
-
 // Helper function to create single class instance
 async function createSingleClassInstance(scheduleId: string, schedule: any) {
   try {

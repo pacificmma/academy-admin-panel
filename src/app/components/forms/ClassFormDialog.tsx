@@ -187,8 +187,20 @@ export default function ClassFormDialog({
       newErrors.startTime = 'Start time is required';
     }
 
-    if (formData.scheduleType === 'recurring' && (!formData.daysOfWeek || formData.daysOfWeek.length === 0)) {
-      newErrors.daysOfWeek = 'At least one day must be selected for recurring classes';
+    if (formData.scheduleType === 'recurring') {
+      if (!formData.daysOfWeek || formData.daysOfWeek.length === 0) {
+        newErrors.daysOfWeek = 'At least one day must be selected for recurring classes';
+      }
+
+      // Recurrence end date validation
+      if (formData.recurrenceEndDate) {
+        const startDate = new Date(formData.startDate);
+        const endDate = new Date(formData.recurrenceEndDate);
+
+        if (endDate <= startDate) {
+          newErrors.recurrenceEndDate = 'End date must be after start date';
+        }
+      }
     }
 
     setErrors(newErrors);
@@ -407,6 +419,25 @@ export default function ClassFormDialog({
               </Grid>
 
               {/* Days of Week - Only for recurring */}
+              {formData.scheduleType === 'recurring' && (
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    fullWidth
+                    type="date"
+                    label="Recurrence End Date"
+                    value={formData.recurrenceEndDate || ''}
+                    onChange={(e) => handleInputChange('recurrenceEndDate', e.target.value)}
+                    error={!!errors.recurrenceEndDate}
+                    helperText={errors.recurrenceEndDate || 'How long should this recurring class continue?'}
+                    InputLabelProps={{ shrink: true }}
+                    disabled={isFormLoading}
+                    inputProps={{
+                      min: formData.startDate, // Cannot be before start date
+                    }}
+                  />
+                </Grid>
+              )}
+
               {formData.scheduleType === 'recurring' && (
                 <Grid item xs={12}>
                   <Typography variant="body1" gutterBottom>

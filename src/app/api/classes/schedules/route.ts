@@ -19,6 +19,7 @@ const classScheduleSchema = z.object({
   startTime: z.string().regex(/^\d{2}:\d{2}$/),
   scheduleType: z.enum(['single', 'recurring']),
   daysOfWeek: z.array(z.number().int().min(0).max(6)).optional(),
+  recurrenceEndDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), // ADD THIS LINE
   location: z.string().optional(),
   notes: z.string().optional(),
 }).superRefine((data, ctx) => {
@@ -29,6 +30,20 @@ const classScheduleSchema = z.object({
         message: 'At least one day must be selected for recurring events',
         path: ['daysOfWeek'],
       });
+    }
+    
+    // ADD THIS VALIDATION:
+    if (data.recurrenceEndDate) {
+      const startDate = new Date(data.startDate);
+      const endDate = new Date(data.recurrenceEndDate);
+      
+      if (endDate <= startDate) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Recurrence end date must be after start date',
+          path: ['recurrenceEndDate'],
+        });
+      }
     }
   }
 });
@@ -131,6 +146,7 @@ export const POST = requireAdmin(async (request: NextRequest, context: RequestCo
     const recurrencePattern: RecurrencePattern = validatedData.scheduleType === 'recurring' ? {
       scheduleType: 'recurring' as const,
       daysOfWeek: validatedData.daysOfWeek,
+      endDate: validatedData.recurrenceEndDate, // ADD THIS LINE
     } : {
       scheduleType: 'single' as const,
     };
@@ -224,45 +240,56 @@ async function generateClassInstances(scheduleId: string, schedule: ClassSchedul
       throw new Error('Invalid recurrence pattern for generating instances.');
     }
 
-    // Generate occurrences for a fixed period (e.g., 3 months)
-    const occurrences = generateRecurringClassDates(
-      schedule.startDate,
-      schedule.startTime,
-      schedule.recurrence.daysOfWeek
-    );
+    // Use the endDate from recurrence pattern if provided, otherwise default to 3 months
+    const today = new Date();
+    let endDate: Date;
+    
+    if (schedule.recurrence.endDate) {
+      endDate = new Date(schedule.recurrence.endDate);
+    } else {
+      endDate = new Date();
+      endDate.setMonth(today.getMonth() + 3); // Default to 3 months
+    }
 
     const batch = adminDb.batch();
     const instancesCollection = adminDb.collection('classInstances');
+    
+    const daysOfWeek = schedule.recurrence.daysOfWeek;
+    const startDate = new Date(schedule.startDate);
+    const currentDate = new Date(Math.max(today.getTime(), startDate.getTime()));
+    
+    while (currentDate <= endDate) {
+      if (daysOfWeek.includes(currentDate.getDay())) {
+        const [hours, minutes] = schedule.startTime.split(':').map(Number);
+        const startTimeDate = new Date();
+        startTimeDate.setHours(hours, minutes, 0, 0);
+        const endTimeDate = addMinutes(startTimeDate, schedule.duration);
+        const endTime = formatFns(endTimeDate, 'HH:mm');
 
-    for (const occurrence of occurrences) {
-      const [hours, minutes] = occurrence.time.split(':').map(Number);
-      const startTimeDate = new Date();
-      startTimeDate.setHours(hours, minutes, 0, 0);
-      const endTimeDate = addMinutes(startTimeDate, schedule.duration);
-      const endTime = formatFns(endTimeDate, 'HH:mm');
+        const instanceRef = instancesCollection.doc();
+        const instanceData = {
+          scheduleId,
+          name: schedule.name,
+          classType: schedule.classType,
+          instructorId: schedule.instructorId,
+          instructorName: schedule.instructorName,
+          date: formatFns(currentDate, 'yyyy-MM-dd'),
+          startTime: schedule.startTime,
+          endTime,
+          maxParticipants: schedule.maxParticipants,
+          registeredParticipants: [],
+          waitlist: [],
+          status: 'scheduled',
+          location: schedule.location || '',
+          notes: schedule.notes || '',
+          duration: schedule.duration,
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        };
 
-      const instanceRef = instancesCollection.doc();
-      const instanceData = {
-        scheduleId,
-        name: schedule.name,
-        classType: schedule.classType,
-        instructorId: schedule.instructorId,
-        instructorName: schedule.instructorName,
-        date: occurrence.date,
-        startTime: occurrence.time,
-        endTime,
-        maxParticipants: schedule.maxParticipants,
-        registeredParticipants: [],
-        waitlist: [],
-        status: 'scheduled',
-        location: schedule.location || '',
-        notes: schedule.notes || '',
-        duration: schedule.duration,
-        createdAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      };
-
-      batch.set(instanceRef, instanceData);
+        batch.set(instanceRef, instanceData);
+      }
+      currentDate.setDate(currentDate.getDate() + 1);
     }
 
     await batch.commit();
