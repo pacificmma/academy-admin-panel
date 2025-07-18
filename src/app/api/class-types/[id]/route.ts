@@ -1,4 +1,4 @@
-// src/app/api/class-types/[id]/route.ts - Individual Class Type Management
+// src/app/api/class-types/[id]/route.ts - Individual Class Type Management (Fixed)
 import { NextRequest } from 'next/server';
 import { adminDb } from '@/app/lib/firebase/admin';
 import { z } from 'zod';
@@ -59,6 +59,7 @@ export const GET = requireAdmin(async (request: NextRequest, context: RequestCon
 
     return successResponse(classType);
   } catch (error) {
+    console.error('Error fetching class type:', error);
     return errorResponse('Failed to fetch class type');
   }
 });
@@ -72,11 +73,10 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
     }
 
     const body = await request.json();
-
-    // Validate input
     const validationResult = updateClassTypeSchema.safeParse(body);
+    
     if (!validationResult.success) {
-      return badRequestResponse(validationResult.error.errors[0].message);
+      return badRequestResponse(validationResult.error.errors[0]?.message || 'Invalid input');
     }
 
     const classTypeRef = adminDb.collection('classTypes').doc(params.id);
@@ -86,90 +86,32 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
       return notFoundResponse('Class type');
     }
 
-    const currentData = classTypeDoc.data()!;
-    const { name, color, description, isActive } = validationResult.data;
+    const updates = validationResult.data;
 
-    // If name is being changed, check for duplicates
-    if (name && name !== currentData.name) {
-      const existingSnapshot = await adminDb.collection('classTypes')
-        .where('name', '==', name)
+    // If name is being updated, check for duplicates
+    if (updates.name) {
+      const existingType = await adminDb.collection('classTypes')
+        .where('name', '==', updates.name)
+        .limit(1)
         .get();
 
-      if (!existingSnapshot.empty) {
-        return badRequestResponse('A class type with this name already exists');
+      if (!existingType.empty && existingType.docs[0].id !== params.id) {
+        return badRequestResponse('Class type with this name already exists');
       }
-
-      // If name is changing, update all references
-      const batch = adminDb.batch();
-
-      // Update class schedules
-      const classSchedulesSnapshot = await adminDb.collection('classSchedules')
-        .where('classType', '==', currentData.name)
-        .get();
-
-      classSchedulesSnapshot.forEach(doc => {
-        batch.update(doc.ref, {
-          classType: name,
-          updatedAt: FieldValue.serverTimestamp(),
-        });
-      });
-
-      // Update class instances
-      const classInstancesSnapshot = await adminDb.collection('classInstances')
-        .where('classType', '==', currentData.name)
-        .get();
-
-      classInstancesSnapshot.forEach(doc => {
-        batch.update(doc.ref, {
-          classType: name,
-          updatedAt: FieldValue.serverTimestamp(),
-        });
-      });
-
-      // Update membership plans (replace in classTypes array)
-      const membershipPlansSnapshot = await adminDb.collection('membershipPlans')
-        .where('classTypes', 'array-contains', currentData.name)
-        .get();
-
-      membershipPlansSnapshot.forEach(doc => {
-        const data = doc.data();
-        const updatedClassTypes = data.classTypes.map((ct: string) => 
-          ct === currentData.name ? name : ct
-        );
-        batch.update(doc.ref, {
-          classTypes: updatedClassTypes,
-          updatedAt: FieldValue.serverTimestamp(),
-        });
-      });
-
-      // Commit all updates
-      await batch.commit();
     }
 
-    // Update the class type itself
-    const updateData: any = {
+    const updateData = {
+      ...updates,
       updatedAt: FieldValue.serverTimestamp(),
       updatedBy: session.uid,
     };
 
-    if (name !== undefined) updateData.name = name;
-    if (color !== undefined) updateData.color = color;
-    if (description !== undefined) updateData.description = description;
-    if (isActive !== undefined) updateData.isActive = isActive;
-
     await classTypeRef.update(updateData);
 
-    // Return updated class type
     const updatedDoc = await classTypeRef.get();
     const updatedData = updatedDoc.data()!;
 
-    // Count usage after update
-    const [classUsage, membershipUsage] = await Promise.all([
-      adminDb.collection('classSchedules').where('classType', '==', updatedData.name).get(),
-      adminDb.collection('membershipPlans').where('classTypes', 'array-contains', updatedData.name).get()
-    ]);
-
-    const updatedClassType = {
+    return successResponse({
       id: updatedDoc.id,
       name: updatedData.name,
       color: updatedData.color,
@@ -179,11 +121,9 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
       updatedAt: updatedData.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
       createdBy: updatedData.createdBy,
       updatedBy: updatedData.updatedBy,
-      usageCount: classUsage.size + membershipUsage.size,
-    };
-
-    return successResponse(updatedClassType, 'Class type updated successfully');
+    });
   } catch (error) {
+    console.error('Error updating class type:', error);
     return errorResponse('Failed to update class type');
   }
 });
@@ -191,7 +131,7 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
 // DELETE /api/class-types/[id] - Delete class type
 export const DELETE = requireAdmin(async (request: NextRequest, context: RequestContext) => {
   try {
-    const { params, session } = context;
+    const { params } = context;
     if (!params?.id) {
       return badRequestResponse('Class type ID is required');
     }
@@ -203,38 +143,25 @@ export const DELETE = requireAdmin(async (request: NextRequest, context: Request
       return notFoundResponse('Class type');
     }
 
-    const classTypeName = classTypeDoc.data()!.name;
+    const data = classTypeDoc.data()!;
 
-    // Check if class type is in use
+    // Check if class type is being used in classes or memberships
     const [classUsage, membershipUsage] = await Promise.all([
-      adminDb.collection('classSchedules').where('classType', '==', classTypeName).get(),
-      adminDb.collection('membershipPlans').where('classTypes', 'array-contains', classTypeName).get()
+      adminDb.collection('classSchedules').where('classType', '==', data.name).get(),
+      adminDb.collection('membershipPlans').where('classTypes', 'array-contains', data.name).get()
     ]);
 
-    const totalUsage = classUsage.size + membershipUsage.size;
-
-    if (totalUsage > 0) {
-      // Soft delete - mark as inactive
-      await classTypeRef.update({
-        isActive: false,
-        updatedAt: FieldValue.serverTimestamp(),
-        updatedBy: session.uid,
-      });
-      
-      return successResponse({ 
-        message: `Class type marked as inactive because it's used in ${totalUsage} classes/memberships`,
-        softDeleted: true 
-      });
-    } else {
-      // Hard delete
-      await classTypeRef.delete();
-      
-      return successResponse({ 
-        message: 'Class type deleted successfully',
-        softDeleted: false 
-      });
+    if (classUsage.size > 0 || membershipUsage.size > 0) {
+      return badRequestResponse(
+        `Cannot delete class type "${data.name}" because it is being used in ${classUsage.size} classes and ${membershipUsage.size} membership plans. Please remove all references first.`
+      );
     }
+
+    await classTypeRef.delete();
+
+    return successResponse({ message: 'Class type deleted successfully' });
   } catch (error) {
+    console.error('Error deleting class type:', error);
     return errorResponse('Failed to delete class type');
   }
 });
