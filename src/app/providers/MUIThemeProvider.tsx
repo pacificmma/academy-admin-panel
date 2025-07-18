@@ -1,78 +1,57 @@
-// src/app/providers/MUIThemeProvider.tsx
+// src/app/providers/MUIThemeProvider.tsx - Fixed hydration issues
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
-import CssBaseline from '@mui/material/CssBaseline';
+import { CssBaseline } from '@mui/material';
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v14-appRouter';
 
-// Pacific MMA Theme
 const theme = createTheme({
   palette: {
     mode: 'light',
     primary: {
-      main: '#0F5C6B', // Pacific MMA brand color - updated
-      light: '#2e6f8c',
-      dark: '#003a4a',
-      contrastText: '#ffffff',
+      main: '#0F5C6B',
+      light: '#4A90A4',
+      dark: '#0A3D47',
+      contrastText: '#FFFFFF',
     },
     secondary: {
-      main: '#b8ab94',
-      light: '#ccc2b0',
-      dark: '#8b7862',
-      contrastText: '#000000',
+      main: '#FF6B35',
+      light: '#FF8F65',
+      dark: '#E55A2B',
+      contrastText: '#FFFFFF',
     },
     error: {
-      main: '#dc2626',
-      light: '#f87171',
-      dark: '#991b1b',
+      main: '#DC2626',
+      light: '#EF4444',
+      dark: '#B91C1C',
     },
     warning: {
-      main: '#d97706',
-      light: '#fbbf24',
-      dark: '#92400e',
+      main: '#D97706',
+      light: '#F59E0B',
+      dark: '#92400E',
     },
     info: {
-      main: '#2563eb',
-      light: '#60a5fa',
-      dark: '#1e40af',
+      main: '#2563EB',
+      light: '#3B82F6',
+      dark: '#1D4ED8',
     },
     success: {
-      main: '#16a34a',
-      light: '#4ade80',
-      dark: '#15803d',
+      main: '#059669',
+      light: '#10B981',
+      dark: '#047857',
     },
     background: {
-      default: '#F7F7F7', // Clean background - updated
+      default: '#F9FAFB',
       paper: '#FFFFFF',
     },
     text: {
       primary: '#1F2937',
-      secondary: '#4B5563',
-    },
-    grey: {
-      50: '#F7F7F7',
-      100: '#F0F0F0',
-      200: '#E5E7EB',
-      300: '#D1D5DB',
-      400: '#9CA3AF',
-      500: '#6B7280',
-      600: '#4B5563',
-      700: '#374151',
-      800: '#1F2937',
-      900: '#1A1A1A',
+      secondary: '#6B7280',
     },
   },
   typography: {
-    fontFamily: [
-      '-apple-system',
-      'BlinkMacSystemFont',
-      '"Segoe UI"',
-      'Roboto',
-      '"Helvetica Neue"',
-      'Arial',
-      'sans-serif',
-    ].join(','),
+    fontFamily: 'var(--font-geist-sans), system-ui, sans-serif',
     h1: {
       fontSize: '2.25rem',
       fontWeight: 700,
@@ -166,67 +145,6 @@ const theme = createTheme({
         },
       },
     },
-    MuiTextField: {
-      styleOverrides: {
-        root: {
-          '& .MuiOutlinedInput-root': {
-            borderRadius: 8,
-            '& fieldset': {
-              borderWidth: '2px',
-              borderColor: '#D1D5DB',
-            },
-            '&:hover fieldset': {
-              borderColor: '#9CA3AF',
-            },
-            '&.Mui-focused fieldset': {
-              borderColor: '#0F5C6B',
-              borderWidth: '2px',
-            },
-            '&.Mui-error fieldset': {
-              borderColor: '#dc2626',
-            },
-          },
-          '& .MuiInputLabel-root': {
-            fontWeight: 600,
-            color: '#1F2937',
-            '&.Mui-focused': {
-              color: '#0F5C6B',
-            },
-            '&.Mui-error': {
-              color: '#dc2626',
-            },
-          },
-          '& .MuiInputBase-input': {
-            padding: '14px 16px',
-            fontSize: '1rem',
-            fontWeight: 500,
-          },
-        },
-      },
-    },
-    MuiCard: {
-      styleOverrides: {
-        root: {
-          borderRadius: 12,
-          boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 1px 2px 0 rgba(0, 0, 0, 0.04)',
-          border: '1px solid #E5E7EB',
-          '&:hover': {
-            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.04)',
-          },
-          transition: 'box-shadow 0.2s ease-in-out',
-        },
-      },
-    },
-    MuiPaper: {
-      styleOverrides: {
-        root: {
-          backgroundImage: 'none',
-        },
-        outlined: {
-          border: '1px solid #E5E7EB',
-        },
-      },
-    },
     MuiAppBar: {
       styleOverrides: {
         root: {
@@ -265,7 +183,6 @@ const theme = createTheme({
         },
       },
     },
-    // Loading backdrop
     MuiBackdrop: {
       styleOverrides: {
         root: {
@@ -273,7 +190,6 @@ const theme = createTheme({
         },
       },
     },
-    // Dialog styles
     MuiDialog: {
       styleOverrides: {
         paper: {
@@ -289,12 +205,29 @@ interface MUIThemeProviderProps {
   children: React.ReactNode;
 }
 
+// NoSSR component to prevent hydration issues
+function NoSSR({ children }: { children: React.ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return null;
+  }
+
+  return <>{children}</>;
+}
+
 export default function MUIThemeProvider({ children }: MUIThemeProviderProps) {
   return (
     <AppRouterCacheProvider>
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        {children}
+        <NoSSR>
+          {children}
+        </NoSSR>
       </ThemeProvider>
     </AppRouterCacheProvider>
   );
