@@ -533,7 +533,7 @@ export default function ClassTypeSelector({
                     <IconButton
                       size="small"
                       onClick={() => handleDeleteClassType(type)}
-                      disabled={isSubmitting || (type.usageCount && type.usageCount > 0)}
+                      disabled={isSubmitting || Boolean(type.usageCount && type.usageCount > 0)}
                       color="error"
                     >
                       <DeleteIcon fontSize="small" />

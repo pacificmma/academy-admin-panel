@@ -1,4 +1,4 @@
-// src/app/components/forms/ClassFormDialog.tsx - CLEANED AND FIXED VERSION
+// src/app/components/forms/ClassFormDialog.tsx - COMPLETE VERSION
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -52,7 +52,7 @@ const DEFAULT_FORM_DATA: ClassFormData & { recurrenceDurationValue: number; recu
   classType: '',
   instructorId: '',
   maxParticipants: 20,
-  duration: 60, // in minutes
+  duration: 60,
   startDate: formatFns(new Date(), 'yyyy-MM-dd'),
   startTime: '18:00',
   scheduleType: 'single',
@@ -86,7 +86,6 @@ export default function ClassFormDialog({
   const isEditingSchedule = mode === 'edit' && classDataForEdit && 'recurrence' in classDataForEdit;
   const isEditingInstance = mode === 'edit' && classDataForEdit && !('recurrence' in classDataForEdit);
 
-  // Load form data when editing
   useEffect(() => {
     if (mode === 'edit' && classDataForEdit) {
       if (isEditingSchedule) {
@@ -97,9 +96,9 @@ export default function ClassFormDialog({
           instructorId: scheduleData.instructorId,
           maxParticipants: scheduleData.maxParticipants,
           duration: scheduleData.duration,
-          startDate: scheduleData.recurrence.startDate,
-          startTime: scheduleData.recurrence.startTime,
-          scheduleType: scheduleData.recurrence.type === 'once' ? 'single' : 'recurring',
+          startDate: scheduleData.startDate,
+          startTime: scheduleData.startTime,
+          scheduleType: scheduleData.recurrence.scheduleType === 'single' ? 'single' : 'recurring',
           daysOfWeek: scheduleData.recurrence.daysOfWeek || [],
           recurrenceDurationValue: 4,
           recurrenceDurationUnit: 'weeks',
@@ -125,7 +124,6 @@ export default function ClassFormDialog({
     }
   }, [mode, classDataForEdit, isEditingSchedule, isEditingInstance]);
 
-  // Reset errors when form data changes
   useEffect(() => {
     setErrors({});
   }, [formData]);
@@ -206,7 +204,7 @@ export default function ClassFormDialog({
       await onSubmit(submitData, scheduleId);
       onClose();
     } catch (error) {
-      console.error('Form submission error:', error);
+      // Error handling is done by parent component
     } finally {
       setLoading(false);
     }
@@ -233,7 +231,6 @@ export default function ClassFormDialog({
 
       <DialogContent>
         <Grid container spacing={3} sx={{ mt: 1 }}>
-          {/* Class Name */}
           <Grid item xs={12} md={8}>
             <TextField
               fullWidth
@@ -248,7 +245,74 @@ export default function ClassFormDialog({
             />
           </Grid>
 
-          {/* Schedule Type */}
+          <Grid item xs={12} md={4}>
+            <ClassTypeSelector
+              value={formData.classType}
+              onChange={(value) => handleInputChange('classType', value)}
+              label="Class Type"
+              required
+              disabled={loading}
+            />
+            {errors.classType && (
+              <FormHelperText error>{errors.classType}</FormHelperText>
+            )}
+          </Grid>
+
+          <Grid item xs={12} md={6}>
+            <FormControl fullWidth error={!!errors.instructorId} required disabled={loading}>
+              <InputLabel>Instructor</InputLabel>
+              <Select
+                value={formData.instructorId}
+                label="Instructor"
+                onChange={(e) => handleInputChange('instructorId', e.target.value)}
+              >
+                {instructors.map((instructor) => (
+                  <MenuItem key={instructor.id} value={instructor.id}>
+                    {instructor.name}
+                    {instructor.specialties && instructor.specialties.length > 0 && (
+                      <Typography variant="caption" sx={{ ml: 1, color: 'text.secondary' }}>
+                        ({instructor.specialties.join(', ')})
+                      </Typography>
+                    )}
+                  </MenuItem>
+                ))}
+              </Select>
+              {errors.instructorId && (
+                <FormHelperText>{errors.instructorId}</FormHelperText>
+              )}
+            </FormControl>
+          </Grid>
+
+          <Grid item xs={12} md={3}>
+            <TextField
+              fullWidth
+              type="number"
+              label="Max Participants"
+              value={formData.maxParticipants}
+              onChange={(e) => handleInputChange('maxParticipants', parseInt(e.target.value) || 0)}
+              error={!!errors.maxParticipants}
+              helperText={errors.maxParticipants}
+              inputProps={{ min: 1, max: 100 }}
+              disabled={loading}
+              required
+            />
+          </Grid>
+
+          <Grid item xs={12} md={3}>
+            <TextField
+              fullWidth
+              type="number"
+              label="Duration (minutes)"
+              value={formData.duration}
+              onChange={(e) => handleInputChange('duration', parseInt(e.target.value) || 0)}
+              error={!!errors.duration}
+              helperText={errors.duration}
+              inputProps={{ min: 15, max: 240, step: 15 }}
+              disabled={loading}
+              required
+            />
+          </Grid>
+
           <Grid item xs={12}>
             <FormControl component="fieldset" error={!!errors.scheduleType}>
               <FormLabel component="legend">Schedule Type</FormLabel>
@@ -276,7 +340,6 @@ export default function ClassFormDialog({
             </FormControl>
           </Grid>
 
-          {/* Start Date */}
           <Grid item xs={12} md={6}>
             <TextField
               fullWidth
@@ -292,7 +355,6 @@ export default function ClassFormDialog({
             />
           </Grid>
 
-          {/* Start Time */}
           <Grid item xs={12} md={6}>
             <TextField
               fullWidth
@@ -308,7 +370,6 @@ export default function ClassFormDialog({
             />
           </Grid>
 
-          {/* Days of Week (for recurring classes) */}
           {formData.scheduleType === 'recurring' && (
             <Grid item xs={12}>
               <FormControl component="fieldset" error={!!errors.daysOfWeek}>
@@ -335,7 +396,6 @@ export default function ClassFormDialog({
             </Grid>
           )}
 
-          {/* Recurrence Duration (for recurring classes) */}
           {formData.scheduleType === 'recurring' && (
             <>
               <Grid item xs={12} md={6}>
@@ -383,75 +443,3 @@ export default function ClassFormDialog({
     </Dialog>
   );
 }
-              required
-            />
-          </Grid>
-
-          {/* Class Type */}
-          <Grid item xs={12} md={4}>
-            <ClassTypeSelector
-              value={formData.classType}
-              onChange={(value) => handleInputChange('classType', value)}
-              label="Class Type"
-              required
-              disabled={loading}
-            />
-            {errors.classType && (
-              <FormHelperText error>{errors.classType}</FormHelperText>
-            )}
-          </Grid>
-
-          {/* Instructor */}
-          <Grid item xs={12} md={6}>
-            <FormControl fullWidth error={!!errors.instructorId} required disabled={loading}>
-              <InputLabel>Instructor</InputLabel>
-              <Select
-                value={formData.instructorId}
-                label="Instructor"
-                onChange={(e) => handleInputChange('instructorId', e.target.value)}
-              >
-                {instructors.map((instructor) => (
-                  <MenuItem key={instructor.id} value={instructor.id}>
-                    {instructor.name}
-                    {instructor.specialties && instructor.specialties.length > 0 && (
-                      <Typography variant="caption" sx={{ ml: 1, color: 'text.secondary' }}>
-                        ({instructor.specialties.join(', ')})
-                      </Typography>
-                    )}
-                  </MenuItem>
-                ))}
-              </Select>
-              {errors.instructorId && (
-                <FormHelperText>{errors.instructorId}</FormHelperText>
-              )}
-            </FormControl>
-          </Grid>
-
-          {/* Max Participants */}
-          <Grid item xs={12} md={3}>
-            <TextField
-              fullWidth
-              type="number"
-              label="Max Participants"
-              value={formData.maxParticipants}
-              onChange={(e) => handleInputChange('maxParticipants', parseInt(e.target.value) || 0)}
-              error={!!errors.maxParticipants}
-              helperText={errors.maxParticipants}
-              inputProps={{ min: 1, max: 100 }}
-              disabled={loading}
-              required
-            />
-          </Grid>
-
-          {/* Duration */}
-          <Grid item xs={12} md={3}>
-            <TextField
-              fullWidth
-              type="number"
-              label="Duration (minutes)"
-              value={formData.duration}
-              onChange={(e) => handleInputChange('duration', parseInt(e.target.value) || 0)}
-              error={!!errors.duration}
-              helperText={errors.duration}
-              inputProps={{ min: 15, max: 240, step: 15 }}
-              disabled={loading}

@@ -1,8 +1,8 @@
-// src/app/types/class.ts - Updated with dynamic class types
+// src/app/types/class.ts - UPDATED WITH EXTENDED ClassFilters
 export interface ClassSchedule {
   id: string;
   name: string;
-  classType: string; // Now dynamically created
+  classType: string;
   instructorId: string;
   instructorName: string;
   maxParticipants: number;
@@ -12,6 +12,7 @@ export interface ClassSchedule {
   recurrence: RecurrencePattern;
   location?: string;
   notes?: string;
+  isActive: boolean; // Added missing property
   createdAt: string;
   updatedAt: string;
   createdBy: string;
@@ -22,7 +23,7 @@ export interface ClassInstance {
   id: string;
   scheduleId: string;
   name: string;
-  classType: string; // Now dynamically created
+  classType: string;
   instructorId: string;
   instructorName: string;
   date: string; // ISO date string
@@ -42,7 +43,7 @@ export interface ClassInstance {
 
 export interface ClassFormData {
   name: string;
-  classType: string; // Now dynamically created
+  classType: string;
   instructorId: string;
   maxParticipants: number;
   duration: number; // in minutes
@@ -60,6 +61,8 @@ export interface ClassFilters {
   instructorId?: string;
   date?: string;
   searchTerm?: string;
+  status?: 'all' | 'active' | 'inactive'; // Added missing property
+  dateRange?: 'all' | 'today' | 'week' | 'month'; // Added missing property
 }
 
 export interface RecurrencePattern {
@@ -71,7 +74,7 @@ export interface RecurrencePattern {
 
 export interface ClassScheduleWithoutIdAndTimestamps {
   name: string;
-  classType: string; // Now dynamically created
+  classType: string;
   instructorId: string;
   instructorName: string;
   maxParticipants: number;
@@ -81,6 +84,7 @@ export interface ClassScheduleWithoutIdAndTimestamps {
   recurrence: RecurrencePattern;
   location?: string;
   notes?: string;
+  isActive: boolean; // Added missing property
   createdBy: string;
   updatedBy?: string;
 }
@@ -100,21 +104,27 @@ export interface ClassStats {
 // Helper function to generate recurring class dates
 export function generateRecurringClassDates(
   startDate: string,
+  startTime: string,
   daysOfWeek: number[],
   endDate?: string,
   maxOccurrences?: number
-): string[] {
-  const dates: string[] = [];
+): Array<{ date: string; time: string }> {
+  const dates: Array<{ date: string; time: string }> = [];
   const start = new Date(startDate);
-  const end = endDate ? new Date(endDate) : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000); // 1 year from now
+  const end = endDate ? new Date(endDate) : new Date(start.getTime() + 365 * 24 * 60 * 60 * 1000); // 1 year default
+  const maxCount = maxOccurrences || 52; // 52 weeks default
   
   let currentDate = new Date(start);
-  let occurrenceCount = 0;
+  let count = 0;
 
-  while (currentDate <= end && (!maxOccurrences || occurrenceCount < maxOccurrences)) {
-    if (daysOfWeek.includes(currentDate.getDay())) {
-      dates.push(currentDate.toISOString().split('T')[0]);
-      occurrenceCount++;
+  while (currentDate <= end && count < maxCount) {
+    const dayOfWeek = currentDate.getDay();
+    if (daysOfWeek.includes(dayOfWeek)) {
+      dates.push({
+        date: currentDate.toISOString().split('T')[0], // YYYY-MM-DD format
+        time: startTime
+      });
+      count++;
     }
     currentDate.setDate(currentDate.getDate() + 1);
   }
@@ -122,34 +132,19 @@ export function generateRecurringClassDates(
   return dates;
 }
 
-// Helper function to get class type color (now handled dynamically)
-export function getDefaultClassTypeColor(classType: string): string {
-  const defaultColors: Record<string, string> = {
+// Helper function to get class type color
+export function getClassTypeColor(classType: string): string {
+  const colors: Record<string, string> = {
     'MMA': '#e53e3e',
     'BJJ': '#805ad5',
     'Boxing': '#d69e2e',
-    'Muay Thai': '#e53e3e',
-    'Wrestling': '#38a169',
-    'Judo': '#3182ce',
-    'Kickboxing': '#ed8936',
-    'Fitness': '#4299e1',
-    'Yoga': '#48bb78',
-    'Kids Martial Arts': '#ed64a6',
+    'Muay Thai': '#38a169',
+    'Wrestling': '#3182ce',
+    'Judo': '#ed8936',
+    'Kickboxing': '#4299e1',
+    'Fitness': '#48bb78',
+    'Yoga': '#ed64a6',
+    'Kids Martial Arts': '#718096',
   };
-  
-  return defaultColors[classType] || '#718096';
-}
-
-// Class type interface for dynamic management
-export interface ClassType {
-  id: string;
-  name: string;
-  color?: string;
-  description?: string;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-  createdBy: string;
-  updatedBy?: string;
-  usageCount?: number;
+  return colors[classType] || '#718096';
 }
