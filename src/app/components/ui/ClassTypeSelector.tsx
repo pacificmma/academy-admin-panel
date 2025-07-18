@@ -1,4 +1,4 @@
-// src/app/components/ui/ClassTypeSelector.tsx - COMPLETELY FIXED WITH PERFORMANCE OPTIMIZATION
+// src/app/components/ui/ClassTypeSelector.tsx - FIXED VERSION
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -80,13 +80,19 @@ export default function ClassTypeSelector({
     [classTypes]
   );
 
-  // Load class types with caching to improve performance
+  // Load class types with usage count when needed
   const loadClassTypes = useCallback(async () => {
     try {
       setLoading(true);
       setInternalError(null);
 
-      const response = await fetch('/api/class-types', {
+      // Build URL with includeUsage parameter when showUsageCount is true
+      const url = new URL('/api/class-types', window.location.origin);
+      if (showUsageCount) {
+        url.searchParams.set('includeUsage', 'true');
+      }
+
+      const response = await fetch(url.toString(), {
         method: 'GET',
         credentials: 'include',
         headers: {
@@ -111,9 +117,9 @@ export default function ClassTypeSelector({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showUsageCount]);
 
-  // Load class types on mount
+  // Load class types on mount and when showUsageCount changes
   useEffect(() => {
     loadClassTypes();
   }, [loadClassTypes]);
@@ -169,8 +175,8 @@ export default function ClassTypeSelector({
 
       const newType = await createClassType(newTypeName, newTypeColor, newTypeDescription);
       
-      // Add to local state - this prevents full reload
-      setClassTypes(prev => [...prev, newType]);
+      // Add to local state with usageCount: 0 for new types
+      setClassTypes(prev => [...prev, { ...newType, usageCount: 0 }]);
       
       // Select the new type
       onChange(newType.name);
@@ -217,9 +223,9 @@ export default function ClassTypeSelector({
         throw new Error(result.error || 'Failed to update class type');
       }
 
-      // Update local state - prevents full reload
+      // Update local state - preserve existing usageCount
       setClassTypes(prev => prev.map(ct => 
-        ct.id === editingType.id ? { ...ct, ...result.data } : ct
+        ct.id === editingType.id ? { ...ct, ...result.data, usageCount: ct.usageCount } : ct
       ));
       
       // Update selection if this was the selected value
@@ -262,7 +268,7 @@ export default function ClassTypeSelector({
         throw new Error(result.error || 'Failed to delete class type');
       }
 
-      // Remove from local state - prevents full reload
+      // Remove from local state
       setClassTypes(prev => prev.filter(ct => ct.id !== classType.id));
       
       // Clear selection if this was selected
@@ -333,7 +339,8 @@ export default function ClassTypeSelector({
                     }}
                   />
                   <Typography>{classType.name}</Typography>
-                  {showUsageCount && classType.usageCount !== undefined && (
+                  {/* Show usage count only if it's greater than 0 and showUsageCount is true */}
+                  {showUsageCount && classType.usageCount !== undefined && classType.usageCount > 0 && (
                     <Chip 
                       label={classType.usageCount} 
                       size="small" 
@@ -346,8 +353,28 @@ export default function ClassTypeSelector({
                 {/* Edit/Delete buttons */}
                 {(allowEdit || allowDelete) && (
                   <Box display="flex" gap={0.5}>
+                    {allowEdit && (
+                      <Tooltip title="Edit class type">
+                        <span>
+                          <IconButton
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startEdit(classType);
+                            }}
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    )}
+                    
                     {allowDelete && (
-                      <Tooltip title={classType.usageCount && classType.usageCount > 0 ? 'Cannot delete - in use' : 'Delete class type'}>
+                      <Tooltip title={
+                        classType.usageCount !== undefined && classType.usageCount > 0 
+                          ? `Cannot delete - used by ${classType.usageCount} class(es)` 
+                          : 'Delete class type'
+                      }>
                         <span>
                           <IconButton
                             size="small"
@@ -355,6 +382,10 @@ export default function ClassTypeSelector({
                             onClick={(e) => {
                               e.stopPropagation();
                               handleDeleteClassType(classType);
+                            }}
+                            sx={{
+                              opacity: classType.usageCount !== undefined && classType.usageCount > 0 ? 0.5 : 1,
+                              cursor: classType.usageCount !== undefined && classType.usageCount > 0 ? 'not-allowed' : 'pointer'
                             }}
                           >
                             <DeleteIcon fontSize="small" />
@@ -427,10 +458,16 @@ export default function ClassTypeSelector({
                         height: 32,
                         backgroundColor: color,
                         border: newTypeColor === color ? '3px solid #000' : '1px solid #ddd',
-                        '&:hover': { backgroundColor: color, opacity: 0.8 },
+                        borderRadius: '4px',
+                        '&:hover': {
+                          backgroundColor: color,
+                          opacity: 0.8,
+                        },
                       }}
                     >
-                      {newTypeColor === color && <ColorIcon fontSize="small" sx={{ color: '#fff' }} />}
+                      {newTypeColor === color && (
+                        <ColorIcon fontSize="small" sx={{ color: '#fff' }} />
+                      )}
                     </IconButton>
                   </Tooltip>
                 ))}
@@ -447,9 +484,24 @@ export default function ClassTypeSelector({
               placeholder="Brief description of this class type"
             />
 
-            {internalError && (
-              <Alert severity="error">{internalError}</Alert>
-            )}
+            {/* Preview */}
+            <Box>
+              <Typography variant="subtitle2" gutterBottom>
+                Preview
+              </Typography>
+              <Box display="flex" alignItems="center" gap={1} p={1} bgcolor="#f5f5f5" borderRadius={1}>
+                <Box
+                  sx={{
+                    width: 16,
+                    height: 16,
+                    borderRadius: '50%',
+                    backgroundColor: newTypeColor,
+                    border: '1px solid #ddd',
+                  }}
+                />
+                <Typography>{newTypeName || 'Class Type Name'}</Typography>
+              </Box>
+            </Box>
           </Box>
         </DialogContent>
 
@@ -461,9 +513,9 @@ export default function ClassTypeSelector({
             onClick={editingType ? handleUpdateClassType : handleCreateClassType}
             variant="contained"
             disabled={!newTypeName.trim() || isSubmitting}
-            startIcon={isSubmitting ? <CircularProgress size={16} /> : undefined}
+            startIcon={isSubmitting && <CircularProgress size={20} />}
           >
-            {editingType ? 'Update' : 'Create'}
+            {isSubmitting ? 'Saving...' : (editingType ? 'Update' : 'Create')}
           </Button>
         </DialogActions>
       </Dialog>
