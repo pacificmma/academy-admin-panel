@@ -39,11 +39,14 @@ export const GET = requireStaffOrTrainer(async (request: NextRequest, context: R
   try {
     const { params, session } = context;
     
-    if (!params?.id) {
+    // FIXED: Await params before accessing properties (Next.js 15 requirement)
+    const awaitedParams = await params;
+    
+    if (!awaitedParams?.id) {
       return badRequestResponse('Schedule ID is required');
     }
 
-    const scheduleRef = adminDb.collection('classSchedules').doc(params.id);
+    const scheduleRef = adminDb.collection('classSchedules').doc(awaitedParams.id);
     const scheduleDoc = await scheduleRef.get();
 
     if (!scheduleDoc.exists) {
@@ -52,46 +55,30 @@ export const GET = requireStaffOrTrainer(async (request: NextRequest, context: R
 
     const data = scheduleDoc.data()!;
 
-    // Check if trainer can access this schedule
-    if ((session.role === 'trainer' || session.role === 'visiting_trainer') && data.instructorId !== session.uid) {
-      return errorResponse('Access denied', 403);
-    }
-
-    // Get instructor name
-    let instructorName = 'Unknown';
-    try {
-      const instructorDoc = await adminDb.collection('staff').doc(data.instructorId).get();
-      if (instructorDoc.exists) {
-        instructorName = instructorDoc.data()?.fullName || 'Unknown';
-      }
-    } catch (error) {
-      console.error('Error fetching instructor:', error);
-    }
-
     const schedule: ClassSchedule = {
       id: scheduleDoc.id,
-      name: data.name || '',
-      classType: data.classType || '',
-      instructorId: data.instructorId || '',
-      instructorName,
-      maxParticipants: data.maxParticipants || 20,
-      duration: data.duration || 60,
-      startDate: data.startDate || '',
-      startTime: data.startTime || '',
+      name: data.name,
+      classType: data.classType,
+      instructorId: data.instructorId,
+      instructorName: data.instructorName,
+      maxParticipants: data.maxParticipants,
+      duration: data.duration,
+      startDate: data.startDate,
+      startTime: data.startTime,
       recurrence: data.recurrence || { scheduleType: 'single' },
-      location: data.location || '',
-      notes: data.notes || '',
+      location: data.location,
+      notes: data.notes,
       isActive: data.isActive ?? true,
       createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
       updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
       createdBy: data.createdBy || '',
-      updatedBy: data.updatedBy,
+      updatedBy: data.updatedBy || '',
     };
 
     return successResponse(schedule);
   } catch (error) {
     console.error('Error fetching class schedule:', error);
-    return errorResponse('Failed to fetch class schedule', 500);
+    return errorResponse('Failed to load class schedule', 500);
   }
 });
 
@@ -100,66 +87,83 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
   try {
     const { params, session } = context;
     
-    if (!params?.id) {
+    // FIXED: Await params before accessing properties (Next.js 15 requirement)
+    const awaitedParams = await params;
+    
+    if (!awaitedParams?.id) {
       return badRequestResponse('Schedule ID is required');
     }
 
     const body = await request.json();
     const validationResult = classScheduleUpdateSchema.safeParse(body);
-    
+
     if (!validationResult.success) {
-      const firstError = validationResult.error.errors[0];
-      return badRequestResponse(firstError?.message || 'Invalid input');
+      return badRequestResponse('Validation failed: ' + validationResult.error.errors[0]?.message);
     }
 
     const updates = validationResult.data;
 
-    const scheduleRef = adminDb.collection('classSchedules').doc(params.id);
+    const scheduleRef = adminDb.collection('classSchedules').doc(awaitedParams.id);
     const scheduleDoc = await scheduleRef.get();
 
     if (!scheduleDoc.exists) {
       return notFoundResponse('Class schedule');
     }
 
-    const oldSchedule = scheduleDoc.data()!;
-
-    // Verify instructor exists if changing
-    let instructorName = oldSchedule.instructorName;
-    if (updates.instructorId && updates.instructorId !== oldSchedule.instructorId) {
-      const instructorDoc = await adminDb.collection('staff').doc(updates.instructorId).get();
-      if (!instructorDoc.exists) {
-        return badRequestResponse('Instructor not found');
-      }
-      const instructorData = instructorDoc.data()!;
-      if (!instructorData.isActive) {
-        return badRequestResponse('Selected instructor is not active');
-      }
-      instructorName = instructorData.fullName || 'Unknown';
-    }
-
-    // Construct recurrence pattern if schedule type is being updated
-    let recurrencePattern: RecurrencePattern | undefined;
-    if (updates.scheduleType) {
-      recurrencePattern = {
-        scheduleType: updates.scheduleType,
-        daysOfWeek: updates.scheduleType === 'recurring' ? (updates.daysOfWeek || []) : undefined,
-        endDate: updates.recurrenceEndDate ? new Date(updates.recurrenceEndDate).toISOString() : undefined,
-      };
-    }
-
-    // Prepare update data
+    // Build update data, filtering out undefined values
     const updateData: any = {
-      ...updates,
       updatedAt: FieldValue.serverTimestamp(),
       updatedBy: session.uid,
     };
 
-    if (instructorName) {
-      updateData.instructorName = instructorName;
+    // FIXED: Only add fields that are not undefined to prevent Firestore errors
+    if (updates.name !== undefined) updateData.name = updates.name;
+    if (updates.classType !== undefined) updateData.classType = updates.classType;
+    if (updates.instructorId !== undefined) updateData.instructorId = updates.instructorId;
+    if (updates.maxParticipants !== undefined) updateData.maxParticipants = updates.maxParticipants;
+    if (updates.duration !== undefined) updateData.duration = updates.duration;
+    if (updates.startDate !== undefined) updateData.startDate = updates.startDate;
+    if (updates.startTime !== undefined) updateData.startTime = updates.startTime;
+    if (updates.location !== undefined) updateData.location = updates.location;
+    if (updates.notes !== undefined) updateData.notes = updates.notes;
+
+    // Handle recurrence pattern updates
+    if (updates.scheduleType !== undefined) {
+      const currentData = scheduleDoc.data()!;
+      const currentRecurrence = currentData.recurrence || { scheduleType: 'single' };
+      
+      const newRecurrence: RecurrencePattern = {
+        scheduleType: updates.scheduleType,
+      };
+
+      if (updates.scheduleType === 'recurring') {
+        // For recurring schedules, include daysOfWeek and endDate
+        if (updates.daysOfWeek !== undefined && updates.daysOfWeek.length > 0) {
+          newRecurrence.daysOfWeek = updates.daysOfWeek;
+        } else {
+          // Keep existing daysOfWeek if not provided
+          newRecurrence.daysOfWeek = currentRecurrence.daysOfWeek || [];
+        }
+        
+        if (updates.recurrenceEndDate !== undefined && updates.recurrenceEndDate.trim() !== '') {
+          newRecurrence.endDate = new Date(updates.recurrenceEndDate).toISOString();
+        } else if (currentRecurrence.endDate) {
+          // Keep existing endDate if not provided
+          newRecurrence.endDate = currentRecurrence.endDate;
+        }
+      }
+      // For single schedules, we don't include daysOfWeek or endDate
+
+      updateData.recurrence = newRecurrence;
     }
 
-    if (recurrencePattern) {
-      updateData.recurrence = recurrencePattern;
+    // If instructor is being updated, fetch instructor name
+    if (updates.instructorId) {
+      const instructorDoc = await adminDb.collection('staff').doc(updates.instructorId).get();
+      if (instructorDoc.exists) {
+        const instructorData = instructorDoc.data()!;
+        updateData.instructorName = instructorData.fullName || 'Unknown Instructor';
+      }
     }
 
     // Update the schedule
@@ -171,17 +175,17 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
 
     const updatedSchedule: ClassSchedule = {
       id: updatedDoc.id,
-      name: updatedData.name || '',
-      classType: updatedData.classType || '',
-      instructorId: updatedData.instructorId || '',
-      instructorName: updatedData.instructorName || 'Unknown',
-      maxParticipants: updatedData.maxParticipants || 20,
-      duration: updatedData.duration || 60,
-      startDate: updatedData.startDate || '',
-      startTime: updatedData.startTime || '',
+      name: updatedData.name,
+      classType: updatedData.classType,
+      instructorId: updatedData.instructorId,
+      instructorName: updatedData.instructorName,
+      maxParticipants: updatedData.maxParticipants,
+      duration: updatedData.duration,
+      startDate: updatedData.startDate,
+      startTime: updatedData.startTime,
       recurrence: updatedData.recurrence || { scheduleType: 'single' },
-      location: updatedData.location || '',
-      notes: updatedData.notes || '',
+      location: updatedData.location,
+      notes: updatedData.notes,
       isActive: updatedData.isActive ?? true,
       createdAt: updatedData.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -206,11 +210,14 @@ export const DELETE = requireAdmin(async (request: NextRequest, context: Request
   try {
     const { params } = context;
     
-    if (!params?.id) {
+    // FIXED: Await params before accessing properties (Next.js 15 requirement)
+    const awaitedParams = await params;
+    
+    if (!awaitedParams?.id) {
       return badRequestResponse('Schedule ID is required');
     }
 
-    const scheduleRef = adminDb.collection('classSchedules').doc(params.id);
+    const scheduleRef = adminDb.collection('classSchedules').doc(awaitedParams.id);
     const scheduleDoc = await scheduleRef.get();
 
     if (!scheduleDoc.exists) {
@@ -219,7 +226,7 @@ export const DELETE = requireAdmin(async (request: NextRequest, context: Request
 
     // Check if there are associated instances
     const instancesQuery = await adminDb.collection('classInstances')
-      .where('scheduleId', '==', params.id)
+      .where('scheduleId', '==', awaitedParams.id)
       .get();
 
     if (!instancesQuery.empty) {

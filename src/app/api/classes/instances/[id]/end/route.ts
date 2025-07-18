@@ -1,7 +1,6 @@
-// src/app/api/classes/instances/[id]/end/route.ts - End Class Instance
-
+// src/app/api/classes/instances/[id]/end/route.ts - FIXED
 import { requireTrainer, RequestContext } from "@/app/lib/api/middleware";
-import { errorResponse, successResponse } from "@/app/lib/api/response-utils";
+import { errorResponse, successResponse, badRequestResponse, notFoundResponse } from "@/app/lib/api/response-utils";
 import { adminDb } from "@/app/lib/firebase/admin";
 import { FieldValue } from "firebase-admin/firestore";
 import { NextRequest } from "next/server";
@@ -10,27 +9,36 @@ import { NextRequest } from "next/server";
 export const POST = requireTrainer(async (request: NextRequest, context: RequestContext) => {
   try {
     const { params } = context;
-    const instanceId = Array.isArray(params?.id) ? params.id[0] : params?.id;
+    
+    // FIXED: Await params before accessing properties (Next.js 15 requirement)
+    const awaitedParams = await params;
+    const instanceId = Array.isArray(awaitedParams?.id) ? awaitedParams.id[0] : awaitedParams?.id;
     
     if (!instanceId) {
-      return errorResponse('Class instance ID is required', 400);
+      return badRequestResponse('Class instance ID is required');
     }
     
-    const body = await request.json();
-    const { actualDuration, notes } = body;
-
     const instanceRef = adminDb.collection('classInstances').doc(instanceId);
     const instanceDoc = await instanceRef.get();
 
     if (!instanceDoc.exists) {
-      return errorResponse('Class instance not found', 404);
+      return notFoundResponse('Class instance not found');
     }
 
     const data = instanceDoc.data()!;
 
     // Check if class can be ended
     if (data.status !== 'ongoing') {
-      return errorResponse('Class cannot be ended', 400);
+      return badRequestResponse(`Class cannot be ended. Current status: ${data.status}`);
+    }
+
+    // Parse optional body for additional data
+    let actualDuration;
+    try {
+      const body = await request.json();
+      actualDuration = body.actualDuration;
+    } catch {
+      // No body provided, that's fine
     }
 
     const updateData: any = {
@@ -38,18 +46,15 @@ export const POST = requireTrainer(async (request: NextRequest, context: Request
       updatedAt: FieldValue.serverTimestamp(),
     };
 
-    if (actualDuration) {
+    if (actualDuration && typeof actualDuration === 'number' && actualDuration > 0) {
       updateData.actualDuration = actualDuration;
-    }
-
-    if (notes) {
-      updateData.notes = notes;
     }
 
     await instanceRef.update(updateData);
 
     return successResponse({ message: 'Class ended successfully' });
   } catch (error) {
-    return errorResponse('Failed to end class');
+    console.error('Error ending class:', error);
+    return errorResponse('Failed to end class', 500);
   }
 });

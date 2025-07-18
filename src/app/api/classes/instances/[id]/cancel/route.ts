@@ -1,7 +1,6 @@
-// src/app/api/classes/instances/[id]/cancel/route.ts - Cancel Class Instance
-
+// src/app/api/classes/instances/[id]/cancel/route.ts - FIXED
 import { requireAdmin, RequestContext } from "@/app/lib/api/middleware";
-import { errorResponse, successResponse } from "@/app/lib/api/response-utils";
+import { errorResponse, successResponse, badRequestResponse, notFoundResponse } from "@/app/lib/api/response-utils";
 import { adminDb } from "@/app/lib/firebase/admin";
 import { FieldValue } from "firebase-admin/firestore";
 import { NextRequest } from "next/server";
@@ -10,10 +9,13 @@ import { NextRequest } from "next/server";
 export const POST = requireAdmin(async (request: NextRequest, context: RequestContext) => {
   try {
     const { params } = context;
-    const instanceId = Array.isArray(params?.id) ? params.id[0] : params?.id;
+    
+    // FIXED: Await params before accessing properties (Next.js 15 requirement)
+    const awaitedParams = await params;
+    const instanceId = Array.isArray(awaitedParams?.id) ? awaitedParams.id[0] : awaitedParams?.id;
     
     if (!instanceId) {
-      return errorResponse('Class instance ID is required', 400);
+      return badRequestResponse('Class instance ID is required');
     }
     
     const body = await request.json();
@@ -23,14 +25,14 @@ export const POST = requireAdmin(async (request: NextRequest, context: RequestCo
     const instanceDoc = await instanceRef.get();
 
     if (!instanceDoc.exists) {
-      return errorResponse('Class instance not found', 404);
+      return notFoundResponse('Class instance not found');
     }
 
     const data = instanceDoc.data()!;
 
     // Check if class can be cancelled
     if (data.status === 'completed' || data.status === 'cancelled') {
-      return errorResponse('Class cannot be cancelled', 400);
+      return badRequestResponse(`Class cannot be cancelled. Current status: ${data.status}`);
     }
 
     const updateData: any = {
@@ -38,8 +40,8 @@ export const POST = requireAdmin(async (request: NextRequest, context: RequestCo
       updatedAt: FieldValue.serverTimestamp(),
     };
 
-    if (reason) {
-      updateData.cancellationReason = reason;
+    if (reason && typeof reason === 'string' && reason.trim() !== '') {
+      updateData.cancellationReason = reason.trim();
     }
 
     await instanceRef.update(updateData);
@@ -48,6 +50,7 @@ export const POST = requireAdmin(async (request: NextRequest, context: RequestCo
 
     return successResponse({ message: 'Class cancelled successfully' });
   } catch (error) {
-    return errorResponse('Failed to cancel class');
+    console.error('Error cancelling class:', error);
+    return errorResponse('Failed to cancel class', 500);
   }
 });

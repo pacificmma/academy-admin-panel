@@ -1,4 +1,4 @@
-// src/app/classes/ClassesPageClient.tsx
+// src/app/classes/ClassesPageClient.tsx - FIXED VERSION
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -85,120 +85,100 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
   // Filters - Initialize with default values to prevent controlled/uncontrolled issues
   const [filters, setFilters] = useState<ClassFilters>(DEFAULT_FILTERS);
 
-  // Load instructors data
-  const loadInstructors = useCallback(async () => {
-    try {
-      setError(null);
-      console.log('[Classes] Loading instructors...');
+  // FIXED: Removed useCallback from individual load functions and consolidated into single loadData function
+  // This prevents circular dependencies in the useEffect dependency array
 
-      // Get all active staff members (now only admin, trainer, visiting_trainer)
-      const response = await fetch('/api/staff?status=active', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-
-      console.log('[Classes] Staff API response status:', response.status);
-
-      if (!response.ok) {
-        let errorMessage = `HTTP ${response.status}: Failed to load instructors`;
-
-        try {
-          const errorText = await response.text();
-          console.error('[Classes] Staff API error response:', errorText);
-
-          const errorData = JSON.parse(errorText);
-          errorMessage = errorData.error || errorMessage;
-          console.error('[Classes] Parsed error data:', errorData);
-        } catch (parseError) {
-          console.error('[Classes] Failed to parse error response:', parseError);
-        }
-
-        setError(errorMessage);
-        setInstructors([]);
-        return;
-      }
-
-      const data = await response.json();
-      console.log('[Classes] Staff API success response data length:', data.data?.length || 0);
-
-      if (data.success) {
-        // Filter for trainers and visiting trainers only (admins can also be instructors)
-        const allStaff = data.data || [];
-        const instructors = allStaff.filter((staff: StaffRecord) =>
-          staff.role === 'trainer' ||
-          staff.role === 'visiting_trainer' ||
-          staff.role === 'admin' // Admins can also be instructors
-        );
-
-        console.log('[Classes] Total staff members:', allStaff.length);
-        console.log('[Classes] Available instructors:', instructors.length);
-        console.log('[Classes] Instructor roles found:', instructors.map((t: StaffRecord) => t.role));
-        console.log('[Classes] Instructor names:', instructors.map((t: StaffRecord) => t.fullName));
-
-        setInstructors(instructors);
-      } else {
-        console.error('[Classes] Staff API returned unsuccessful response:', data);
-        setError(data.error || 'Failed to load instructors');
-        setInstructors([]);
-      }
-    } catch (error) {
-      console.error('[Classes] Network error loading instructors:', error);
-      setError('Network error: Failed to load instructors. Please check your connection and try again.');
-      setInstructors([]);
-    }
-  }, []);
-
-  // Load class schedules
-  const loadSchedules = useCallback(async () => {
-    try {
-      const response = await fetch('/api/classes/schedules');
-      if (response.ok) {
-        const data = await response.json();
-        setSchedules(data.data || []);
-      }
-    } catch (error) {
-      console.error('Error loading schedules:', error);
-      setError('Failed to load class schedules');
-    }
-  }, []);
-
-  // Load class instances
-  const loadInstances = useCallback(async () => {
-    try {
-      const response = await fetch('/api/classes/instances');
-      if (response.ok) {
-        const data = await response.json();
-        setAllInstances(data.data || []);
-      }
-    } catch (error) {
-      console.error('Error loading instances:', error);
-      setError('Failed to load class instances');
-    }
-  }, []);
-
-  // Load all data
+  // Combined data loading function - FIXED: No dependencies to prevent infinite re-renders
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
+      // Load instructors
+      const loadInstructors = async () => {
+        try {
+          const response = await fetch('/api/staff?status=active', {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+          });
+
+          if (!response.ok) {
+            let errorMessage = `HTTP ${response.status}: Failed to load instructors`;
+            try {
+              const errorText = await response.text();
+              const errorData = JSON.parse(errorText);
+              errorMessage = errorData.error || errorMessage;
+            } catch (parseError) {
+              // If we can't parse the error, use the generic message
+            }
+            throw new Error(errorMessage);
+          }
+
+          const data = await response.json();
+          if (data.success) {
+            // Filter for trainers and visiting trainers only (admins can also be instructors)
+            const allStaff = data.data || [];
+            const availableInstructors = allStaff.filter((staff: StaffRecord) =>
+              staff.role === 'trainer' ||
+              staff.role === 'visiting_trainer' ||
+              staff.role === 'admin' // Admins can also be instructors
+            );
+            setInstructors(availableInstructors);
+          } else {
+            throw new Error(data.error || 'Failed to load instructors');
+          }
+        } catch (error) {
+          throw new Error('Network error: Failed to load instructors. Please check your connection and try again.');
+        }
+      };
+
+      // Load class schedules
+      const loadSchedules = async () => {
+        try {
+          const response = await fetch('/api/classes/schedules');
+          if (!response.ok) {
+            throw new Error('Failed to load class schedules');
+          }
+          const data = await response.json();
+          setSchedules(data.data || []);
+        } catch (error) {
+          throw new Error('Failed to load class schedules');
+        }
+      };
+
+      // Load class instances
+      const loadInstances = async () => {
+        try {
+          const response = await fetch('/api/classes/instances');
+          if (!response.ok) {
+            throw new Error('Failed to load class instances');
+          }
+          const data = await response.json();
+          setAllInstances(data.data || []);
+        } catch (error) {
+          throw new Error('Failed to load class instances');
+        }
+      };
+
+      // Execute all loading operations
       await Promise.all([
         loadSchedules(),
         loadInstances(),
         loadInstructors(),
       ]);
+
     } catch (error) {
-      console.error('Error loading data:', error);
-      setError('Failed to load data');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load data';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
-  }, [loadSchedules, loadInstances, loadInstructors]);
+  }, []); // FIXED: Empty dependency array to prevent infinite re-renders
 
-  // Initial data load
+  // Initial data load - FIXED: loadData is now stable
   useEffect(() => {
     loadData();
   }, [loadData]);
@@ -215,6 +195,15 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
   const clearFilters = useCallback(() => {
     setFilters(DEFAULT_FILTERS);
   }, []);
+
+  // Transform instructors data to match ClassFormDialog interface
+  const transformedInstructors = useMemo(() => {
+    return instructors.map(instructor => ({
+      id: instructor.id,
+      name: instructor.fullName, // Transform fullName to name
+      specialties: instructor.specializations || [], // Transform specializations to specialties
+    }));
+  }, [instructors]);
 
   // Get unique class types for filter
   const uniqueClassTypes = useMemo(() => {
@@ -299,7 +288,6 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
         setError(errorData.message || 'Failed to save class');
       }
     } catch (error) {
-      console.error('Error submitting form:', error);
       setError('Failed to save class');
     } finally {
       setSubmitLoading(false);
@@ -331,7 +319,6 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
         setError(errorData.message || 'Failed to delete class');
       }
     } catch (error) {
-      console.error('Error deleting class:', error);
       setError('Failed to delete class');
     } finally {
       setSubmitLoading(false);
@@ -364,7 +351,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
   const handleStartClass = async (instanceId: string) => {
     try {
       const response = await fetch(`/api/classes/instances/${instanceId}/start`, {
-        method: 'PATCH',
+        method: 'POST', // FIXED: Changed from PATCH to POST to match API
       });
 
       if (response.ok) {
@@ -374,7 +361,6 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
         setError('Failed to start class');
       }
     } catch (error) {
-      console.error('Error starting class:', error);
       setError('Failed to start class');
     }
   };
@@ -382,7 +368,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
   const handleEndClass = async (instanceId: string) => {
     try {
       const response = await fetch(`/api/classes/instances/${instanceId}/end`, {
-        method: 'PATCH',
+        method: 'POST', // FIXED: Changed from PATCH to POST to match API
       });
 
       if (response.ok) {
@@ -392,7 +378,6 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
         setError('Failed to end class');
       }
     } catch (error) {
-      console.error('Error ending class:', error);
       setError('Failed to end class');
     }
   };
@@ -400,7 +385,13 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
   const handleCancelClass = async (instanceId: string) => {
     try {
       const response = await fetch(`/api/classes/instances/${instanceId}/cancel`, {
-        method: 'PATCH',
+        method: 'POST', // FIXED: Changed from PATCH to POST to match API
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          reason: 'Cancelled by administrator', // Add cancellation reason
+        }),
       });
 
       if (response.ok) {
@@ -410,7 +401,6 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
         setError('Failed to cancel class');
       }
     } catch (error) {
-      console.error('Error cancelling class:', error);
       setError('Failed to cancel class');
     }
   };
@@ -473,128 +463,119 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
                 value={viewMode}
                 onChange={(_, newValue) => setViewMode(newValue)}
               >
-                <Tab
-                  icon={<ListIcon />}
-                  label="List View"
-                  value="list"
-                />
-                <Tab
-                  icon={<CalendarIcon />}
-                  label="Calendar View"
-                  value="calendar"
-                />
+                <Tab icon={<ListIcon />} label="List View" value="list" />
+                <Tab icon={<CalendarIcon />} label="Calendar View" value="calendar" />
               </Tabs>
             </Box>
 
             {/* Filters */}
-            <Box>
-              <Grid container spacing={2} alignItems="center">
-                <Grid item xs={12} md={4}>
-                  <TextField
-                    size="small"
-                    fullWidth
-                    placeholder="Search classes..."
-                    value={filters.searchTerm}
-                    onChange={(e) => handleFilterChange('searchTerm', e.target.value)}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <SearchIcon />
-                        </InputAdornment>
-                      ),
-                    }}
-                  />
-                </Grid>
-
-                <Grid item xs={12} md={2}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Class Type</InputLabel>
-                    <Select
-                      value={filters.classType}
-                      onChange={(e) => handleFilterChange('classType', e.target.value)}
-                      label="Class Type"
-                    >
-                      <MenuItem value="">All Types</MenuItem>
-                      {uniqueClassTypes.map((type) => (
-                        <MenuItem key={type} value={type}>
-                          {type}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-
-                <Grid item xs={12} md={2}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Instructor</InputLabel>
-                    <Select
-                      value={filters.instructorId}
-                      onChange={(e) => handleFilterChange('instructorId', e.target.value)}
-                      label="Instructor"
-                    >
-                      <MenuItem value="">All Instructors</MenuItem>
-                      {instructors.map((instructor) => (
-                        <MenuItem key={instructor.id} value={instructor.id}>
-                          {instructor.fullName}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-
-                <Grid item xs={12} md={2}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Status</InputLabel>
-                    <Select
-                      value={filters.status}
-                      onChange={(e) => handleFilterChange('status', e.target.value)}
-                      label="Status"
-                    >
-                      <MenuItem value="all">All</MenuItem>
-                      <MenuItem value="active">Active</MenuItem>
-                      <MenuItem value="inactive">Inactive</MenuItem>
-                    </Select>
-                  </FormControl>
-                </Grid>
-
-                <Grid item xs={12} md={2}>
-                  <Box display="flex" gap={1}>
-                    <Button size="small" onClick={clearFilters}>
-                      Clear Filters
-                    </Button>
-                    <Typography variant="body2" color="text.secondary" sx={{ alignSelf: 'center' }}>
-                      {filteredData.length} results
-                    </Typography>
-                  </Box>
-                </Grid>
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6} md={3}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  placeholder="Search classes..."
+                  value={filters.searchTerm}
+                  onChange={(e) => handleFilterChange('searchTerm', e.target.value)}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
               </Grid>
-            </Box>
+
+              <Grid item xs={12} sm={6} md={2}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Class Type</InputLabel>
+                  <Select
+                    value={filters.classType}
+                    label="Class Type"
+                    onChange={(e) => handleFilterChange('classType', e.target.value)}
+                  >
+                    <MenuItem value="">All Types</MenuItem>
+                    {uniqueClassTypes.map((type) => (
+                      <MenuItem key={type} value={type}>
+                        {type}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+
+              <Grid item xs={12} sm={6} md={2}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Instructor</InputLabel>
+                  <Select
+                    value={filters.instructorId}
+                    label="Instructor"
+                    onChange={(e) => handleFilterChange('instructorId', e.target.value)}
+                  >
+                    <MenuItem value="">All Instructors</MenuItem>
+                    {instructors.map((instructor) => (
+                      <MenuItem key={instructor.id} value={instructor.id}>
+                        {instructor.fullName}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+
+              <Grid item xs={12} sm={6} md={2}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Status</InputLabel>
+                  <Select
+                    value={filters.status}
+                    label="Status"
+                    onChange={(e) => handleFilterChange('status', e.target.value)}
+                  >
+                    <MenuItem value="all">All</MenuItem>
+                    <MenuItem value="active">Active</MenuItem>
+                    <MenuItem value="inactive">Inactive</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+
+              <Grid item xs={12} sm={6} md={3}>
+                <Box display="flex" gap={1}>
+                  <Button
+                    size="small"
+                    onClick={clearFilters}
+                    disabled={Object.values(filters).every(v => !v || v === 'all')}
+                  >
+                    Clear Filters
+                  </Button>
+                </Box>
+              </Grid>
+            </Grid>
           </Paper>
 
           {/* Content */}
           {viewMode === 'list' ? (
-            <Grid container spacing={2}>
+            <Grid container spacing={3}>
               {filteredData.length === 0 ? (
                 <Grid item xs={12}>
                   <Paper sx={{ p: 4, textAlign: 'center' }}>
-                    <Typography variant="h6" color="text.secondary" gutterBottom>
+                    <Typography variant="h6" color="textSecondary">
                       No classes found
                     </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {filters.searchTerm || filters.classType || filters.instructorId
-                        ? 'Try adjusting your filters or search terms.'
-                        : 'Create your first class to get started.'}
+                    <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+                      {Object.values(filters).some(v => v && v !== 'all')
+                        ? 'Try adjusting your filters'
+                        : 'Create your first class to get started'}
                     </Typography>
                   </Paper>
                 </Grid>
               ) : (
                 filteredData.map((classData) => (
-                  <Grid item xs={12} md={6} lg={4} key={classData.id}>
+                  <Grid item xs={12} sm={6} lg={4} key={classData.id}>
                     <ClassCard
                       classData={classData}
                       type={'scheduleId' in classData ? 'instance' : 'schedule'}
-                      onEdit={session.role === 'admin' ? handleEditClass : undefined}
-                      onDelete={session.role === 'admin' ? handleDeleteClass : undefined}
+                      onEdit={handleEditClass}
+                      onDelete={handleDeleteClass}
                       canEdit={session.role === 'admin'}
                       canDelete={session.role === 'admin'}
                       onStartClass={handleStartClass}
@@ -609,24 +590,34 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
             <Paper sx={{ p: 2 }}>
               <ClassCalendar
                 instances={allInstances}
-                onInstanceClick={handleEditClass}
+                onInstanceClick={(instance) => handleEditClass(instance)}
                 onInstanceEdit={handleEditClass}
-                loading={loading}
+                userRole={session.role}
+                onEditClass={handleEditClass}
+                onDeleteClass={(data) => handleDeleteClass(data)}
+                onStartClass={handleStartClass}
+                onEndClass={handleEndClass}
+                onCancelClass={handleCancelClass}
               />
             </Paper>
           )}
-        </Box>
 
-        {/* Create Class FAB */}
-        {session.role === 'admin' && (
-          <Fab
-            color="primary"
-            sx={{ position: 'fixed', bottom: 16, right: 16 }}
-            onClick={handleCreateClass}
-          >
-            <AddIcon />
-          </Fab>
-        )}
+          {/* Floating Action Button for mobile */}
+          {session.role === 'admin' && (
+            <Fab
+              color="primary"
+              sx={{
+                position: 'fixed',
+                bottom: 16,
+                right: 16,
+                display: { xs: 'flex', md: 'none' },
+              }}
+              onClick={handleCreateClass}
+            >
+              <AddIcon />
+            </Fab>
+          )}
+        </Box>
 
         {/* Dialogs */}
         <ClassFormDialog
@@ -639,11 +630,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
           classData={editingClass}
           type={editingType}
           mode={formMode}
-          instructors={instructors.map(instructor => ({
-            id: instructor.id,
-            name: instructor.fullName,
-            // Remove specialties since it doesn't exist on StaffRecord
-          }))}
+          instructors={transformedInstructors}
           loading={submitLoading}
         />
 
