@@ -1,4 +1,4 @@
-// src/app/components/ui/ClassCalendar.tsx - Performance optimized version
+// src/app/components/ui/ClassCalendar.tsx - FIXED VERSION
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
@@ -40,7 +40,6 @@ interface ClassCalendarProps {
   onInstanceClick?: (instance: ClassInstance) => void;
   onInstanceEdit?: (instance: ClassInstance) => void;
   loading?: boolean;
-  // Optional advanced props for future use
   viewMode?: 'day' | 'week' | 'month';
   onViewModeChange?: (mode: 'day' | 'week' | 'month') => void;
   onDateClick?: (date: Date) => void;
@@ -69,11 +68,10 @@ export default function ClassCalendar({
   onInstanceClick,
   onInstanceEdit,
   loading = false,
-  // Default values for optional advanced props
   viewMode = 'month',
   onViewModeChange,
   onDateClick,
-  selectedDate = new Date(),
+  selectedDate,
   userRole = 'admin',
   onEditClass,
   onDeleteClass,
@@ -83,16 +81,20 @@ export default function ClassCalendar({
   userId = '',
 }: ClassCalendarProps) {
   const theme = useTheme();
-  const [currentDate, setCurrentDate] = useState(selectedDate);
+  
+  // FIXED: Initialize currentDate with a stable default value
+  const [currentDate, setCurrentDate] = useState(() => selectedDate || new Date());
   const [eventMenuAnchor, setEventMenuAnchor] = useState<null | HTMLElement>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
 
-  // Sync currentDate with selectedDate prop changes
+  // FIXED: Only sync when selectedDate actually changes and is different
   useEffect(() => {
-    setCurrentDate(selectedDate);
-  }, [selectedDate]);
+    if (selectedDate && selectedDate.getTime() !== currentDate.getTime()) {
+      setCurrentDate(new Date(selectedDate));
+    }
+  }, [selectedDate?.getTime()]); // Use getTime() to avoid object reference issues
 
-  // Memoize expensive calculations
+  // Memoize expensive calculations with proper dependencies
   const events = useMemo(() => {
     if (!instances || instances.length === 0) return [];
     
@@ -107,91 +109,99 @@ export default function ClassCalendar({
     }));
   }, [instances]);
 
-  // Optimize date range calculations
+  // FIXED: Prevent date mutation by creating completely new Date objects
   const dateRange = useMemo(() => {
-    const start = new Date(currentDate);
-    const end = new Date(currentDate);
+    // Create new Date instances to avoid mutation
+    const start = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
+    const end = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
 
     if (viewMode === 'day') {
-      start.setHours(0, 0, 0, 0);
+      // For day view, start and end are the same day
       end.setHours(23, 59, 59, 999);
       return { start, end };
     } else if (viewMode === 'week') {
+      // Calculate week start (Sunday)
       const dayOfWeek = start.getDay();
-      const diff = start.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+      const diff = start.getDate() - dayOfWeek;
       start.setDate(diff);
       start.setHours(0, 0, 0, 0);
+      
+      // Week end (Saturday)
       end.setDate(start.getDate() + 6);
       end.setHours(23, 59, 59, 999);
+      
+      return { start, end };
     } else {
+      // Month view
       start.setDate(1);
       start.setHours(0, 0, 0, 0);
-      end.setMonth(end.getMonth() + 1);
-      end.setDate(0);
+      
+      // Last day of current month
+      end.setMonth(end.getMonth() + 1, 0);
       end.setHours(23, 59, 59, 999);
+      
+      return { start, end };
     }
+  }, [currentDate.getTime(), viewMode]); // Use getTime() for stable comparison
 
-    return { start, end };
-  }, [currentDate, viewMode]);
-
-  // Optimize filtered events with better memoization
+  // FIXED: Optimize filtered events with stable date comparisons
   const filteredEvents = useMemo(() => {
     if (!events || events.length === 0) return [];
     
     const { start: rangeStart, end: rangeEnd } = dateRange;
-    const rangeStartNormalized = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate());
-    const rangeEndNormalized = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), rangeEnd.getDate());
 
     return events.filter(event => {
       try {
+        // Parse the date string consistently
         const eventDate = new Date(event.date + 'T00:00:00.000Z');
-        const eventDateLocal = new Date(eventDate.getUTCFullYear(), eventDate.getUTCMonth(), eventDate.getUTCDate());
-        return eventDateLocal >= rangeStartNormalized && eventDateLocal <= rangeEndNormalized;
+        const eventTime = eventDate.getTime();
+        
+        return eventTime >= rangeStart.getTime() && eventTime <= rangeEnd.getTime();
       } catch {
         return false;
       }
     });
-  }, [events, dateRange]);
+  }, [events, dateRange.start.getTime(), dateRange.end.getTime()]);
 
-  // Optimize navigation with useCallback
+  // FIXED: Stable navigation function
   const navigateDate = useCallback((direction: 'prev' | 'next' | 'today') => {
-    const newDate = new Date(currentDate);
+    setCurrentDate(prevDate => {
+      const newDate = new Date(prevDate);
 
-    switch (direction) {
-      case 'prev':
-        if (viewMode === 'day') {
-          newDate.setDate(newDate.getDate() - 1);
-        } else if (viewMode === 'week') {
-          newDate.setDate(newDate.getDate() - 7);
-        } else {
-          newDate.setMonth(newDate.getMonth() - 1);
-        }
-        break;
-      case 'next':
-        if (viewMode === 'day') {
-          newDate.setDate(newDate.getDate() + 1);
-        } else if (viewMode === 'week') {
-          newDate.setDate(newDate.getDate() + 7);
-        } else {
-          newDate.setMonth(newDate.getMonth() + 1);
-        }
-        break;
-      case 'today':
-        newDate.setTime(new Date().getTime());
-        break;
-    }
+      switch (direction) {
+        case 'prev':
+          if (viewMode === 'day') {
+            newDate.setDate(newDate.getDate() - 1);
+          } else if (viewMode === 'week') {
+            newDate.setDate(newDate.getDate() - 7);
+          } else {
+            newDate.setMonth(newDate.getMonth() - 1);
+          }
+          break;
+        case 'next':
+          if (viewMode === 'day') {
+            newDate.setDate(newDate.getDate() + 1);
+          } else if (viewMode === 'week') {
+            newDate.setDate(newDate.getDate() + 7);
+          } else {
+            newDate.setMonth(newDate.getMonth() + 1);
+          }
+          break;
+        case 'today':
+          return new Date();
+      }
 
-    setCurrentDate(newDate);
-    onDateClick?.(newDate);
-  }, [currentDate, viewMode, onDateClick]);
+      return newDate;
+    });
+  }, [viewMode]);
 
+  // FIXED: Stable event click handler
   const handleEventClick = useCallback((event: CalendarEvent, anchorEl?: HTMLElement) => {
+    setSelectedEvent(event);
     if (anchorEl) {
       setEventMenuAnchor(anchorEl);
-      setSelectedEvent(event);
-    } else if (onInstanceClick) {
-      onInstanceClick(event.classInstance);
     }
+    onInstanceClick?.(event.classInstance);
   }, [onInstanceClick]);
 
   const handleEventMenuClose = useCallback(() => {
@@ -199,55 +209,91 @@ export default function ClassCalendar({
     setSelectedEvent(null);
   }, []);
 
-  const isInstructorOfSelectedEvent = selectedEvent?.classInstance.instructorId === userId;
-  const showManagementButtons = userRole === 'admin' || isInstructorOfSelectedEvent;
-
-  // Optimize month view rendering with memoization
+  // FIXED: Optimize month view data calculation
   const monthViewData = useMemo(() => {
     if (viewMode !== 'month') return null;
-    
+
     const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
     const lastDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
     const startDate = new Date(firstDayOfMonth);
-    startDate.setDate(startDate.getDate() - firstDayOfMonth.getDay());
+    
+    // Go to the first Sunday before or on the first day of the month
+    startDate.setDate(startDate.getDate() - startDate.getDay());
 
     const weeks = [];
     const currentWeekDate = new Date(startDate);
 
-    while (currentWeekDate <= lastDayOfMonth || weeks.length < 6) {
-      const week = [];
-      for (let i = 0; i < 7; i++) {
-        week.push(new Date(currentWeekDate));
+    for (let week = 0; week < 6; week++) {
+      const days = [];
+      for (let day = 0; day < 7; day++) {
+        days.push(new Date(currentWeekDate));
         currentWeekDate.setDate(currentWeekDate.getDate() + 1);
       }
-      weeks.push(week);
-      if (currentWeekDate > lastDayOfMonth && weeks.length >= 4) break;
+      weeks.push(days);
+      
+      // Stop if we've covered the entire month and the week ends
+      if (currentWeekDate > lastDayOfMonth && currentWeekDate.getDay() === 0) {
+        break;
+      }
     }
 
     return { weeks, firstDayOfMonth };
-  }, [currentDate, viewMode]);
+  }, [currentDate.getTime(), viewMode]);
 
-  // Add loading state
+  // Get events for a specific day (optimized)
+  const getEventsForDay = useCallback((day: Date) => {
+    const dayString = day.toISOString().split('T')[0];
+    return filteredEvents.filter(event => {
+      try {
+        const eventDate = new Date(event.date + 'T00:00:00.000Z');
+        return eventDate.toISOString().split('T')[0] === dayString;
+      } catch {
+        return false;
+      }
+    });
+  }, [filteredEvents]);
+
+  // Format date display
+  const formatDateHeader = useMemo(() => {
+    if (viewMode === 'day') {
+      return currentDate.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+    } else if (viewMode === 'week') {
+      const weekStart = new Date(dateRange.start);
+      const weekEnd = new Date(dateRange.end);
+      return `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+    } else {
+      return currentDate.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long'
+      });
+    }
+  }, [currentDate, viewMode, dateRange]);
+
   if (loading) {
     return (
-      <Box sx={{ bgcolor: 'background.paper', borderRadius: 2, overflow: 'hidden' }}>
-        <Box sx={{ 
-          p: 2, 
-          bgcolor: 'primary.main', 
-          color: 'primary.contrastText',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <Skeleton variant="text" width={200} height={32} sx={{ bgcolor: 'rgba(255,255,255,0.2)' }} />
+      <Box sx={{ p: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+          <Skeleton variant="text" width={200} height={40} />
           <Box sx={{ display: 'flex', gap: 1 }}>
-            <Skeleton variant="circular" width={40} height={40} sx={{ bgcolor: 'rgba(255,255,255,0.2)' }} />
-            <Skeleton variant="circular" width={40} height={40} sx={{ bgcolor: 'rgba(255,255,255,0.2)' }} />
-            <Skeleton variant="circular" width={40} height={40} sx={{ bgcolor: 'rgba(255,255,255,0.2)' }} />
+            <Skeleton variant="rectangular" width={40} height={40} />
+            <Skeleton variant="rectangular" width={40} height={40} />
+            <Skeleton variant="rectangular" width={80} height={40} />
           </Box>
         </Box>
-        <Box sx={{ p: 3 }}>
-          {Array.from({ length: 6 }).map((_, i) => (
+        
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1, mb: 1 }}>
+          {Array.from({ length: 7 }).map((_, i) => (
+            <Skeleton key={i} variant="text" height={30} />
+          ))}
+        </Box>
+        
+        <Box>
+          {Array.from({ length: 5 }).map((_, i) => (
             <Box key={i} sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1, mb: 1 }}>
               {Array.from({ length: 7 }).map((_, j) => (
                 <Skeleton key={j} variant="rectangular" height={100} sx={{ borderRadius: 1 }} />
@@ -259,28 +305,14 @@ export default function ClassCalendar({
     );
   }
 
-  // Day view rendering function
+  // Render functions
   const renderDayView = () => {
-    const dayEvents = filteredEvents.filter(event => {
-      try {
-        const eventDate = new Date(event.date + 'T00:00:00.000Z');
-        const eventDateLocal = new Date(eventDate.getUTCFullYear(), eventDate.getUTCMonth(), eventDate.getUTCDate());
-        const currentDateLocal = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
-        return eventDateLocal.getTime() === currentDateLocal.getTime();
-      } catch {
-        return false;
-      }
-    }).sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const dayEvents = getEventsForDay(currentDate).sort((a, b) => a.startTime.localeCompare(b.startTime));
 
     return (
       <Box sx={{ p: 3 }}>
         <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-          {currentDate.toLocaleDateString('en-US', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-          })}
+          {formatDateHeader}
         </Typography>
 
         {dayEvents.length === 0 ? (
@@ -292,48 +324,27 @@ export default function ClassCalendar({
           }}
           onClick={() => onDateClick?.(currentDate)}
           >
-            <Typography variant="body1">No classes scheduled for this day</Typography>
+            <Typography variant="body2">No classes scheduled for this day</Typography>
           </Box>
         ) : (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {dayEvents.map(event => (
-              <Card key={event.id} sx={{ 
-                cursor: 'pointer',
-                '&:hover': { boxShadow: 3 }
-              }}>
-                <CardContent sx={{ p: 2 }}>
+              <Card key={event.id} sx={{ cursor: 'pointer', '&:hover': { transform: 'translateY(-2px)' }, transition: 'transform 0.2s' }}>
+                <CardContent onClick={() => handleEventClick(event)}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <Box sx={{ flex: 1 }} onClick={() => handleEventClick(event)}>
-                      <Typography variant="h6" sx={{ mb: 1, fontWeight: 600 }}>
+                    <Box>
+                      <Typography variant="h6" sx={{ fontWeight: 600, color: event.color }}>
                         {event.title}
                       </Typography>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                        <Typography variant="body2" color="text.secondary">
-                          {`${event.startTime} - ${event.endTime}`}
-                        </Typography>
-                        <Chip 
-                          label={event.classInstance.classType} 
-                          size="small" 
-                          sx={{ 
-                            bgcolor: event.color,
-                            color: 'white',
-                            fontWeight: 600
-                          }} 
-                        />
-                      </Box>
                       <Typography variant="body2" color="text.secondary">
-                        Instructor: {event.classInstance.instructorName}
+                        {event.startTime} - {event.endTime}
                       </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {event.classInstance.registeredParticipants.length}/{event.classInstance.maxParticipants} participants
-                      </Typography>
+                      <Chip
+                        size="small"
+                        label={event.classInstance.classType}
+                        sx={{ mt: 1, bgcolor: alpha(event.color, 0.1), color: event.color }}
+                      />
                     </Box>
-                    <IconButton
-                      size="small"
-                      onClick={(e) => handleEventClick(event, e.currentTarget)}
-                    >
-                      <MoreVertIcon />
-                    </IconButton>
                   </Box>
                 </CardContent>
               </Card>
@@ -344,131 +355,88 @@ export default function ClassCalendar({
     );
   };
 
-  // Week view rendering function
   const renderWeekView = () => {
-    const weekStart = new Date(currentDate);
-    const dayOfWeek = weekStart.getDay();
-    const diff = weekStart.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
-    weekStart.setDate(diff);
-
-    const weekDays = Array.from({ length: 7 }, (_, i) => {
-      const day = new Date(weekStart);
-      day.setDate(weekStart.getDate() + i);
-      return day;
-    });
-
-    const timeSlots = Array.from({ length: 24 }, (_, i) => {
-      const hour = i.toString().padStart(2, '0');
-      return `${hour}:00`;
-    });
+    const weekDays: Date[] = [];
+    const startOfWeek = new Date(dateRange.start);
+    
+    for (let i = 0; i < 7; i++) {
+      const day = new Date(startOfWeek);
+      day.setDate(startOfWeek.getDate() + i);
+      weekDays.push(day);
+    }
 
     return (
       <Box sx={{ p: 3 }}>
-        <Box sx={{ display: 'grid', gridTemplateColumns: '80px repeat(7, 1fr)', gap: 1 }}>
-          {/* Header row */}
-          <Box sx={{ p: 1 }}></Box>
-          {weekDays.map(day => (
-            <Box key={day.toISOString()} sx={{ 
-              p: 1, 
-              textAlign: 'center',
-              cursor: onDateClick ? 'pointer' : 'default',
-              '&:hover': {
-                bgcolor: 'action.hover',
-                borderRadius: 1
-              }
-            }}
-            onClick={() => onDateClick?.(day)}
-            >
-              <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                {day.toLocaleDateString('en-US', { weekday: 'short' })}
-              </Typography>
-              <Typography variant="h6">
-                {day.getDate()}
-              </Typography>
-            </Box>
+        <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+          {formatDateHeader}
+        </Typography>
+
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1, mb: 1 }}>
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => (
+            <Typography key={day} variant="body2" sx={{ p: 1, textAlign: 'center', fontWeight: 600, color: 'text.secondary' }}>
+              {day} {weekDays[index]?.getDate()}
+            </Typography>
           ))}
+        </Box>
 
-          {/* Time slots and events */}
-          {timeSlots.map(timeSlot => (
-            <React.Fragment key={timeSlot}>
-              <Box sx={{ 
-                p: 1, 
-                borderTop: 1, 
-                borderColor: 'divider',
-                fontSize: '0.75rem',
-                color: 'text.secondary'
-              }}>
-                {timeSlot}
-              </Box>
-              {weekDays.map(day => {
-                const dayEvents = filteredEvents.filter(event => {
-                  try {
-                    const eventDate = new Date(event.date + 'T00:00:00.000Z');
-                    const eventDateLocal = new Date(eventDate.getUTCFullYear(), eventDate.getUTCMonth(), eventDate.getUTCDate());
-                    const dayLocal = new Date(day.getFullYear(), day.getMonth(), day.getDate());
-                    return eventDateLocal.getTime() === dayLocal.getTime() && 
-                      event.startTime.startsWith(timeSlot.substring(0, 2));
-                  } catch {
-                    return false;
-                  }
-                });
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1 }}>
+          {weekDays.map((day, index) => {
+            const dayEvents = getEventsForDay(day);
+            const isToday = day.toDateString() === new Date().toDateString();
 
-                return (
-                  <Box key={`${day.toISOString()}-${timeSlot}`} sx={{ 
-                    p: 0.5, 
-                    borderTop: 1, 
-                    borderColor: 'divider',
-                    minHeight: 40,
-                    position: 'relative',
-                    cursor: onDateClick ? 'pointer' : 'default',
-                    '&:hover': {
-                      bgcolor: 'action.hover',
-                    },
-                  }}
-                  onClick={() => onDateClick?.(day)}
+            return (
+              <Box
+                key={index}
+                sx={{
+                  minHeight: 120,
+                  p: 1,
+                  border: '1px solid',
+                  borderColor: isToday ? 'primary.main' : 'divider',
+                  borderRadius: 1,
+                  bgcolor: isToday ? alpha(theme.palette.primary.main, 0.05) : 'background.paper',
+                  cursor: onDateClick ? 'pointer' : 'default',
+                  '&:hover': {
+                    bgcolor: 'action.hover',
+                  },
+                }}
+                onClick={() => onDateClick?.(day)}
+              >
+                {dayEvents.map(event => (
+                  <Box
+                    key={event.id}
+                    sx={{
+                      bgcolor: event.color,
+                      color: 'white',
+                      p: 0.5,
+                      mb: 0.5,
+                      borderRadius: 1,
+                      fontSize: '0.7rem',
+                      cursor: 'pointer',
+                      '&:hover': {
+                        transform: 'scale(1.02)',
+                      },
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEventClick(event);
+                    }}
                   >
-                    {dayEvents.map(event => (
-                      <Box
-                        key={event.id}
-                        sx={{
-                          position: 'absolute',
-                          top: 2,
-                          left: 2,
-                          right: 2,
-                          bgcolor: event.color,
-                          color: 'white',
-                          p: 0.5,
-                          borderRadius: 1,
-                          fontSize: '0.7rem',
-                          cursor: 'pointer',
-                          '&:hover': {
-                            transform: 'scale(1.02)',
-                          },
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleEventClick(event);
-                        }}
-                      >
-                        <Typography variant="caption" sx={{ fontWeight: 600, display: 'block' }}>
-                          {event.title}
-                        </Typography>
-                        <Typography variant="caption" sx={{ opacity: 0.9 }}>
-                          {event.startTime}
-                        </Typography>
-                      </Box>
-                    ))}
+                    <Typography variant="caption" sx={{ fontWeight: 600, display: 'block' }}>
+                      {event.title}
+                    </Typography>
+                    <Typography variant="caption" sx={{ opacity: 0.9 }}>
+                      {event.startTime}
+                    </Typography>
                   </Box>
-                );
-              })}
-            </React.Fragment>
-          ))}
+                ))}
+              </Box>
+            );
+          })}
         </Box>
       </Box>
     );
   };
 
-  // Month view rendering function
   const renderMonthView = () => {
     if (!monthViewData) return null;
     
@@ -476,57 +444,43 @@ export default function ClassCalendar({
 
     return (
       <Box sx={{ p: 3 }}>
-        <Box sx={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(7, 1fr)', 
-          gap: 1,
-          mb: 2
-        }}>
+        <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+          {formatDateHeader}
+        </Typography>
+
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1, mb: 2 }}>
           {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-            <Typography key={day} variant="body2" sx={{ 
-              p: 1, 
-              textAlign: 'center', 
-              fontWeight: 600,
-              color: 'text.secondary'
-            }}>
+            <Typography key={day} variant="body2" sx={{ p: 1, textAlign: 'center', fontWeight: 600, color: 'text.secondary' }}>
               {day}
             </Typography>
           ))}
         </Box>
 
-        <Box sx={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(7, 1fr)', 
-          gap: 1 
-        }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1 }}>
           {weeks.map((week, weekIndex) => (
             <React.Fragment key={weekIndex}>
               {week.map((day, dayIndex) => {
-                const isCurrentMonth = day.getMonth() === currentDate.getMonth();
+                const dayEvents = getEventsForDay(day);
+                const isCurrentMonth = day.getMonth() === firstDayOfMonth.getMonth();
                 const isToday = day.toDateString() === new Date().toDateString();
-                const dayEvents = filteredEvents.filter(event => {
-                  try {
-                    const eventDate = new Date(event.date + 'T00:00:00.000Z');
-                    const eventDateLocal = new Date(eventDate.getUTCFullYear(), eventDate.getUTCMonth(), eventDate.getUTCDate());
-                    const dayLocal = new Date(day.getFullYear(), day.getMonth(), day.getDate());
-                    return eventDateLocal.getTime() === dayLocal.getTime();
-                  } catch {
-                    return false;
-                  }
-                });
 
                 return (
                   <Box
-                    key={`${weekIndex}-${dayIndex}`}
+                    key={dayIndex}
                     sx={{
-                      position: 'relative',
                       minHeight: 100,
-                      border: 1,
-                      borderColor: 'divider',
-                      borderRadius: 1,
                       p: 1,
-                      bgcolor: isCurrentMonth ? 'background.paper' : 'action.hover',
+                      border: '1px solid',
+                      borderColor: isToday ? 'primary.main' : 'divider',
+                      borderRadius: 1,
+                      bgcolor: isToday 
+                        ? alpha(theme.palette.primary.main, 0.05)
+                        : isCurrentMonth 
+                        ? 'background.paper' 
+                        : 'action.hover',
+                      opacity: isCurrentMonth ? 1 : 0.5,
                       cursor: onDateClick ? 'pointer' : 'default',
+                      position: 'relative',
                       '&:hover': {
                         bgcolor: 'action.hover',
                       },
@@ -536,21 +490,22 @@ export default function ClassCalendar({
                     <Typography
                       variant="body2"
                       sx={{
-                        fontWeight: isToday ? 600 : 400,
-                        color: isCurrentMonth ? 'text.primary' : 'text.secondary',
-                        mb: 1
+                        fontWeight: isToday ? 'bold' : 'normal',
+                        color: isToday ? 'primary.main' : 'text.primary',
+                        mb: 0.5,
                       }}
                     >
                       {day.getDate()}
                     </Typography>
-                    {dayEvents.slice(0, 3).map((event, index) => (
+
+                    {dayEvents.slice(0, 2).map(event => (
                       <Box
                         key={event.id}
                         sx={{
                           bgcolor: event.color,
                           color: 'white',
-                          p: 0.5,
-                          mb: 0.5,
+                          p: 0.25,
+                          mb: 0.25,
                           borderRadius: 0.5,
                           fontSize: '0.6rem',
                           cursor: 'pointer',
@@ -563,17 +518,15 @@ export default function ClassCalendar({
                           handleEventClick(event);
                         }}
                       >
-                        <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                        <Typography variant="caption" sx={{ fontWeight: 600, display: 'block', lineHeight: 1 }}>
                           {event.title}
                         </Typography>
                       </Box>
                     ))}
-                    {dayEvents.length > 3 && (
-                      <Typography variant="caption" sx={{ 
-                        color: 'text.secondary',
-                        fontSize: '0.6rem'
-                      }}>
-                        +{dayEvents.length - 3} more
+
+                    {dayEvents.length > 2 && (
+                      <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6rem' }}>
+                        +{dayEvents.length - 2} more
                       </Typography>
                     )}
                   </Box>
@@ -587,199 +540,131 @@ export default function ClassCalendar({
   };
 
   return (
-    <Box sx={{ bgcolor: 'background.paper', borderRadius: 2, overflow: 'hidden' }}>
+    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
-      <Box sx={{ 
-        p: 2, 
-        bgcolor: 'primary.main', 
-        color: 'primary.contrastText',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center'
-      }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <IconButton 
-            onClick={() => navigateDate('prev')}
-            sx={{ color: 'inherit' }}
-          >
+      <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <IconButton onClick={() => navigateDate('prev')} size="small">
             <ChevronLeftIcon />
           </IconButton>
-
-          <Typography variant="h6" sx={{ minWidth: 200, textAlign: 'center', color: 'white' }}>
-            {viewMode === 'month' 
-              ? currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-              : viewMode === 'week'
-              ? `Week of ${currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-              : currentDate.toLocaleDateString('en-US', { 
-                  weekday: 'long', 
-                  month: 'long', 
-                  day: 'numeric', 
-                  year: 'numeric' 
-                })
-            }
-          </Typography>
-
-          <IconButton 
-            onClick={() => navigateDate('next')}
-            sx={{ color: 'inherit' }}
-          >
+          <IconButton onClick={() => navigateDate('next')} size="small">
             <ChevronRightIcon />
           </IconButton>
-
-          <Tooltip title="Today">
-            <IconButton 
-              onClick={() => navigateDate('today')}
-              sx={{ color: 'inherit' }}
-            >
-              <TodayIcon />
-            </IconButton>
-          </Tooltip>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<TodayIcon />}
+            onClick={() => navigateDate('today')}
+          >
+            Today
+          </Button>
         </Box>
 
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          {onViewModeChange && (
-            <>
-              <Tooltip title="Day View">
-                <IconButton
-                  onClick={() => onViewModeChange('day')}
-                  sx={{ 
-                    color: 'inherit',
-                    bgcolor: viewMode === 'day' ? 'rgba(255,255,255,0.2)' : 'transparent'
-                  }}
-                >
-                  <DayIcon />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Week View">
-                <IconButton
-                  onClick={() => onViewModeChange('week')}
-                  sx={{ 
-                    color: 'inherit',
-                    bgcolor: viewMode === 'week' ? 'rgba(255,255,255,0.2)' : 'transparent'
-                  }}
-                >
-                  <WeekIcon />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Month View">
-                <IconButton
-                  onClick={() => onViewModeChange('month')}
-                  sx={{ 
-                    color: 'inherit',
-                    bgcolor: viewMode === 'month' ? 'rgba(255,255,255,0.2)' : 'transparent'
-                  }}
-                >
-                  <MonthIcon />
-                </IconButton>
-              </Tooltip>
-            </>
-          )}
+        <Box sx={{ display: 'flex', gap: 0.5 }}>
+          <Tooltip title="Day View">
+            <IconButton
+              size="small"
+              onClick={() => onViewModeChange?.('day')}
+              color={viewMode === 'day' ? 'primary' : 'default'}
+            >
+              <DayIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Week View">
+            <IconButton
+              size="small"
+              onClick={() => onViewModeChange?.('week')}
+              color={viewMode === 'week' ? 'primary' : 'default'}
+            >
+              <WeekIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Month View">
+            <IconButton
+              size="small"
+              onClick={() => onViewModeChange?.('month')}
+              color={viewMode === 'month' ? 'primary' : 'default'}
+            >
+              <MonthIcon />
+            </IconButton>
+          </Tooltip>
         </Box>
       </Box>
 
       {/* Calendar Content */}
-      {viewMode === 'day' && renderDayView()}
-      {viewMode === 'week' && renderWeekView()}
-      {viewMode === 'month' && renderMonthView()}
+      <Box sx={{ flex: 1, overflow: 'auto' }}>
+        {viewMode === 'day' && renderDayView()}
+        {viewMode === 'week' && renderWeekView()}
+        {viewMode === 'month' && renderMonthView()}
+      </Box>
 
       {/* Event Menu */}
       <Menu
         anchorEl={eventMenuAnchor}
         open={Boolean(eventMenuAnchor)}
         onClose={handleEventMenuClose}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
-        {[
-          // Always show View Details
-          <MenuItem key="view-details" onClick={() => {
-            if (selectedEvent) {
-              handleEventClick(selectedEvent);
+        {userRole === 'admin' && [
+          <MenuItem key="edit" onClick={() => {
+            if (selectedEvent && onEditClass) {
+              onEditClass(selectedEvent.classInstance);
             }
             handleEventMenuClose();
           }}>
             <ListItemIcon>
               <EditIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText>View Details</ListItemText>
+            <ListItemText>Edit Class</ListItemText>
           </MenuItem>,
-          
-          // Conditionally render management buttons
-          ...(showManagementButtons ? [
-            <MenuItem key="edit-class" onClick={() => {
-              if (selectedEvent && onEditClass) {
-                onEditClass(selectedEvent.classInstance);
-              } else if (selectedEvent && onInstanceEdit) {
-                onInstanceEdit(selectedEvent.classInstance);
-              }
-              handleEventMenuClose();
-            }}>
-              <ListItemIcon>
-                <EditIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Edit Class</ListItemText>
-            </MenuItem>,
-
-            ...(selectedEvent?.classInstance.status === 'scheduled' && onStartClass ? [
-              <MenuItem key="start-class" onClick={() => {
-                if (selectedEvent) {
-                  onStartClass(selectedEvent.classInstance.id);
-                }
-                handleEventMenuClose();
-              }}>
-                <ListItemIcon>
-                  <PlayArrowIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>Start Class</ListItemText>
-              </MenuItem>
-            ] : []),
-
-            ...(selectedEvent?.classInstance.status === 'ongoing' && onEndClass ? [
-              <MenuItem key="end-class" onClick={() => {
-                if (selectedEvent) {
-                  onEndClass(selectedEvent.classInstance.id);
-                }
-                handleEventMenuClose();
-              }}>
-                <ListItemIcon>
-                  <StopIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>End Class</ListItemText>
-              </MenuItem>
-            ] : []),
-
-            ...(selectedEvent?.classInstance.status === 'scheduled' && onCancelClass ? [
-              <MenuItem key="cancel-class" onClick={() => {
-                if (selectedEvent) {
-                  onCancelClass(selectedEvent.classInstance.id);
-                }
-                handleEventMenuClose();
-              }}>
-                <ListItemIcon>
-                  <CancelIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>Cancel Class</ListItemText>
-              </MenuItem>
-            ] : []),
-
-            <MenuItem 
-              key="delete-class"
-              onClick={() => {
-                if (selectedEvent && onDeleteClass) {
-                  onDeleteClass(selectedEvent.classInstance, 'instance');
-                }
-                handleEventMenuClose();
-              }}
-              sx={{ color: 'error.main' }}
-            >
-              <ListItemIcon>
-                <DeleteIcon fontSize="small" color="error" />
-              </ListItemIcon>
-              <ListItemText>Delete Class</ListItemText>
-            </MenuItem>
-          ] : [])
+          <MenuItem key="delete" onClick={() => {
+            if (selectedEvent && onDeleteClass) {
+              onDeleteClass(selectedEvent.classInstance, 'instance');
+            }
+            handleEventMenuClose();
+          }}>
+            <ListItemIcon>
+              <DeleteIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Delete Instance</ListItemText>
+          </MenuItem>
+        ]}
+        
+        {(userRole === 'admin' || userRole === 'trainer') && [
+          <MenuItem key="start" onClick={() => {
+            if (selectedEvent && onStartClass) {
+              onStartClass(selectedEvent.classInstance.id);
+            }
+            handleEventMenuClose();
+          }}>
+            <ListItemIcon>
+              <PlayArrowIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Start Class</ListItemText>
+          </MenuItem>,
+          <MenuItem key="end" onClick={() => {
+            if (selectedEvent && onEndClass) {
+              onEndClass(selectedEvent.classInstance.id);
+            }
+            handleEventMenuClose();
+          }}>
+            <ListItemIcon>
+              <StopIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>End Class</ListItemText>
+          </MenuItem>,
+          <MenuItem key="cancel" onClick={() => {
+            if (selectedEvent && onCancelClass) {
+              onCancelClass(selectedEvent.classInstance.id);
+            }
+            handleEventMenuClose();
+          }}>
+            <ListItemIcon>
+              <CancelIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Cancel Class</ListItemText>
+          </MenuItem>
         ]}
       </Menu>
-    </Box>
+    </Card>
   );
 }

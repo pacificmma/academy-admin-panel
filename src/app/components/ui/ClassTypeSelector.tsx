@@ -1,4 +1,4 @@
-// src/app/components/ui/ClassTypeSelector.tsx - FIXED VERSION
+// src/app/components/ui/ClassTypeSelector.tsx - Updated with Multiple Selection Support
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -21,6 +21,9 @@ import {
   CircularProgress,
   Tooltip,
   ListItemIcon,
+  FormHelperText,
+  OutlinedInput,
+  SelectChangeEvent,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -32,8 +35,16 @@ import {
 import { ClassType } from '@/app/types/class';
 
 interface ClassTypeSelectorProps {
-  value: string;
-  onChange: (value: string) => void;
+  // Single selection props
+  value?: string;
+  onChange?: (value: string) => void;
+  
+  // Multiple selection props
+  selectedValues?: string[];
+  onMultipleChange?: (values: string[]) => void;
+  multiple?: boolean;
+  
+  // Common props
   error?: string;
   required?: boolean;
   disabled?: boolean;
@@ -41,6 +52,8 @@ interface ClassTypeSelectorProps {
   allowCreate?: boolean;
   allowEdit?: boolean;
   allowDelete?: boolean;
+  label?: string;
+  helperText?: string;
 }
 
 const DEFAULT_COLORS = [
@@ -49,8 +62,16 @@ const DEFAULT_COLORS = [
 ];
 
 export default function ClassTypeSelector({
-  value,
+  // Single selection
+  value = '',
   onChange,
+  
+  // Multiple selection
+  selectedValues = [],
+  onMultipleChange,
+  multiple = false,
+  
+  // Common props
   error,
   required = false,
   disabled = false,
@@ -58,6 +79,8 @@ export default function ClassTypeSelector({
   allowCreate = true,
   allowEdit = true,
   allowDelete = true,
+  label = 'Class Type',
+  helperText,
 }: ClassTypeSelectorProps) {
   // State management
   const [classTypes, setClassTypes] = useState<ClassType[]>([]);
@@ -111,94 +134,117 @@ export default function ClassTypeSelector({
 
       setClassTypes(result.data || []);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to load class types';
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
       setInternalError(errorMessage);
-      setClassTypes([]);
+      
+      // Set fallback class types if API fails
+      setClassTypes([
+        { id: '1', name: 'MMA', color: '#e53e3e', description: 'Mixed Martial Arts', isActive: true, createdAt: '', updatedAt: '', createdBy: '' },
+        { id: '2', name: 'BJJ', color: '#805ad5', description: 'Brazilian Jiu-Jitsu', isActive: true, createdAt: '', updatedAt: '', createdBy: '' },
+        { id: '3', name: 'Boxing', color: '#d69e2e', description: 'Boxing training', isActive: true, createdAt: '', updatedAt: '', createdBy: '' },
+        { id: '4', name: 'Muay Thai', color: '#38a169', description: 'The Art of Eight Limbs', isActive: true, createdAt: '', updatedAt: '', createdBy: '' },
+      ]);
     } finally {
       setLoading(false);
     }
   }, [showUsageCount]);
 
-  // Load class types on mount and when showUsageCount changes
+  // Load class types on component mount
   useEffect(() => {
     loadClassTypes();
   }, [loadClassTypes]);
 
-  // Reset form state
-  const resetForm = useCallback(() => {
+  // Handle selection change (both single and multiple)
+  const handleSelectionChange = (event: SelectChangeEvent<string | string[]>) => {
+    const eventValue = event.target.value;
+    
+    if (multiple && onMultipleChange) {
+      const newSelection = typeof eventValue === 'string' ? eventValue.split(',') : eventValue;
+      onMultipleChange(newSelection);
+    } else if (!multiple && onChange) {
+      onChange(eventValue as string);
+    }
+  };
+
+  // Dialog management functions
+  const openAddDialog = useCallback(() => {
     setNewTypeName('');
     setNewTypeColor(DEFAULT_COLORS[0]);
     setNewTypeDescription('');
     setEditingType(null);
+    setIsAddDialogOpen(true);
+  }, []);
+
+  const startEdit = useCallback((classType: ClassType) => {
+    setNewTypeName(classType.name);
+    setNewTypeColor(classType.color);
+    setNewTypeDescription(classType.description || '');
+    setEditingType(classType);
+    setIsAddDialogOpen(true);
   }, []);
 
   const cancelEditing = useCallback(() => {
-    resetForm();
     setIsAddDialogOpen(false);
-  }, [resetForm]);
+    setEditingType(null);
+    setNewTypeName('');
+    setNewTypeColor(DEFAULT_COLORS[0]);
+    setNewTypeDescription('');
+  }, []);
 
-  // Create new class type
-  const createClassType = async (name: string, color: string, description?: string) => {
-    const response = await fetch('/api/class-types', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'include',
-      body: JSON.stringify({
-        name: name.trim(),
-        color,
-        description: description?.trim() || undefined,
-        isActive: true,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || 'Failed to create class type');
-    }
-
-    const result = await response.json();
-    if (!result.success) {
-      throw new Error(result.error || 'Failed to create class type');
-    }
-
-    return result.data;
-  };
-
-  const handleCreateClassType = async () => {
+  // API operations
+  const handleCreateClassType = useCallback(async () => {
     if (!newTypeName.trim()) return;
 
+    setIsSubmitting(true);
     try {
-      setIsSubmitting(true);
-      setInternalError(null);
+      const response = await fetch('/api/class-types', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: newTypeName.trim(),
+          color: newTypeColor,
+          description: newTypeDescription.trim(),
+          isActive: true,
+        }),
+      });
 
-      const newType = await createClassType(newTypeName, newTypeColor, newTypeDescription);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.error || `HTTP ${response.status}`);
+      }
+
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to create class type');
+      }
+
+      // Auto-select the new class type if applicable
+      const newClassType = result.data;
+      if (multiple && onMultipleChange) {
+        onMultipleChange([...selectedValues, newClassType.name]);
+      } else if (!multiple && onChange) {
+        onChange(newClassType.name);
+      }
       
-      // Add to local state with usageCount: 0 for new types
-      setClassTypes(prev => [...prev, { ...newType, usageCount: 0 }]);
-      
-      // Select the new type
-      onChange(newType.name);
-      
-      // Reset form and close dialog
-      resetForm();
-      setIsAddDialogOpen(false);
+      // Refresh the list
+      await loadClassTypes();
+      cancelEditing();
     } catch (err) {
-      setInternalError(err instanceof Error ? err.message : 'Failed to create class type');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create class type';
+      setInternalError(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [newTypeName, newTypeColor, newTypeDescription, multiple, selectedValues, onMultipleChange, onChange, loadClassTypes, cancelEditing]);
 
-  // Update class type
-  const handleUpdateClassType = async () => {
+  const handleUpdateClassType = useCallback(async () => {
     if (!editingType || !newTypeName.trim()) return;
 
+    setIsSubmitting(true);
     try {
-      setIsSubmitting(true);
-      setInternalError(null);
-
       const response = await fetch(`/api/class-types/${editingType.id}`, {
         method: 'PUT',
         headers: {
@@ -208,14 +254,13 @@ export default function ClassTypeSelector({
         body: JSON.stringify({
           name: newTypeName.trim(),
           color: newTypeColor,
-          description: newTypeDescription.trim() || undefined,
-          isActive: true,
+          description: newTypeDescription.trim(),
         }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to update class type');
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.error || `HTTP ${response.status}`);
       }
 
       const result = await response.json();
@@ -223,44 +268,49 @@ export default function ClassTypeSelector({
         throw new Error(result.error || 'Failed to update class type');
       }
 
-      // Update local state - preserve existing usageCount
-      setClassTypes(prev => prev.map(ct => 
-        ct.id === editingType.id ? { ...ct, ...result.data, usageCount: ct.usageCount } : ct
-      ));
-      
-      // Update selection if this was the selected value
-      if (value === editingType.name) {
-        onChange(result.data.name);
+      // Update selection if the name changed
+      const updatedClassType = result.data;
+      if (editingType.name !== updatedClassType.name) {
+        if (multiple && onMultipleChange) {
+          const updatedSelection = selectedValues.map(name => 
+            name === editingType.name ? updatedClassType.name : name
+          );
+          onMultipleChange(updatedSelection);
+        } else if (!multiple && onChange && value === editingType.name) {
+          onChange(updatedClassType.name);
+        }
       }
       
-      // Reset form
+      // Refresh the list
+      await loadClassTypes();
       cancelEditing();
     } catch (err) {
-      setInternalError(err instanceof Error ? err.message : 'Failed to update class type');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update class type';
+      setInternalError(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [editingType, newTypeName, newTypeColor, newTypeDescription, multiple, selectedValues, onMultipleChange, onChange, value, loadClassTypes, cancelEditing]);
 
-  // Delete class type
-  const handleDeleteClassType = async (classType: ClassType) => {
-    if (classType.usageCount && classType.usageCount > 0) {
-      setInternalError(`Cannot delete "${classType.name}" - it is being used by ${classType.usageCount} class(es)`);
+  const handleDeleteClassType = useCallback(async (classType: ClassType) => {
+    if (!allowDelete) return;
+
+    // Additional safety check for classes with usage
+    if (showUsageCount && classType.usageCount && classType.usageCount > 0) {
+      setInternalError(`Cannot delete "${classType.name}" - it is being used in ${classType.usageCount} classes`);
       return;
     }
 
+    setIsSubmitting(true);
     try {
-      setIsSubmitting(true);
-      setInternalError(null);
-
       const response = await fetch(`/api/class-types/${classType.id}`, {
         method: 'DELETE',
         credentials: 'include',
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to delete class type');
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.error || `HTTP ${response.status}`);
       }
 
       const result = await response.json();
@@ -268,64 +318,102 @@ export default function ClassTypeSelector({
         throw new Error(result.error || 'Failed to delete class type');
       }
 
-      // Remove from local state
-      setClassTypes(prev => prev.filter(ct => ct.id !== classType.id));
-      
-      // Clear selection if this was selected
-      if (value === classType.name) {
+      // Remove from selection if selected
+      if (multiple && onMultipleChange) {
+        const updatedSelection = selectedValues.filter(name => name !== classType.name);
+        onMultipleChange(updatedSelection);
+      } else if (!multiple && onChange && value === classType.name) {
         onChange('');
       }
-
+      
+      // Refresh the list
+      await loadClassTypes();
     } catch (err) {
-      setInternalError(err instanceof Error ? err.message : 'Failed to delete class type');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete class type';
+      setInternalError(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [allowDelete, showUsageCount, multiple, selectedValues, onMultipleChange, onChange, value, loadClassTypes]);
 
-  const startEdit = (classType: ClassType) => {
-    setEditingType(classType);
-    setNewTypeName(classType.name);
-    setNewTypeColor(classType.color);
-    setNewTypeDescription(classType.description || '');
-    setIsAddDialogOpen(true);
-  };
+  // Determine current selection for display
+  const currentSelection = multiple ? selectedValues : [value].filter(Boolean);
 
-  if (loading) {
+  // Render value for multi-select
+  const renderValue = (selected: string | string[]) => {
+    if (!multiple) {
+      return selected as string;
+    }
+    
+    const selectedArray = Array.isArray(selected) ? selected : [selected];
     return (
-      <FormControl fullWidth>
-        <InputLabel>Class Type</InputLabel>
-        <Select value="" disabled>
-          <MenuItem>
-            <Box display="flex" alignItems="center" gap={1}>
-              <CircularProgress size={16} />
-              <Typography>Loading...</Typography>
-            </Box>
-          </MenuItem>
-        </Select>
-      </FormControl>
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+        {selectedArray.map((selectedValue) => {
+          const classType = activeClassTypes.find(ct => ct.name === selectedValue);
+          return (
+            <Chip
+              key={selectedValue}
+              label={selectedValue}
+              size="small"
+              sx={{
+                backgroundColor: classType?.color || '#e0e0e0',
+                color: 'white',
+                fontWeight: 'bold',
+              }}
+            />
+          );
+        })}
+      </Box>
     );
-  }
+  };
 
   return (
     <>
-      <FormControl fullWidth error={!!error}>
-        <InputLabel required={required}>Class Type</InputLabel>
+      {/* Error Alert */}
+      {internalError && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setInternalError(null)}>
+          {internalError}
+        </Alert>
+      )}
+
+      {/* Main Form Control */}
+      <FormControl fullWidth error={!!error} disabled={disabled || loading}>
+        <InputLabel required={required}>{label}</InputLabel>
         <Select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          disabled={disabled}
-          label="Class Type"
+          multiple={multiple}
+          value={multiple ? selectedValues : value}
+          onChange={handleSelectionChange}
+          input={multiple ? <OutlinedInput label={label} /> : undefined}
+          renderValue={multiple ? renderValue : undefined}
+          label={label}
         >
-          {/* Empty option for non-required fields */}
-          {!required && (
+          {/* Loading state */}
+          {loading && (
+            <MenuItem disabled>
+              <CircularProgress size={20} sx={{ mr: 1 }} />
+              Loading class types...
+            </MenuItem>
+          )}
+
+          {/* Empty option for non-required single selection */}
+          {!multiple && !required && !loading && (
             <MenuItem value="">
               <em>Select a class type</em>
             </MenuItem>
           )}
 
+          {/* Add new option */}
+          {allowCreate && !loading && (
+            <MenuItem onClick={openAddDialog}>
+              <ListItemIcon>
+                <AddIcon />
+              </ListItemIcon>
+              Add New Class Type
+            </MenuItem>
+          )}
+
           {/* Active class types */}
-          {activeClassTypes.map((classType) => (
+          {!loading && activeClassTypes.map((classType) => (
             <MenuItem key={classType.id} value={classType.name}>
               <Box display="flex" alignItems="center" justifyContent="space-between" width="100%">
                 <Box display="flex" alignItems="center" gap={1}>
@@ -353,26 +441,11 @@ export default function ClassTypeSelector({
                 {/* Edit/Delete buttons */}
                 {(allowEdit || allowDelete) && (
                   <Box display="flex" gap={0.5}>
-                    {allowEdit && (
-                      <Tooltip title="Edit class type">
-                        <span>
-                          <IconButton
-                            size="small"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              startEdit(classType);
-                            }}
-                          >
-                            <EditIcon fontSize="small" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                    )}
                     
                     {allowDelete && (
                       <Tooltip title={
                         classType.usageCount !== undefined && classType.usageCount > 0 
-                          ? `Cannot delete - used by ${classType.usageCount} class(es)` 
+                          ? `Cannot delete - used in ${classType.usageCount} classes`
                           : 'Delete class type'
                       }>
                         <span>
@@ -384,8 +457,9 @@ export default function ClassTypeSelector({
                               handleDeleteClassType(classType);
                             }}
                             sx={{
-                              opacity: classType.usageCount !== undefined && classType.usageCount > 0 ? 0.5 : 1,
-                              cursor: classType.usageCount !== undefined && classType.usageCount > 0 ? 'not-allowed' : 'pointer'
+                              color: classType.usageCount !== undefined && classType.usageCount > 0 
+                                ? 'text.disabled' 
+                                : 'error.main'
                             }}
                           >
                             <DeleteIcon fontSize="small" />
@@ -399,60 +473,54 @@ export default function ClassTypeSelector({
             </MenuItem>
           ))}
 
-          {/* Add new option */}
-          {allowCreate && (
-            <MenuItem onClick={() => setIsAddDialogOpen(true)}>
-              <Box display="flex" alignItems="center" gap={1}>
-                <AddIcon fontSize="small" />
-                <Typography fontStyle="italic">Add new class type</Typography>
-              </Box>
+          {/* No class types available */}
+          {!loading && activeClassTypes.length === 0 && (
+            <MenuItem disabled>
+              No class types available
             </MenuItem>
           )}
         </Select>
-
-        {/* Error display */}
-        {(error || internalError) && (
-          <Alert severity="error" sx={{ mt: 1 }}>
-            {error || internalError}
-          </Alert>
-        )}
+        
+        {/* Helper text */}
+        {error && <FormHelperText>{error}</FormHelperText>}
+        {!error && helperText && <FormHelperText>{helperText}</FormHelperText>}
       </FormControl>
 
       {/* Add/Edit Dialog */}
       <Dialog open={isAddDialogOpen} onClose={cancelEditing} maxWidth="sm" fullWidth>
         <DialogTitle>
-          <Box display="flex" alignItems="center" justifyContent="space-between">
+          <Box display="flex" justifyContent="space-between" alignItems="center">
             <Typography variant="h6">
               {editingType ? 'Edit Class Type' : 'Add New Class Type'}
             </Typography>
-            <IconButton onClick={cancelEditing} size="small">
+            <IconButton onClick={cancelEditing} disabled={isSubmitting}>
               <CloseIcon />
             </IconButton>
           </Box>
         </DialogTitle>
 
         <DialogContent>
-          <Box display="flex" flexDirection="column" gap={2} pt={1}>
+          <Box display="flex" flexDirection="column" gap={3} mt={1}>
             <TextField
-              label="Name"
+              label="Class Type Name"
               value={newTypeName}
               onChange={(e) => setNewTypeName(e.target.value)}
               fullWidth
               required
-              autoFocus
-              placeholder="e.g., MMA, BJJ, Boxing"
+              placeholder="e.g., Advanced MMA"
+              disabled={isSubmitting}
             />
 
             <Box>
               <Typography variant="subtitle2" gutterBottom>
                 Color
               </Typography>
-              <Box display="flex" gap={1} flexWrap="wrap">
+              <Box display="flex" flexWrap="wrap" gap={1}>
                 {DEFAULT_COLORS.map((color) => (
                   <Tooltip key={color} title={color}>
                     <IconButton
-                      size="small"
                       onClick={() => setNewTypeColor(color)}
+                      disabled={isSubmitting}
                       sx={{
                         width: 32,
                         height: 32,
@@ -482,6 +550,7 @@ export default function ClassTypeSelector({
               multiline
               rows={2}
               placeholder="Brief description of this class type"
+              disabled={isSubmitting}
             />
 
             {/* Preview */}
