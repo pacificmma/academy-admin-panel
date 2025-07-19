@@ -38,13 +38,16 @@ const updateMemberSchema = z.object({
 
 // GET /api/members/[id] - Get specific member
 export const GET = requireAdmin(async (request: NextRequest, context: RequestContext) => {
-  const { params } = context;
-  if (!params?.id) {
+  // FIXED: Await params before accessing properties
+  const awaitedParams = await context.params;
+  const memberId = Array.isArray(awaitedParams?.id) ? awaitedParams.id[0] : awaitedParams?.id;
+  
+  if (!memberId) {
     return notFoundResponse('Member');
   }
 
   try {
-    const memberDoc = await adminDb.collection('members').doc(params.id).get();
+    const memberDoc = await adminDb.collection('members').doc(memberId).get();
     
     if (!memberDoc.exists) {
       return notFoundResponse('Member');
@@ -78,8 +81,11 @@ export const GET = requireAdmin(async (request: NextRequest, context: RequestCon
 
 // PUT /api/members/[id] - Update member
 export const PUT = requireAdmin(async (request: NextRequest, context: RequestContext) => {
-  const { params, session } = context;
-  if (!params?.id) {
+  // FIXED: Await params before accessing properties
+  const awaitedParams = await context.params;
+  const memberId = Array.isArray(awaitedParams?.id) ? awaitedParams.id[0] : awaitedParams?.id;
+  
+  if (!memberId) {
     return notFoundResponse('Member');
   }
 
@@ -96,7 +102,7 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
     const updateData = validation.data;
 
     // Check if member exists
-    const memberDoc = await adminDb.collection('members').doc(params.id).get();
+    const memberDoc = await adminDb.collection('members').doc(memberId).get();
     
     if (!memberDoc.exists) {
       return notFoundResponse('Member');
@@ -104,7 +110,7 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
 
     // If parentId is provided, verify the parent exists and is not the member itself
     if (updateData.parentId) {
-      if (updateData.parentId === params.id) {
+      if (updateData.parentId === memberId) {
         return badRequestResponse('Member cannot be their own parent');
       }
       
@@ -118,13 +124,13 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
     const updatedData = {
       ...updateData,
       updatedAt: FieldValue.serverTimestamp(),
-      updatedBy: session.uid,
+      updatedBy: context.session.uid,
     };
 
-    await adminDb.collection('members').doc(params.id).update(updatedData);
+    await adminDb.collection('members').doc(memberId).update(updatedData);
     
     // Get the updated member
-    const updatedDoc = await adminDb.collection('members').doc(params.id).get();
+    const updatedDoc = await adminDb.collection('members').doc(memberId).get();
     const data = updatedDoc.data();
     
     const updatedMember: MemberRecord = {
@@ -154,14 +160,17 @@ export const PUT = requireAdmin(async (request: NextRequest, context: RequestCon
 
 // DELETE /api/members/[id] - Delete member (soft delete by deactivating)
 export const DELETE = requireAdmin(async (request: NextRequest, context: RequestContext) => {
-  const { params, session } = context;
-  if (!params?.id) {
+  // FIXED: Await params before accessing properties
+  const awaitedParams = await context.params;
+  const memberId = Array.isArray(awaitedParams?.id) ? awaitedParams.id[0] : awaitedParams?.id;
+  
+  if (!memberId) {
     return notFoundResponse('Member');
   }
 
   try {
     // Check if member exists
-    const memberDoc = await adminDb.collection('members').doc(params.id).get();
+    const memberDoc = await adminDb.collection('members').doc(memberId).get();
     
     if (!memberDoc.exists) {
       return notFoundResponse('Member');
@@ -169,7 +178,7 @@ export const DELETE = requireAdmin(async (request: NextRequest, context: Request
 
     // Check if member has active memberships
     const activeMemberships = await adminDb.collection('memberMemberships')
-      .where('memberId', '==', params.id)
+      .where('memberId', '==', memberId)
       .where('status', 'in', ['active', 'pending'])
       .get();
 
@@ -179,7 +188,7 @@ export const DELETE = requireAdmin(async (request: NextRequest, context: Request
 
     // Check if member has children linked to them
     const linkedChildren = await adminDb.collection('members')
-      .where('parentId', '==', params.id)
+      .where('parentId', '==', memberId)
       .get();
 
     if (!linkedChildren.empty) {
@@ -187,15 +196,15 @@ export const DELETE = requireAdmin(async (request: NextRequest, context: Request
     }
 
     // Soft delete: deactivate the member instead of actually deleting
-    await adminDb.collection('members').doc(params.id).update({
+    await adminDb.collection('members').doc(memberId).update({
       isActive: false,
       updatedAt: FieldValue.serverTimestamp(),
-      updatedBy: session.uid,
+      updatedBy: context.session.uid,
     });
 
     // Also disable the Firebase Authentication account
     try {
-      await adminAuth.updateUser(params.id, { disabled: true });
+      await adminAuth.updateUser(memberId, { disabled: true });
     } catch (authError) {
       // If Firebase auth update fails, log but don't fail the operation
       // The member is still deactivated in our system

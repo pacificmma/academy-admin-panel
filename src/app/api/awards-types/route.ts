@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { adminDb } from '@/app/lib/firebase/admin';
 import { requireStaff, RequestContext } from '@/app/lib/api/middleware';
 import { successResponse, errorResponse, createdResponse } from '@/app/lib/api/response-utils';
+import { FieldValue } from 'firebase-admin/firestore';
 
 // Validation schema for creating award types
 const createAwardTypeSchema = z.object({
@@ -25,19 +26,36 @@ interface AwardType {
   updatedBy?: string;
 }
 
+// Default award types for initialization
+const DEFAULT_AWARD_TYPES = [
+  { title: 'White Belt', description: 'Beginning level martial arts belt' },
+  { title: 'Blue Belt', description: 'Intermediate level martial arts belt' },
+  { title: 'Purple Belt', description: 'Advanced level martial arts belt' },
+  { title: 'Brown Belt', description: 'Expert level martial arts belt' },
+  { title: 'Black Belt', description: 'Master level martial arts belt' },
+  { title: 'Tournament Champion', description: 'Won a tournament competition' },
+  { title: 'Monthly MVP', description: 'Most valuable participant of the month' },
+  { title: 'Most Improved', description: 'Showed significant improvement' },
+  { title: 'Perfect Attendance', description: 'Attended all scheduled classes' },
+  { title: 'Instructor Certification', description: 'Certified to teach classes' },
+  { title: 'Competition Medal', description: 'Received medal in competition' },
+  { title: 'Seminar Completion', description: 'Completed specialized seminar' },
+];
+
 // GET /api/award-types - List award types
 export const GET = requireStaff(async (request: NextRequest) => {
   try {
     const url = new URL(request.url);
     const includeUsage = url.searchParams.get('includeUsage') === 'true';
 
-    let query: any = adminDb.collection('awardTypes').orderBy('title', 'asc');
+    const snapshot = await adminDb.collection('awardTypes')
+      .orderBy('title', 'asc')
+      .get();
 
-    const snapshot = await query.get();
     let awardTypes: AwardType[] = [];
+    let usageCounts: Record<string, number> = {};
 
     // Get usage count if requested
-    let usageCounts: Record<string, number> = {};
     if (includeUsage) {
       try {
         const membersSnapshot = await adminDb.collection('members').get();
@@ -52,11 +70,13 @@ export const GET = requireStaff(async (request: NextRequest) => {
           }
         });
       } catch (err) {
-        // Continue without usage counts if error
+        // Continue without usage counts if error occurs
+        console.error('Error calculating usage counts:', err);
       }
     }
 
-    snapshot.forEach((doc: any) => {
+    // Process existing award types
+    snapshot.forEach((doc) => {
       const data = doc.data();
       const awardType: AwardType = {
         id: doc.id,
@@ -66,7 +86,7 @@ export const GET = requireStaff(async (request: NextRequest) => {
         usageCount: includeUsage ? (usageCounts[data.title] || 0) : undefined,
         createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
         updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-        createdBy: data.createdBy,
+        createdBy: data.createdBy || 'system',
         updatedBy: data.updatedBy,
       };
       awardTypes.push(awardType);
@@ -74,27 +94,19 @@ export const GET = requireStaff(async (request: NextRequest) => {
 
     // If no award types exist, create default ones
     if (awardTypes.length === 0) {
-      const defaultAwardTypes = [
-        'White Belt', 'Blue Belt', 'Purple Belt', 'Brown Belt', 'Black Belt',
-        'Tournament Champion', 'Monthly MVP', 'Most Improved', 'Perfect Attendance',
-        'Instructor Certification', 'Competition Medal', 'Seminar Completion'
-      ];
-
-      for (const title of defaultAwardTypes) {
+      for (const defaultType of DEFAULT_AWARD_TYPES) {
         try {
           const docRef = await adminDb.collection('awardTypes').add({
-            title,
-            description: `Default ${title} award`,
+            ...defaultType,
             isActive: true,
-            createdAt: new Date(),
-            updatedAt: new Date(),
+            createdAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
             createdBy: 'system',
           });
 
           awardTypes.push({
             id: docRef.id,
-            title,
-            description: `Default ${title} award`,
+            ...defaultType,
             isActive: true,
             usageCount: includeUsage ? 0 : undefined,
             createdAt: new Date().toISOString(),
@@ -102,7 +114,8 @@ export const GET = requireStaff(async (request: NextRequest) => {
             createdBy: 'system',
           });
         } catch (err) {
-          // Continue if creation fails
+          console.error('Error creating default award type:', err);
+          // Continue with other types if one fails
         }
       }
     }
@@ -110,7 +123,8 @@ export const GET = requireStaff(async (request: NextRequest) => {
     return successResponse(awardTypes);
 
   } catch (err) {
-    return errorResponse('Failed to fetch award types', 500, { details: err });
+    console.error('Error in GET /api/award-types:', err);
+    return errorResponse('Failed to fetch award types', 500);
   }
 });
 
@@ -122,7 +136,9 @@ export const POST = requireStaff(async (request: NextRequest, context: RequestCo
     const validation = createAwardTypeSchema.safeParse(body);
 
     if (!validation.success) {
-      return errorResponse('Validation failed', 400, { validationErrors: validation.error.issues });
+      return errorResponse('Validation failed', 400, { 
+        validationErrors: validation.error.issues 
+      });
     }
 
     // Check if award type with same title already exists
@@ -138,8 +154,8 @@ export const POST = requireStaff(async (request: NextRequest, context: RequestCo
     // Create the award type
     const awardTypeData = {
       ...validation.data,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
       createdBy: session.uid,
     };
 
@@ -157,6 +173,7 @@ export const POST = requireStaff(async (request: NextRequest, context: RequestCo
     return createdResponse(newAwardType, 'Award type created successfully');
 
   } catch (err) {
-    return errorResponse('Failed to create award type', 500, { details: err });
+    console.error('Error in POST /api/award-types:', err);
+    return errorResponse('Failed to create award type', 500);
   }
 });

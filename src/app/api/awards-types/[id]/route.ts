@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { adminDb } from '@/app/lib/firebase/admin';
 import { requireStaff, RequestContext } from '@/app/lib/api/middleware';
 import { successResponse, errorResponse, notFoundResponse, badRequestResponse } from '@/app/lib/api/response-utils';
+import { FieldValue } from 'firebase-admin/firestore';
 
 // Validation schema for updating award types
 const updateAwardTypeSchema = z.object({
@@ -28,12 +29,15 @@ interface AwardType {
 // GET /api/award-types/[id] - Get single award type
 export const GET = requireStaff(async (request: NextRequest, context: RequestContext) => {
   try {
-    const { params } = context;
-    if (!params?.id) {
+    // FIXED: Await params before accessing properties
+    const awaitedParams = await context.params;
+    const awardTypeId = Array.isArray(awaitedParams?.id) ? awaitedParams.id[0] : awaitedParams?.id;
+    
+    if (!awardTypeId) {
       return notFoundResponse('Award type');
     }
 
-    const doc = await adminDb.collection('awardTypes').doc(params.id).get();
+    const doc = await adminDb.collection('awardTypes').doc(awardTypeId).get();
     
     if (!doc.exists) {
       return notFoundResponse('Award type');
@@ -47,34 +51,41 @@ export const GET = requireStaff(async (request: NextRequest, context: RequestCon
       isActive: data?.isActive ?? true,
       createdAt: data?.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
       updatedAt: data?.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-      createdBy: data?.createdBy,
+      createdBy: data?.createdBy || 'system',
       updatedBy: data?.updatedBy,
     };
 
     return successResponse(awardType);
 
   } catch (err) {
-    return errorResponse('Failed to fetch award type', 500, { details: err });
+    console.error('Error in GET /api/award-types/[id]:', err);
+    return errorResponse('Failed to fetch award type', 500);
   }
 });
 
 // PUT /api/award-types/[id] - Update award type
 export const PUT = requireStaff(async (request: NextRequest, context: RequestContext) => {
   try {
-    const { params, session } = context;
-    if (!params?.id) {
+    // FIXED: Await params before accessing properties
+    const awaitedParams = await context.params;
+    const awardTypeId = Array.isArray(awaitedParams?.id) ? awaitedParams.id[0] : awaitedParams?.id;
+    
+    if (!awardTypeId) {
       return notFoundResponse('Award type');
     }
 
+    const { session } = context;
     const body = await request.json();
     const validation = updateAwardTypeSchema.safeParse(body);
 
     if (!validation.success) {
-      return errorResponse('Validation failed', 400, { validationErrors: validation.error.issues });
+      return errorResponse('Validation failed', 400, { 
+        validationErrors: validation.error.issues 
+      });
     }
 
     // Check if award type exists
-    const doc = await adminDb.collection('awardTypes').doc(params.id).get();
+    const doc = await adminDb.collection('awardTypes').doc(awardTypeId).get();
     if (!doc.exists) {
       return notFoundResponse('Award type');
     }
@@ -88,7 +99,7 @@ export const PUT = requireStaff(async (request: NextRequest, context: RequestCon
         .limit(1)
         .get();
 
-      if (!existingSnapshot.empty && existingSnapshot.docs[0].id !== params.id) {
+      if (!existingSnapshot.empty && existingSnapshot.docs[0].id !== awardTypeId) {
         return errorResponse('Award type with this title already exists', 409);
       }
     }
@@ -96,38 +107,42 @@ export const PUT = requireStaff(async (request: NextRequest, context: RequestCon
     // Update the award type
     const updateData = {
       ...validation.data,
-      updatedAt: new Date(),
+      updatedAt: FieldValue.serverTimestamp(),
       updatedBy: session.uid,
     };
 
-    await adminDb.collection('awardTypes').doc(params.id).update(updateData);
+    await adminDb.collection('awardTypes').doc(awardTypeId).update(updateData);
 
     const updatedAwardType: AwardType = {
-      id: params.id,
+      id: awardTypeId,
       ...validation.data,
       createdAt: currentData?.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      createdBy: currentData?.createdBy,
+      createdBy: currentData?.createdBy || 'system',
       updatedBy: session.uid,
     };
 
     return successResponse(updatedAwardType, 'Award type updated successfully');
 
   } catch (err) {
-    return errorResponse('Failed to update award type', 500, { details: err });
+    console.error('Error in PUT /api/award-types/[id]:', err);
+    return errorResponse('Failed to update award type', 500);
   }
 });
 
 // DELETE /api/award-types/[id] - Delete award type
 export const DELETE = requireStaff(async (request: NextRequest, context: RequestContext) => {
   try {
-    const { params } = context;
-    if (!params?.id) {
+    // FIXED: Await params before accessing properties
+    const awaitedParams = await context.params;
+    const awardTypeId = Array.isArray(awaitedParams?.id) ? awaitedParams.id[0] : awaitedParams?.id;
+    
+    if (!awardTypeId) {
       return notFoundResponse('Award type');
     }
 
     // Check if award type exists
-    const doc = await adminDb.collection('awardTypes').doc(params.id).get();
+    const doc = await adminDb.collection('awardTypes').doc(awardTypeId).get();
     if (!doc.exists) {
       return notFoundResponse('Award type');
     }
@@ -140,11 +155,6 @@ export const DELETE = requireStaff(async (request: NextRequest, context: Request
     }
 
     // Check if award type is being used by any members
-    const membersSnapshot = await adminDb.collection('members')
-      .where('awards', 'array-contains-any', [{ title: awardTypeTitle }])
-      .limit(1)
-      .get();
-
     // More thorough check - scan all members for this award title
     const allMembersSnapshot = await adminDb.collection('members').get();
     let usageCount = 0;
@@ -164,11 +174,12 @@ export const DELETE = requireStaff(async (request: NextRequest, context: Request
     }
 
     // Delete the award type
-    await adminDb.collection('awardTypes').doc(params.id).delete();
+    await adminDb.collection('awardTypes').doc(awardTypeId).delete();
 
     return successResponse(null, 'Award type deleted successfully');
 
   } catch (err) {
-    return errorResponse('Failed to delete award type', 500, { details: err });
+    console.error('Error in DELETE /api/award-types/[id]:', err);
+    return errorResponse('Failed to delete award type', 500);
   }
 });
