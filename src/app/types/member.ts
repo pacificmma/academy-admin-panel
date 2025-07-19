@@ -61,6 +61,8 @@ export interface CreateMemberRequest {
   };
 }
 
+// src/app/types/member.ts - Ensure this interface is exported
+
 export interface UpdateMemberRequest {
   fullName?: string;
   address?: {

@@ -1,6 +1,6 @@
 'use client';
 
-// src/app/members/MembersPageClient.tsx - Members management page
+// src/app/members/MembersPageClient.tsx - Members management page with membership status management
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
@@ -31,6 +31,7 @@ import {
   FormControl,
   InputLabel,
   Select,
+  Snackbar,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -44,8 +45,9 @@ import {
   Email as EmailIcon,
 } from '@mui/icons-material';
 import { useAuth } from '@/app/contexts/AuthContext';
-import { MemberRecord, MemberFormData, MemberStats } from '@/app/types/member';
+import { MemberRecord, MemberFormData, MemberStats, UpdateMemberRequest } from '@/app/types/member';
 import CreateMemberForm from '@/app/components/forms/CreateMemberForm';
+import MemberEditDialog from '@/app/components/forms/MemberEditDialog';
 import GroupIcon from "@mui/icons-material/Group"
 import Layout from '../components/layout/Layout';
 import { SessionData } from '@/app/types';
@@ -54,7 +56,7 @@ interface MembersPageClientProps {
   session: SessionData;
 }
 
-export default function MembersPageClient({ session }: MembersPageClientProps) {
+export default function MembersPageClient({ session }: MembersPageClientProps): React.JSX.Element {
   const { user } = useAuth();
   const [members, setMembers] = useState<MemberRecord[]>([]);
   const [stats, setStats] = useState<MemberStats>({
@@ -78,6 +80,7 @@ export default function MembersPageClient({ session }: MembersPageClientProps) {
 
   // Dialog states
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedMember, setSelectedMember] = useState<MemberRecord | null>(null);
 
@@ -85,7 +88,7 @@ export default function MembersPageClient({ session }: MembersPageClientProps) {
   const [actionMenuAnchor, setActionMenuAnchor] = useState<null | HTMLElement>(null);
 
   // Load members data
-  const loadMembers = useCallback(async () => {
+  const loadMembers = useCallback(async (): Promise<void> => {
     try {
       setLoading(true);
       setError(null);
@@ -190,6 +193,43 @@ export default function MembersPageClient({ session }: MembersPageClientProps) {
     }
   };
 
+  // NEW: Handle member update with membership management
+  const handleUpdateMember = async (memberId: string, data: UpdateMemberRequest): Promise<void> => {
+    try {
+      setSubmitLoading(true);
+      setError(null);
+
+      const response = await fetch(`/api/members/${memberId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to update member');
+      }
+
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to update member');
+      }
+
+      setSuccessMessage('Member updated successfully!');
+      await loadMembers();
+      
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update member';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
+
   const handleDeleteMember = async (): Promise<void> => {
     if (!selectedMember) return;
 
@@ -243,27 +283,33 @@ export default function MembersPageClient({ session }: MembersPageClientProps) {
   );
 
   // Handle page change
-  const handleChangePage = (event: unknown, newPage: number) => {
+  const handleChangePage = (event: unknown, newPage: number): void => {
     setPage(newPage);
   };
 
   // Handle rows per page change
-  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>): void => {
     setRowsPerPage(parseInt(event.target.value, 10));
     setPage(0);
   };
 
   // Handle action menu
-  const handleActionMenuClick = (event: React.MouseEvent<HTMLElement>, member: MemberRecord) => {
+  const handleActionMenuClick = (event: React.MouseEvent<HTMLElement>, member: MemberRecord): void => {
     setActionMenuAnchor(event.currentTarget);
     setSelectedMember(member);
   };
 
-  const handleActionMenuClose = () => {
+  const handleActionMenuClose = (): void => {
     setActionMenuAnchor(null);
   };
 
-  const handleDeleteClick = () => {
+  // NEW: Handle edit click
+  const handleEditClick = (): void => {
+    setEditDialogOpen(true);
+    handleActionMenuClose();
+  };
+
+  const handleDeleteClick = (): void => {
     setDeleteDialogOpen(true);
     handleActionMenuClose();
   };
@@ -276,9 +322,11 @@ export default function MembersPageClient({ session }: MembersPageClientProps) {
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
-        <CircularProgress />
-      </Box>
+      <Layout session={session}>
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
+          <CircularProgress />
+        </Box>
+      </Layout>
     );
   }
 
@@ -300,13 +348,6 @@ export default function MembersPageClient({ session }: MembersPageClientProps) {
           </Button>
         )}
       </Box>
-
-      {/* Success Message */}
-      {successMessage && (
-        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccessMessage(null)}>
-          {successMessage}
-        </Alert>
-      )}
 
       {/* Error Message */}
       {error && (
@@ -587,13 +628,17 @@ export default function MembersPageClient({ session }: MembersPageClientProps) {
         />
       </Card>
 
-      {/* Action Menu */}
+      {/* UPDATED: Action Menu with Edit option */}
       <Menu
         anchorEl={actionMenuAnchor}
         open={Boolean(actionMenuAnchor)}
         onClose={handleActionMenuClose}
       >
-        <MenuItem onClick={handleDeleteClick}>
+        <MenuItem onClick={handleEditClick} disabled={submitLoading}>
+          <EditIcon sx={{ mr: 1 }} />
+          Edit Member
+        </MenuItem>
+        <MenuItem onClick={handleDeleteClick} disabled={submitLoading}>
           <DeleteIcon sx={{ mr: 1 }} />
           {selectedMember?.isActive ? 'Deactivate' : 'Delete'} Member
         </MenuItem>
@@ -604,6 +649,18 @@ export default function MembersPageClient({ session }: MembersPageClientProps) {
         open={createDialogOpen}
         onClose={() => setCreateDialogOpen(false)}
         onSubmit={handleCreateMember}
+        loading={submitLoading}
+      />
+
+      {/* NEW: Member Edit Dialog with Membership Management */}
+      <MemberEditDialog
+        open={editDialogOpen}
+        onClose={() => {
+          setEditDialogOpen(false);
+          setSelectedMember(null);
+        }}
+        onSubmit={handleUpdateMember}
+        member={selectedMember}
         loading={submitLoading}
       />
 
@@ -632,6 +689,22 @@ export default function MembersPageClient({ session }: MembersPageClientProps) {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Success Snackbar */}
+      <Snackbar
+        open={!!successMessage}
+        autoHideDuration={6000}
+        onClose={() => setSuccessMessage(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          onClose={() => setSuccessMessage(null)}
+          severity="success"
+          sx={{ width: '100%' }}
+        >
+          {successMessage}
+        </Alert>
+      </Snackbar>
     </Box>
     </Layout>
   );

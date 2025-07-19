@@ -1,7 +1,8 @@
-// src/app/types/membership.ts - Updated to support dynamic class types
+// src/app/types/membership.ts - Updated to support freeze functionality
 
 export type DurationType = 'days' | 'weeks' | 'months' | 'years';
 export type MembershipStatus = 'active' | 'inactive' | 'draft';
+export type MemberMembershipStatus = 'active' | 'expired' | 'cancelled' | 'suspended' | 'frozen';
 
 export interface MembershipPlan {
   id: string;
@@ -10,8 +11,8 @@ export interface MembershipPlan {
   durationValue: number;
   durationType: DurationType;
   price: number;
-  currency: 'USD'; // Fixed to USD only
-  classTypes: string[]; // Array of class type names (dynamic)
+  currency: 'USD';
+  classTypes: string[];
   status: MembershipStatus;
   createdAt: string;
   updatedAt: string;
@@ -25,8 +26,8 @@ export interface MembershipPlanFormData {
   durationValue: number;
   durationType: DurationType;
   price: number;
-  currency: 'USD'; // Fixed to USD only
-  classTypes: string[]; // Array of class type names (dynamic)
+  currency: 'USD';
+  classTypes: string[];
   status: MembershipStatus;
 }
 
@@ -36,21 +37,58 @@ export interface MemberMembership {
   membershipPlanId: string;
   startDate: string;
   endDate: string;
-  status: 'active' | 'expired' | 'cancelled' | 'suspended';
+  status: MemberMembershipStatus;
   paymentStatus: 'pending' | 'paid' | 'failed' | 'refunded';
   amount: number;
-  currency: 'USD'; // Fixed to USD only
+  currency: 'USD';
   paymentMethod?: string;
+  paymentReference?: string;
   notes?: string;
+  
+  // Freeze-related fields
+  freezeStartDate?: string;
+  freezeEndDate?: string;
+  freezeReason?: string;
+  originalEndDate?: string; // Store original end date before freeze
+  
+  // Cancellation fields
+  cancellationReason?: string;
+  cancelledBy?: string;
+  
+  // Classes tracking
+  classesUsed?: number;
+  maxClasses?: number;
+  isUnlimited?: boolean;
+  
   createdAt: string;
   updatedAt: string;
   createdBy: string;
   updatedBy?: string;
+  
   // Virtual fields populated from joins
   memberName?: string;
   memberEmail?: string;
   planName?: string;
-  planClassTypes?: string[]; // Dynamic class types
+  planClassTypes?: string[];
+}
+
+export interface MemberMembershipFilters {
+  memberId?: string;
+  membershipPlanId?: string;
+  status?: MemberMembershipStatus;
+  paymentStatus?: MemberMembership['paymentStatus'];
+  startDateFrom?: string;
+  startDateTo?: string;
+  endDateFrom?: string;
+  endDateTo?: string;
+  searchTerm?: string;
+}
+
+export interface MembershipStatusAction {
+  action: 'freeze' | 'unfreeze' | 'cancel' | 'reactivate';
+  reason: string;
+  freezeDuration?: number; // in days
+  freezeEndDate?: string; // specific end date for freeze
 }
 
 export interface MembershipStats {
@@ -60,7 +98,7 @@ export interface MembershipStats {
   totalRevenue?: number;
   monthlyRevenue?: number;
   popularClassTypes?: Array<{
-    type: string; // Dynamic class type name
+    type: string;
     count: number;
     color?: string;
   }>;
@@ -69,7 +107,6 @@ export interface MembershipStats {
 // Helper function to format duration
 export function formatDuration(value: number, type: DurationType): string {
   if (value === 1) {
-    // Singular forms
     switch (type) {
       case 'days': return '1 Day';
       case 'weeks': return '1 Week';
@@ -78,7 +115,6 @@ export function formatDuration(value: number, type: DurationType): string {
       default: return `1 ${type}`;
     }
   } else {
-    // Plural forms
     switch (type) {
       case 'days': return `${value} Days`;
       case 'weeks': return `${value} Weeks`;
@@ -121,11 +157,32 @@ export function isExpiringSoon(endDate: string, daysThreshold: number = 7): bool
 }
 
 // Helper function to get membership status color
-export function getMembershipStatusColor(status: MembershipStatus): 'success' | 'warning' | 'error' | 'default' {
+export function getMembershipStatusColor(status: MemberMembershipStatus): 'success' | 'warning' | 'error' | 'default' | 'info' {
   switch (status) {
     case 'active': return 'success';
-    case 'inactive': return 'error';
-    case 'draft': return 'warning';
+    case 'frozen': return 'info';
+    case 'suspended': return 'warning';
+    case 'cancelled': return 'error';
+    case 'expired': return 'default';
     default: return 'default';
   }
+}
+
+// Helper function to get membership status display text
+export function getMembershipStatusText(status: MemberMembershipStatus): string {
+  switch (status) {
+    case 'active': return 'Active';
+    case 'frozen': return 'Frozen';
+    case 'suspended': return 'Suspended';
+    case 'cancelled': return 'Cancelled';
+    case 'expired': return 'Expired';
+    default: return status;
+  }
+}
+
+// Helper function to calculate freeze duration
+export function calculateFreezeEndDate(startDate: string, durationDays: number): string {
+  const start = new Date(startDate);
+  start.setDate(start.getDate() + durationDays);
+  return start.toISOString();
 }
