@@ -114,7 +114,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
       const [schedulesResponse, instancesResponse, instructorsResponse] = await Promise.all([
         fetch('/api/classes/schedules'),
         fetch('/api/classes/instances'),
-        fetch('/api/staff?role=trainer'),
+        fetch('/api/staff?role=trainer,visiting_trainer'),
       ]);
 
       if (!schedulesResponse.ok) throw new Error('Failed to load schedules');
