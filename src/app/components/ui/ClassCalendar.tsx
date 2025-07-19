@@ -18,6 +18,8 @@ import {
   ListItemIcon,
   ListItemText,
   Skeleton,
+  TextField,
+  InputAdornment,
 } from '@mui/material';
 import {
   ChevronLeft as ChevronLeftIcon,
@@ -32,6 +34,7 @@ import {
   PlayArrow as PlayArrowIcon,
   Stop as StopIcon,
   Cancel as CancelIcon,
+  CalendarMonth as CalendarIcon,
 } from '@mui/icons-material';
 import { ClassInstance, getClassTypeColor, ClassSchedule } from '../../types/class';
 
@@ -82,17 +85,17 @@ export default function ClassCalendar({
 }: ClassCalendarProps) {
   const theme = useTheme();
   
-  // FIXED: Initialize currentDate with a stable default value
+  // Initialize currentDate with a stable default value
   const [currentDate, setCurrentDate] = useState(() => selectedDate || new Date());
   const [eventMenuAnchor, setEventMenuAnchor] = useState<null | HTMLElement>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
 
-  // FIXED: Only sync when selectedDate actually changes and is different
+  // Only sync when selectedDate actually changes and is different
   useEffect(() => {
     if (selectedDate && selectedDate.getTime() !== currentDate.getTime()) {
       setCurrentDate(new Date(selectedDate));
     }
-  }, [selectedDate?.getTime()]); // Use getTime() to avoid object reference issues
+  }, [selectedDate?.getTime(), currentDate]);
 
   // Memoize expensive calculations with proper dependencies
   const events = useMemo(() => {
@@ -109,9 +112,9 @@ export default function ClassCalendar({
     }));
   }, [instances]);
 
-  // FIXED: Prevent date mutation by creating completely new Date objects
+  // FIXED: Prevent date mutation by creating completely new Date objects with proper local dates
   const dateRange = useMemo(() => {
-    // Create new Date instances to avoid mutation
+    // Create new Date instances to avoid mutation - use local dates consistently
     const start = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
     const end = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
 
@@ -142,9 +145,9 @@ export default function ClassCalendar({
       
       return { start, end };
     }
-  }, [currentDate.getTime(), viewMode]); // Use getTime() for stable comparison
+  }, [currentDate.getTime(), viewMode]);
 
-  // FIXED: Optimize filtered events with stable date comparisons
+  // FIXED: Optimize filtered events with proper local date string comparison
   const filteredEvents = useMemo(() => {
     if (!events || events.length === 0) return [];
     
@@ -152,8 +155,11 @@ export default function ClassCalendar({
 
     return events.filter(event => {
       try {
-        // Parse the date string consistently
-        const eventDate = new Date(event.date + 'T00:00:00.000Z');
+        // FIXED: Parse event date as local date (not UTC) to avoid timezone offset issues
+        const [year, month, day] = event.date.split('-').map(Number);
+        const eventDate = new Date(year, month - 1, day); // month is 0-indexed
+        
+        // Compare using time values for accuracy
         const eventTime = eventDate.getTime();
         
         return eventTime >= rangeStart.getTime() && eventTime <= rangeEnd.getTime();
@@ -163,8 +169,21 @@ export default function ClassCalendar({
     });
   }, [events, dateRange.start.getTime(), dateRange.end.getTime()]);
 
-  // FIXED: Stable navigation function
-  const navigateDate = useCallback((direction: 'prev' | 'next' | 'today') => {
+  // FIXED: Enhanced navigation with date selection
+  const handleDateSelect = useCallback((dateString: string) => {
+    if (dateString) {
+      const [year, month, day] = dateString.split('-').map(Number);
+      const newDate = new Date(year, month - 1, day);
+      setCurrentDate(newDate);
+    }
+  }, []);
+
+  const goToToday = useCallback(() => {
+    setCurrentDate(new Date());
+  }, []);
+
+  // Navigation function for prev/next buttons
+  const navigateDate = useCallback((direction: 'prev' | 'next') => {
     setCurrentDate(prevDate => {
       const newDate = new Date(prevDate);
 
@@ -187,15 +206,21 @@ export default function ClassCalendar({
             newDate.setMonth(newDate.getMonth() + 1);
           }
           break;
-        case 'today':
-          return new Date();
       }
 
       return newDate;
     });
   }, [viewMode]);
 
-  // FIXED: Stable event click handler
+  // FIXED: Get current date as string for date input using local date formatting
+  const currentDateString = useMemo(() => {
+    const year = currentDate.getFullYear();
+    const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+    const day = String(currentDate.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, [currentDate]);
+
+  // Stable event click handler
   const handleEventClick = useCallback((event: CalendarEvent, anchorEl?: HTMLElement) => {
     setSelectedEvent(event);
     if (anchorEl) {
@@ -209,7 +234,7 @@ export default function ClassCalendar({
     setSelectedEvent(null);
   }, []);
 
-  // FIXED: Optimize month view data calculation
+  // Optimize month view data calculation
   const monthViewData = useMemo(() => {
     if (viewMode !== 'month') return null;
 
@@ -240,13 +265,18 @@ export default function ClassCalendar({
     return { weeks, firstDayOfMonth };
   }, [currentDate.getTime(), viewMode]);
 
-  // Get events for a specific day (optimized)
+  // FIXED: Get events for a specific day with proper local date formatting
   const getEventsForDay = useCallback((day: Date) => {
-    const dayString = day.toISOString().split('T')[0];
+    // FIXED: Format date as local date to avoid timezone offset issues
+    const year = day.getFullYear();
+    const month = String(day.getMonth() + 1).padStart(2, '0');
+    const dayOfMonth = String(day.getDate()).padStart(2, '0');
+    const dayString = `${year}-${month}-${dayOfMonth}`;
+    
     return filteredEvents.filter(event => {
       try {
-        const eventDate = new Date(event.date + 'T00:00:00.000Z');
-        return eventDate.toISOString().split('T')[0] === dayString;
+        // Compare with the properly formatted local date string
+        return event.date === dayString;
       } catch {
         return false;
       }
@@ -305,7 +335,7 @@ export default function ClassCalendar({
     );
   }
 
-  // Render functions
+  // FIXED: Complete renderDayView function
   const renderDayView = () => {
     const dayEvents = getEventsForDay(currentDate).sort((a, b) => a.startTime.localeCompare(b.startTime));
 
@@ -329,7 +359,13 @@ export default function ClassCalendar({
         ) : (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {dayEvents.map(event => (
-              <Card key={event.id} sx={{ cursor: 'pointer', '&:hover': { transform: 'translateY(-2px)' }, transition: 'transform 0.2s' }}>
+              <Card key={event.id} sx={{ 
+                cursor: 'pointer', 
+                '&:hover': { transform: 'translateY(-2px)' }, 
+                transition: 'transform 0.2s',
+                border: '1px solid',
+                borderColor: 'divider'
+              }}>
                 <CardContent onClick={() => handleEventClick(event)}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <Box>
@@ -355,6 +391,7 @@ export default function ClassCalendar({
     );
   };
 
+  // FIXED: Complete renderWeekView function
   const renderWeekView = () => {
     const weekDays: Date[] = [];
     const startOfWeek = new Date(dateRange.start);
@@ -401,6 +438,15 @@ export default function ClassCalendar({
                 }}
                 onClick={() => onDateClick?.(day)}
               >
+                <Typography variant="caption" sx={{ 
+                  fontWeight: isToday ? 700 : 400,
+                  color: isToday ? 'primary.main' : 'text.primary',
+                  display: 'block',
+                  mb: 0.5
+                }}>
+                  {day.getDate()}
+                </Typography>
+                
                 {dayEvents.map(event => (
                   <Box
                     key={event.id}
@@ -421,10 +467,19 @@ export default function ClassCalendar({
                       handleEventClick(event);
                     }}
                   >
-                    <Typography variant="caption" sx={{ fontWeight: 600, display: 'block' }}>
+                    <Typography variant="caption" sx={{ 
+                      fontWeight: 600, 
+                      display: 'block',
+                      fontSize: '0.65rem',
+                      lineHeight: 1.2
+                    }}>
                       {event.title}
                     </Typography>
-                    <Typography variant="caption" sx={{ opacity: 0.9 }}>
+                    <Typography variant="caption" sx={{ 
+                      opacity: 0.9,
+                      fontSize: '0.6rem',
+                      lineHeight: 1
+                    }}>
                       {event.startTime}
                     </Typography>
                   </Box>
@@ -473,41 +528,32 @@ export default function ClassCalendar({
                       border: '1px solid',
                       borderColor: isToday ? 'primary.main' : 'divider',
                       borderRadius: 1,
-                      bgcolor: isToday 
-                        ? alpha(theme.palette.primary.main, 0.05)
-                        : isCurrentMonth 
-                        ? 'background.paper' 
-                        : 'action.hover',
-                      opacity: isCurrentMonth ? 1 : 0.5,
+                      bgcolor: isToday ? alpha(theme.palette.primary.main, 0.05) : 'background.paper',
                       cursor: onDateClick ? 'pointer' : 'default',
-                      position: 'relative',
+                      opacity: isCurrentMonth ? 1 : 0.3,
                       '&:hover': {
                         bgcolor: 'action.hover',
                       },
                     }}
                     onClick={() => onDateClick?.(day)}
                   >
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        fontWeight: isToday ? 'bold' : 'normal',
-                        color: isToday ? 'primary.main' : 'text.primary',
-                        mb: 0.5,
-                      }}
-                    >
+                    <Typography variant="caption" sx={{ 
+                      fontWeight: isToday ? 700 : 400,
+                      color: isToday ? 'primary.main' : 'text.primary'
+                    }}>
                       {day.getDate()}
                     </Typography>
-
-                    {dayEvents.slice(0, 2).map(event => (
+                    
+                    {dayEvents.map(event => (
                       <Box
                         key={event.id}
                         sx={{
                           bgcolor: event.color,
                           color: 'white',
-                          p: 0.25,
-                          mb: 0.25,
-                          borderRadius: 0.5,
-                          fontSize: '0.6rem',
+                          p: 0.5,
+                          mb: 0.5,
+                          borderRadius: 1,
+                          fontSize: '0.7rem',
                           cursor: 'pointer',
                           '&:hover': {
                             transform: 'scale(1.02)',
@@ -518,17 +564,14 @@ export default function ClassCalendar({
                           handleEventClick(event);
                         }}
                       >
-                        <Typography variant="caption" sx={{ fontWeight: 600, display: 'block', lineHeight: 1 }}>
+                        <Typography variant="caption" sx={{ fontWeight: 600, display: 'block' }}>
                           {event.title}
+                        </Typography>
+                        <Typography variant="caption" sx={{ opacity: 0.9 }}>
+                          {event.startTime}
                         </Typography>
                       </Box>
                     ))}
-
-                    {dayEvents.length > 2 && (
-                      <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6rem' }}>
-                        +{dayEvents.length - 2} more
-                      </Typography>
-                    )}
                   </Box>
                 );
               })}
@@ -541,25 +584,61 @@ export default function ClassCalendar({
 
   return (
     <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* Header */}
-      <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <IconButton onClick={() => navigateDate('prev')} size="small">
+      {/* Header with Navigation and View Controls */}
+      <Box sx={{ 
+        p: 2, 
+        borderBottom: '1px solid', 
+        borderColor: 'divider',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: 2
+      }}>
+        {/* Navigation */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <IconButton size="small" onClick={() => navigateDate('prev')}>
             <ChevronLeftIcon />
           </IconButton>
-          <IconButton onClick={() => navigateDate('next')} size="small">
+          
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <TextField
+              size="small"
+              type="date"
+              value={currentDateString}
+              onChange={(e) => handleDateSelect(e.target.value)}
+              sx={{ 
+                minWidth: 150,
+                '& .MuiInputBase-input': {
+                  fontSize: '0.875rem'
+                }
+              }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <CalendarIcon fontSize="small" />
+                  </InputAdornment>
+                ),
+              }}
+            />
+            
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={goToToday}
+              startIcon={<TodayIcon />}
+              sx={{ minWidth: 'auto', whiteSpace: 'nowrap' }}
+            >
+              Today
+            </Button>
+          </Box>
+          
+          <IconButton size="small" onClick={() => navigateDate('next')}>
             <ChevronRightIcon />
           </IconButton>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<TodayIcon />}
-            onClick={() => navigateDate('today')}
-          >
-            Today
-          </Button>
         </Box>
 
+        {/* View Mode Selector */}
         <Box sx={{ display: 'flex', gap: 0.5 }}>
           <Tooltip title="Day View">
             <IconButton

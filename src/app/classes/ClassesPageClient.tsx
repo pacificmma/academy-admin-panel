@@ -53,6 +53,7 @@ interface ClassFilters {
 }
 
 type ViewMode = 'list' | 'calendar';
+type CalendarViewMode = 'day' | 'week' | 'month';
 
 // Initialize with default values to prevent controlled/uncontrolled warnings
 const DEFAULT_FILTERS: ClassFilters = {
@@ -73,6 +74,9 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
   const [submitLoading, setSubmitLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
+  
+  // FIXED: Add calendar view mode state
+  const [calendarViewMode, setCalendarViewMode] = useState<CalendarViewMode>('month');
 
   // Dialog states
   const [isFormDialogOpen, setIsFormDialogOpen] = useState(false);
@@ -85,151 +89,102 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
   // Filters - Initialize with default values to prevent controlled/uncontrolled issues
   const [filters, setFilters] = useState<ClassFilters>(DEFAULT_FILTERS);
 
-  // FIXED: Removed useCallback from individual load functions and consolidated into single loadData function
-  // This prevents circular dependencies in the useEffect dependency array
-
-  // Combined data loading function - FIXED: No dependencies to prevent infinite re-renders
+  // Combined data loading function
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      // Load instructors
-      const loadInstructors = async () => {
-        try {
-          const response = await fetch('/api/staff?status=active', {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            credentials: 'include',
-          });
-
-          if (!response.ok) {
-            let errorMessage = `HTTP ${response.status}: Failed to load instructors`;
-            try {
-              const errorText = await response.text();
-              const errorData = JSON.parse(errorText);
-              errorMessage = errorData.error || errorMessage;
-            } catch (parseError) {
-              // If we can't parse the error, use the generic message
-            }
-            throw new Error(errorMessage);
-          }
-
-          const data = await response.json();
-          if (data.success) {
-            // Filter for trainers and visiting trainers only (admins can also be instructors)
-            const allStaff = data.data || [];
-            const availableInstructors = allStaff.filter((staff: StaffRecord) =>
-              staff.role === 'trainer' ||
-              staff.role === 'visiting_trainer' ||
-              staff.role === 'admin' // Admins can also be instructors
-            );
-            setInstructors(availableInstructors);
-          } else {
-            throw new Error(data.error || 'Failed to load instructors');
-          }
-        } catch (error) {
-          throw new Error('Network error: Failed to load instructors. Please check your connection and try again.');
-        }
-      };
-
-      // Load class schedules
-      const loadSchedules = async () => {
-        try {
-          const response = await fetch('/api/classes/schedules');
-          if (!response.ok) {
-            throw new Error('Failed to load class schedules');
-          }
-          const data = await response.json();
-          setSchedules(data.data || []);
-        } catch (error) {
-          throw new Error('Failed to load class schedules');
-        }
-      };
-
-      // Load class instances
-      const loadInstances = async () => {
-        try {
-          const response = await fetch('/api/classes/instances');
-          if (!response.ok) {
-            throw new Error('Failed to load class instances');
-          }
-          const data = await response.json();
-          setAllInstances(data.data || []);
-        } catch (error) {
-          throw new Error('Failed to load class instances');
-        }
-      };
-
-      // Execute all loading operations
-      await Promise.all([
-        loadSchedules(),
-        loadInstances(),
-        loadInstructors(),
+      const [schedulesResponse, instancesResponse, instructorsResponse] = await Promise.all([
+        fetch('/api/classes/schedules'),
+        fetch('/api/classes/instances'),
+        fetch('/api/staff?role=trainer'),
       ]);
 
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to load data';
+      if (!schedulesResponse.ok) throw new Error('Failed to load schedules');
+      if (!instancesResponse.ok) throw new Error('Failed to load instances');
+      if (!instructorsResponse.ok) throw new Error('Failed to load instructors');
+
+      const [schedulesData, instancesData, instructorsData] = await Promise.all([
+        schedulesResponse.json(),
+        instancesResponse.json(),
+        instructorsResponse.json(),
+      ]);
+
+      setSchedules(schedulesData.data || []);
+      setAllInstances(instancesData.data || []);
+      setInstructors(instructorsData.data || []);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load data';
       setError(errorMessage);
     } finally {
       setLoading(false);
     }
-  }, []); // FIXED: Empty dependency array to prevent infinite re-renders
+  }, []);
 
-  // Initial data load - FIXED: loadData is now stable
+  // Load data on component mount
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  // Handle filter changes with proper typing
-  const handleFilterChange = useCallback((key: keyof ClassFilters, value: string) => {
+  // Filter change handler
+  const handleFilterChange = useCallback(<K extends keyof ClassFilters>(
+    field: K,
+    value: ClassFilters[K]
+  ) => {
     setFilters(prev => ({
       ...prev,
-      [key]: value || '', // Ensure we never set undefined values
+      [field]: value,
     }));
   }, []);
 
-  // Clear all filters
-  const clearFilters = useCallback(() => {
-    setFilters(DEFAULT_FILTERS);
-  }, []);
-
-  // Transform instructors data to match ClassFormDialog interface
-  const transformedInstructors = useMemo(() => {
-    return instructors.map(instructor => ({
-      id: instructor.id,
-      name: instructor.fullName, // Transform fullName to name
-      specialties: instructor.specializations || [], // Transform specializations to specialties
-    }));
-  }, [instructors]);
-
-  // Get unique class types for filter
+  // Memoized filter calculations
   const uniqueClassTypes = useMemo(() => {
     const types = new Set<string>();
-    schedules.forEach(schedule => {
-      if (schedule.classType) types.add(schedule.classType);
-    });
-    allInstances.forEach(instance => {
-      if (instance.classType) types.add(instance.classType);
-    });
+    schedules.forEach(schedule => types.add(schedule.classType));
+    allInstances.forEach(instance => types.add(instance.classType));
     return Array.from(types).sort();
   }, [schedules, allInstances]);
 
-  // Combine and filter data
-  const filteredData = useMemo(() => {
-    const combined = [...schedules, ...allInstances];
+  const uniqueInstructors = useMemo(() => {
+    const instructorMap = new Map<string, string>();
+    schedules.forEach(schedule => {
+      if (schedule.instructorName) {
+        instructorMap.set(schedule.instructorId, schedule.instructorName);
+      }
+    });
+    allInstances.forEach(instance => {
+      if (instance.instructorName) {
+        instructorMap.set(instance.instructorId, instance.instructorName);
+      }
+    });
+    return Array.from(instructorMap.entries()).map(([id, name]) => ({ id, name }));
+  }, [schedules, allInstances]);
 
-    return combined.filter(item => {
+  const transformedInstructors = useMemo(() => 
+    instructors.map(instructor => ({
+      id: instructor.id,
+      name: instructor.fullName,
+      email: instructor.email,
+    })), [instructors]
+  );
+
+  // Apply filters
+  const filteredData = useMemo(() => {
+    const combinedData: (ClassSchedule | ClassInstance)[] = [
+      ...schedules,
+      ...allInstances,
+    ];
+
+    return combinedData.filter(item => {
       // Search term filter
       if (filters.searchTerm) {
         const searchLower = filters.searchTerm.toLowerCase();
-        const matchesName = item.name?.toLowerCase().includes(searchLower);
-        const matchesInstructor = item.instructorName?.toLowerCase().includes(searchLower);
-        const matchesType = item.classType?.toLowerCase().includes(searchLower);
-
-        if (!matchesName && !matchesInstructor && !matchesType) {
+        const matchesName = item.name.toLowerCase().includes(searchLower);
+        const matchesType = item.classType.toLowerCase().includes(searchLower);
+        const matchesInstructor = (item.instructorName || '').toLowerCase().includes(searchLower);
+        
+        if (!matchesName && !matchesType && !matchesInstructor) {
           return false;
         }
       }
@@ -244,13 +199,34 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
         return false;
       }
 
-      // Status filter for instances
-      if ('status' in item && filters.status !== 'all') {
-        if (filters.status === 'active' && item.status === 'cancelled') {
+      // Status filter (only applies to instances)
+      if (filters.status !== 'all' && 'status' in item) {
+        if (item.status !== filters.status) {
           return false;
         }
-        if (filters.status === 'inactive' && item.status !== 'cancelled') {
-          return false;
+      }
+
+      // Date range filter
+      if (filters.dateRange !== 'all') {
+        const now = new Date();
+        const itemDate = new Date('date' in item ? item.date : item.startDate);
+        
+        switch (filters.dateRange) {
+          case 'today':
+            if (itemDate.toDateString() !== now.toDateString()) return false;
+            break;
+          case 'week':
+            const weekStart = new Date(now);
+            weekStart.setDate(now.getDate() - now.getDay());
+            const weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekStart.getDate() + 7);
+            if (itemDate < weekStart || itemDate >= weekEnd) return false;
+            break;
+          case 'month':
+            if (itemDate.getMonth() !== now.getMonth() || itemDate.getFullYear() !== now.getFullYear()) {
+              return false;
+            }
+            break;
         }
       }
 
@@ -258,160 +234,165 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
     });
   }, [schedules, allInstances, filters]);
 
-  // Handle form submission
-  const handleFormSubmit = async (formData: ClassFormData, scheduleId?: string) => {
+  // Class management handlers
+  const handleCreateClass = useCallback(() => {
+    setEditingClass(null);
+    setEditingType('schedule');
+    setFormMode('create');
+    setIsFormDialogOpen(true);
+  }, []);
+
+  const handleEditClass = useCallback((classData: ClassSchedule | ClassInstance) => {
+    setEditingClass(classData);
+    setEditingType('scheduleId' in classData ? 'instance' : 'schedule');
+    setFormMode('edit');
+    setIsFormDialogOpen(true);
+  }, []);
+
+  const handleDeleteClass = useCallback((classData: ClassSchedule | ClassInstance) => {
+    setDeletingClass(classData);
+    setIsDeleteDialogOpen(true);
+  }, []);
+
+  const handleFormSubmit = useCallback(async (formData: ClassFormData) => {
     setSubmitLoading(true);
     try {
-      const endpoint = scheduleId
-        ? `/api/classes/schedules/${scheduleId}`
-        : '/api/classes/schedules';
+      const endpoint = editingType === 'schedule' 
+        ? '/api/classes/schedules'
+        : '/api/classes/instances';
+      
+      const method = formMode === 'create' ? 'POST' : 'PUT';
+      const url = formMode === 'edit' && editingClass 
+        ? `${endpoint}/${editingClass.id}`
+        : endpoint;
 
-      const method = scheduleId ? 'PUT' : 'POST';
-
-      const response = await fetch(endpoint, {
+      const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
 
-      if (response.ok) {
-        setSuccessMessage(
-          formMode === 'create'
-            ? 'Class created successfully!'
-            : 'Class updated successfully!'
-        );
-        await loadData();
-        setIsFormDialogOpen(false);
-        setEditingClass(null);
-      } else {
+      if (!response.ok) {
         const errorData = await response.json();
-        setError(errorData.message || 'Failed to save class');
+        throw new Error(errorData.message || 'Failed to save class');
       }
-    } catch (error) {
-      setError('Failed to save class');
+
+      setSuccessMessage(
+        `Class ${formMode === 'create' ? 'created' : 'updated'} successfully!`
+      );
+      
+      setIsFormDialogOpen(false);
+      setEditingClass(null);
+      await loadData();
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save class';
+      setError(errorMessage);
     } finally {
       setSubmitLoading(false);
     }
-  };
+  }, [editingType, formMode, editingClass, loadData]);
 
-  // Handle delete
-  const handleDelete = async () => {
+  const handleDelete = useCallback(async () => {
     if (!deletingClass) return;
 
     setSubmitLoading(true);
     try {
-      const isInstance = 'scheduleId' in deletingClass;
-      const endpoint = isInstance
+      const endpoint = 'scheduleId' in deletingClass 
         ? `/api/classes/instances/${deletingClass.id}`
         : `/api/classes/schedules/${deletingClass.id}`;
 
       const response = await fetch(endpoint, { method: 'DELETE' });
 
-      if (response.ok) {
-        setSuccessMessage(
-          `${isInstance ? 'Class instance' : 'Class schedule'} deleted successfully!`
-        );
-        await loadData();
-        setIsDeleteDialogOpen(false);
-        setDeletingClass(null);
-      } else {
+      if (!response.ok) {
         const errorData = await response.json();
-        setError(errorData.message || 'Failed to delete class');
+        throw new Error(errorData.message || 'Failed to delete class');
       }
-    } catch (error) {
-      setError('Failed to delete class');
+
+      setSuccessMessage('Class deleted successfully!');
+      setIsDeleteDialogOpen(false);
+      setDeletingClass(null);
+      await loadData();
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete class';
+      setError(errorMessage);
     } finally {
       setSubmitLoading(false);
     }
-  };
+  }, [deletingClass, loadData]);
 
-  // Handle edit class
-  const handleEditClass = (classData: ClassSchedule | ClassInstance) => {
-    setEditingClass(classData);
-    setEditingType('scheduleId' in classData ? 'instance' : 'schedule');
-    setFormMode('edit');
-    setIsFormDialogOpen(true);
-  };
-
-  // Handle delete class
-  const handleDeleteClass = (classData: ClassSchedule | ClassInstance) => {
-    setDeletingClass(classData);
-    setIsDeleteDialogOpen(true);
-  };
-
-  // Handle create new class
-  const handleCreateClass = () => {
-    setEditingClass(null);
-    setEditingType('schedule');
-    setFormMode('create');
-    setIsFormDialogOpen(true);
-  };
-
-  // Class management actions (for instances)
-  const handleStartClass = async (instanceId: string) => {
+  // Instance action handlers
+  const handleStartClass = useCallback(async (instanceId: string) => {
     try {
       const response = await fetch(`/api/classes/instances/${instanceId}/start`, {
-        method: 'POST', // FIXED: Changed from PATCH to POST to match API
+        method: 'PATCH',
       });
 
-      if (response.ok) {
-        setSuccessMessage('Class started successfully!');
-        await loadData();
-      } else {
-        setError('Failed to start class');
+      if (!response.ok) {
+        throw new Error('Failed to start class');
       }
-    } catch (error) {
-      setError('Failed to start class');
-    }
-  };
 
-  const handleEndClass = async (instanceId: string) => {
+      setSuccessMessage('Class started successfully!');
+      await loadData();
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to start class';
+      setError(errorMessage);
+    }
+  }, [loadData]);
+
+  const handleEndClass = useCallback(async (instanceId: string) => {
     try {
       const response = await fetch(`/api/classes/instances/${instanceId}/end`, {
-        method: 'POST', // FIXED: Changed from PATCH to POST to match API
+        method: 'PATCH',
       });
 
-      if (response.ok) {
-        setSuccessMessage('Class ended successfully!');
-        await loadData();
-      } else {
-        setError('Failed to end class');
+      if (!response.ok) {
+        throw new Error('Failed to end class');
       }
-    } catch (error) {
-      setError('Failed to end class');
-    }
-  };
 
-  const handleCancelClass = async (instanceId: string) => {
+      setSuccessMessage('Class ended successfully!');
+      await loadData();
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to end class';
+      setError(errorMessage);
+    }
+  }, [loadData]);
+
+  const handleCancelClass = useCallback(async (instanceId: string) => {
     try {
       const response = await fetch(`/api/classes/instances/${instanceId}/cancel`, {
-        method: 'POST', // FIXED: Changed from PATCH to POST to match API
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          reason: 'Cancelled by administrator', // Add cancellation reason
-        }),
+        method: 'PATCH',
       });
 
-      if (response.ok) {
-        setSuccessMessage('Class cancelled successfully!');
-        await loadData();
-      } else {
-        setError('Failed to cancel class');
+      if (!response.ok) {
+        throw new Error('Failed to cancel class');
       }
-    } catch (error) {
-      setError('Failed to cancel class');
+
+      setSuccessMessage('Class cancelled successfully!');
+      await loadData();
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to cancel class';
+      setError(errorMessage);
     }
-  };
+  }, [loadData]);
+
+  // FIXED: Add calendar view mode change handler
+  const handleCalendarViewModeChange = useCallback((mode: CalendarViewMode) => {
+    setCalendarViewMode(mode);
+  }, []);
 
   if (loading) {
     return (
       <Layout session={session}>
         <Container maxWidth="xl">
-          <Box display="flex" flexDirection="column" gap={3}>
-            <Skeleton variant="rectangular" height={60} />
-            <Skeleton variant="rectangular" height={400} />
+          <Box sx={{ py: 3 }}>
+            <Skeleton variant="text" width={200} height={40} sx={{ mb: 3 }} />
+            <Grid container spacing={3}>
+              {Array.from({ length: 6 }).map((_, index) => (
+                <Grid item xs={12} sm={6} lg={4} key={index}>
+                  <Skeleton variant="rectangular" height={200} sx={{ borderRadius: 1 }} />
+                </Grid>
+              ))}
+            </Grid>
           </Box>
         </Container>
       </Layout>
@@ -420,28 +401,37 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
 
   return (
     <Layout session={session}>
-      <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
-        <Box display="flex" flexDirection="column" gap={3}>
+      <Container maxWidth="xl">
+        <Box sx={{ py: 3 }}>
           {/* Header */}
-          <Box display="flex" justifyContent="space-between" alignItems="center">
-            <Typography variant="h4" fontWeight="bold">
+          <Box sx={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center', 
+            mb: 3,
+            flexWrap: 'wrap',
+            gap: 2
+          }}>
+            <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
               Class Management
             </Typography>
-
-            <Box display="flex" gap={2}>
+            
+            <Box sx={{ display: 'flex', gap: 1 }}>
               <Button
+                variant="outlined"
                 startIcon={<RefreshIcon />}
                 onClick={loadData}
                 disabled={loading}
               >
                 Refresh
               </Button>
-
+              
               {session.role === 'admin' && (
                 <Button
                   variant="contained"
                   startIcon={<AddIcon />}
                   onClick={handleCreateClass}
+                  sx={{ display: { xs: 'none', md: 'flex' } }}
                 >
                   Create Class
                 </Button>
@@ -451,14 +441,18 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
 
           {/* Error Alert */}
           {error && (
-            <Alert severity="error" onClose={() => setError(null)}>
+            <Alert 
+              severity="error" 
+              onClose={() => setError(null)} 
+              sx={{ mb: 3 }}
+            >
               {error}
             </Alert>
           )}
 
-          {/* View Toggle */}
-          <Paper sx={{ p: 2 }}>
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+          {/* View Mode and Filters */}
+          <Box sx={{ mb: 3 }}>
+            <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
               <Tabs
                 value={viewMode}
                 onChange={(_, newValue) => setViewMode(newValue)}
@@ -514,9 +508,9 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
                     onChange={(e) => handleFilterChange('instructorId', e.target.value)}
                   >
                     <MenuItem value="">All Instructors</MenuItem>
-                    {instructors.map((instructor) => (
+                    {uniqueInstructors.map((instructor) => (
                       <MenuItem key={instructor.id} value={instructor.id}>
-                        {instructor.fullName}
+                        {instructor.name}
                       </MenuItem>
                     ))}
                   </Select>
@@ -531,26 +525,32 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
                     label="Status"
                     onChange={(e) => handleFilterChange('status', e.target.value)}
                   >
-                    <MenuItem value="all">All</MenuItem>
-                    <MenuItem value="active">Active</MenuItem>
-                    <MenuItem value="inactive">Inactive</MenuItem>
+                    <MenuItem value="all">All Status</MenuItem>
+                    <MenuItem value="scheduled">Scheduled</MenuItem>
+                    <MenuItem value="ongoing">Ongoing</MenuItem>
+                    <MenuItem value="completed">Completed</MenuItem>
+                    <MenuItem value="cancelled">Cancelled</MenuItem>
                   </Select>
                 </FormControl>
               </Grid>
 
               <Grid item xs={12} sm={6} md={3}>
-                <Box display="flex" gap={1}>
-                  <Button
-                    size="small"
-                    onClick={clearFilters}
-                    disabled={Object.values(filters).every(v => !v || v === 'all')}
+                <FormControl fullWidth size="small">
+                  <InputLabel>Date Range</InputLabel>
+                  <Select
+                    value={filters.dateRange}
+                    label="Date Range"
+                    onChange={(e) => handleFilterChange('dateRange', e.target.value)}
                   >
-                    Clear Filters
-                  </Button>
-                </Box>
+                    <MenuItem value="all">All Time</MenuItem>
+                    <MenuItem value="today">Today</MenuItem>
+                    <MenuItem value="week">This Week</MenuItem>
+                    <MenuItem value="month">This Month</MenuItem>
+                  </Select>
+                </FormControl>
               </Grid>
             </Grid>
-          </Paper>
+          </Box>
 
           {/* Content */}
           {viewMode === 'list' ? (
@@ -558,11 +558,17 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
               {filteredData.length === 0 ? (
                 <Grid item xs={12}>
                   <Paper sx={{ p: 4, textAlign: 'center' }}>
-                    <Typography variant="h6" color="textSecondary">
-                      No classes found
+                    <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
+                      {loading 
+                        ? 'Loading classes...' 
+                        : filteredData.length === 0 && (schedules.length > 0 || allInstances.length > 0)
+                        ? 'No classes match your filters'
+                        : 'No classes found'}
                     </Typography>
-                    <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
-                      {Object.values(filters).some(v => v && v !== 'all')
+                    <Typography variant="body2" color="text.secondary">
+                      {loading 
+                        ? 'Please wait while we load your classes'
+                        : filteredData.length === 0 && (schedules.length > 0 || allInstances.length > 0)
                         ? 'Try adjusting your filters'
                         : 'Create your first class to get started'}
                     </Typography>
@@ -592,6 +598,8 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
                 instances={allInstances}
                 onInstanceClick={(instance) => handleEditClass(instance)}
                 onInstanceEdit={handleEditClass}
+                viewMode={calendarViewMode}
+                onViewModeChange={handleCalendarViewModeChange}
                 userRole={session.role}
                 onEditClass={handleEditClass}
                 onDeleteClass={(data) => handleDeleteClass(data)}
@@ -645,11 +653,6 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
           itemName={deletingClass?.name || ''}
           itemType={deletingClass && 'scheduleId' in deletingClass ? 'class instance' : 'class schedule'}
           loading={submitLoading}
-          warningMessage="This action will permanently remove all associated data."
-          additionalInfo={deletingClass ? [
-            { label: 'Class Type', value: deletingClass.classType },
-            { label: 'Instructor', value: deletingClass.instructorName },
-          ] : []}
         />
 
         {/* Success Snackbar */}
@@ -657,8 +660,12 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
           open={!!successMessage}
           autoHideDuration={6000}
           onClose={() => setSuccessMessage(null)}
-          message={successMessage}
-        />
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        >
+          <Alert severity="success" onClose={() => setSuccessMessage(null)}>
+            {successMessage}
+          </Alert>
+        </Snackbar>
       </Container>
     </Layout>
   );
