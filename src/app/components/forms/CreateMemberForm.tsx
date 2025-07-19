@@ -17,29 +17,23 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
-  Chip,
   Box,
   Alert,
   CircularProgress,
   Accordion,
   AccordionSummary,
   AccordionDetails,
-  IconButton,
 } from '@mui/material';
-import { Add as AddIcon, Delete as DeleteIcon, ExpandMore as ExpandMoreIcon } from '@mui/icons-material';
+import { ExpandMore as ExpandMoreIcon } from '@mui/icons-material';
 import { MemberFormData } from '@/app/types/member';
 import { MembershipPlan } from '@/app/types/membership';
+import AwardTypeSelector from '../ui/AwardTypeSelector';
 
 interface CreateMemberFormProps {
   open: boolean;
   onClose: () => void;
   onSubmit: (data: MemberFormData) => Promise<void>;
   loading?: boolean;
-}
-
-interface Award {
-  title: string;
-  awardedDate: string;
 }
 
 export default function CreateMemberForm({ 
@@ -72,7 +66,6 @@ export default function CreateMemberForm({
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [newAward, setNewAward] = useState<Award>({ title: '', awardedDate: '' });
   const [membershipPlans, setMembershipPlans] = useState<MembershipPlan[]>([]);
   const [members, setMembers] = useState<Array<{ id: string; fullName: string; email: string }>>([]);
   const [assignMembership, setAssignMembership] = useState(false);
@@ -178,21 +171,8 @@ export default function CreateMemberForm({
     }
   };
 
-  const addAward = () => {
-    if (newAward.title.trim() && newAward.awardedDate) {
-      setFormData(prev => ({
-        ...prev,
-        awards: [...prev.awards, { ...newAward }],
-      }));
-      setNewAward({ title: '', awardedDate: '' });
-    }
-  };
-
-  const removeAward = (index: number) => {
-    setFormData(prev => ({
-      ...prev,
-      awards: prev.awards.filter((_, i) => i !== index),
-    }));
+  const handleAwardsChange = (awards: Array<{ title: string; awardedDate: string }>): void => {
+    setFormData(prev => ({ ...prev, awards }));
   };
 
   const validateForm = (): boolean => {
@@ -306,7 +286,6 @@ export default function CreateMemberForm({
       assignMembership: undefined,
     });
     setErrors({});
-    setNewAward({ title: '', awardedDate: '' });
     setAssignMembership(false);
     onClose();
   };
@@ -512,53 +491,14 @@ export default function CreateMemberForm({
               Awards & Achievements
             </Typography>
             
-            {/* Existing Awards */}
-            {formData.awards.length > 0 && (
-              <Box mb={2}>
-                {formData.awards.map((award, index) => (
-                  <Chip
-                    key={index}
-                    label={`${award.title} (${new Date(award.awardedDate).toLocaleDateString()})`}
-                    onDelete={() => removeAward(index)}
-                    sx={{ mr: 1, mb: 1 }}
-                  />
-                ))}
-              </Box>
-            )}
-            
-            {/* Add New Award */}
-            <Grid container spacing={2} alignItems="center">
-              <Grid item xs={12} sm={5}>
-                <TextField
-                  fullWidth
-                  label="Award Title"
-                  value={newAward.title}
-                  onChange={(e) => setNewAward(prev => ({ ...prev, title: e.target.value }))}
-                  size="small"
-                />
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <TextField
-                  fullWidth
-                  label="Date Awarded"
-                  type="date"
-                  value={newAward.awardedDate}
-                  onChange={(e) => setNewAward(prev => ({ ...prev, awardedDate: e.target.value }))}
-                  InputLabelProps={{ shrink: true }}
-                  size="small"
-                />
-              </Grid>
-              <Grid item xs={12} sm={3}>
-                <Button
-                  onClick={addAward}
-                  startIcon={<AddIcon />}
-                  disabled={!newAward.title.trim() || !newAward.awardedDate}
-                  size="small"
-                >
-                  Add Award
-                </Button>
-              </Grid>
-            </Grid>
+            <AwardTypeSelector
+              awards={formData.awards}
+              onChange={handleAwardsChange}
+              disabled={loadingData || loading}
+              allowCreate={true}
+              allowEdit={true}
+              allowDelete={true}
+            />
           </Grid>
 
           {/* Membership Assignment */}
