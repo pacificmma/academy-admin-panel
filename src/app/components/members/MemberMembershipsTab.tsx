@@ -31,7 +31,6 @@ import {
   FormControl,
   InputLabel,
   Select,
-  InputAdornment,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -68,7 +67,6 @@ interface MembershipStats {
 interface CreateMembershipFormData {
   membershipPlanId: string;
   startDate: string;
-  amount: number;
   paymentReference: string;
 }
 
@@ -94,7 +92,6 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
   const [createFormData, setCreateFormData] = useState<CreateMembershipFormData>({
     membershipPlanId: '',
     startDate: new Date().toISOString().split('T')[0],
-    amount: 0,
     paymentReference: '',
   });
   const [createFormErrors, setCreateFormErrors] = useState<Record<string, string>>({});
@@ -173,12 +170,15 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
 
   const handleMenuClose = (): void => {
     setMenuAnchor(null);
-    setSelectedMembership(null);
+    // Don't clear selectedMembership here - let dialog handle it
   };
 
   const handleStatusAction = (): void => {
-    setStatusDialogOpen(true);
-    handleMenuClose();
+    // selectedMembership is already set from handleMenuOpen
+    setMenuAnchor(null); // Close menu immediately
+    setTimeout(() => {
+      setStatusDialogOpen(true); // Open dialog after menu closes
+    }, 10);
   };
 
   const handleCreateMembership = (): void => {
@@ -187,38 +187,51 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
     setCreateFormData({
       membershipPlanId: '',
       startDate: new Date().toISOString().split('T')[0],
-      amount: 0,
       paymentReference: '',
     });
     setCreateFormErrors({});
   };
 
   // Handle membership status changes
-  const handleMembershipStatusChange = async (membershipId: string, action: MembershipStatusAction): Promise<void> => {
+  const handleMembershipStatusChange = async (membershipId: string, action: any): Promise<void> => {
     try {
       setSubmitLoading(true);
 
       let endpoint = '';
-      let requestBody: any = { reason: action.reason };
+      let requestBody: any = {};
 
-      switch (action.action) {
-        case 'freeze':
-          endpoint = `/api/member-memberships/${membershipId}/freeze`;
-          if (action.freezeDuration) {
-            requestBody.freezeDuration = action.freezeDuration;
-          } else if (action.freezeEndDate) {
-            requestBody.freezeEndDate = action.freezeEndDate;
-          }
-          break;
-        case 'unfreeze':
-          endpoint = `/api/member-memberships/${membershipId}/unfreeze`;
-          break;
-        case 'cancel':
-          endpoint = `/api/member-memberships/${membershipId}/cancel`;
-          break;
-        case 'reactivate':
-          endpoint = `/api/member-memberships/${membershipId}/reactivate`;
-          break;
+      // Handle different action types
+      if (typeof action === 'string') {
+        // Legacy action format - shouldn't happen with new dialog
+        requestBody = { reason: 'No reason provided' };
+        endpoint = `/api/member-memberships/${membershipId}/${action}`;
+      } else if (action.action) {
+        // New MembershipStatusAction format
+        requestBody = { reason: action.reason };
+        
+        switch (action.action) {
+          case 'freeze':
+            endpoint = `/api/member-memberships/${membershipId}/freeze`;
+            if (action.freezeDuration) {
+              requestBody.freezeDuration = action.freezeDuration;
+            } else if (action.freezeEndDate) {
+              requestBody.freezeEndDate = action.freezeEndDate;
+            }
+            break;
+          case 'unfreeze':
+            endpoint = `/api/member-memberships/${membershipId}/unfreeze`;
+            break;
+          case 'cancel':
+            endpoint = `/api/member-memberships/${membershipId}/cancel`;
+            break;
+          case 'reactivate':
+            endpoint = `/api/member-memberships/${membershipId}/reactivate`;
+            break;
+        }
+      } else {
+        // Direct reactivate data format from dialog
+        endpoint = `/api/member-memberships/${membershipId}/reactivate`;
+        requestBody = action;
       }
 
       const response = await fetch(endpoint, {
@@ -232,14 +245,14 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || `Failed to ${action.action} membership`);
+        throw new Error(errorData.error || 'Failed to update membership');
       }
 
       // Reload memberships to reflect changes
       await loadMemberships();
       
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : `Failed to ${action.action} membership`;
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update membership';
       setError(errorMessage);
       throw err;
     } finally {
@@ -260,10 +273,6 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
       if (!createFormData.startDate) {
         errors.startDate = 'Start date is required';
       }
-      
-      if (createFormData.amount < 0) {
-        errors.amount = 'Amount must be non-negative';
-      }
 
       setCreateFormErrors(errors);
       if (Object.keys(errors).length > 0) return;
@@ -281,8 +290,6 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
           memberId: member.id,
           membershipPlanId: createFormData.membershipPlanId,
           startDate: createFormData.startDate,
-          amount: createFormData.amount,
-          currency: 'USD',
           paymentReference: createFormData.paymentReference.trim() || undefined,
         }),
       });
@@ -470,7 +477,7 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
                       <TableCell>
                         <Box>
                           <Typography variant="body2" fontWeight="medium">
-                            {membership.planName}
+                            {membership.planName || 'Unknown Plan'}
                           </Typography>
                           {membership.planClassTypes && membership.planClassTypes.length > 0 && (
                             <Typography variant="caption" color="textSecondary">
@@ -544,6 +551,19 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
         </CardContent>
       </Card>
 
+      {/* Membership Status Dialog */}
+      <MembershipStatusDialog
+        open={statusDialogOpen}
+        onClose={() => {
+          setStatusDialogOpen(false);
+          // Clear selectedMembership after dialog animation completes
+          setTimeout(() => setSelectedMembership(null), 200);
+        }}
+        onSubmit={handleMembershipStatusChange}
+        membership={selectedMembership}
+        loading={submitLoading}
+      />
+
       {/* Action Menu */}
       <Menu
         anchorEl={menuAnchor}
@@ -552,18 +572,6 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
       >
         {selectedMembership && getStatusActions(selectedMembership)}
       </Menu>
-
-      {/* Membership Status Dialog */}
-      <MembershipStatusDialog
-        open={statusDialogOpen}
-        onClose={() => {
-          setStatusDialogOpen(false);
-          setSelectedMembership(null);
-        }}
-        onSubmit={handleMembershipStatusChange}
-        membership={selectedMembership}
-        loading={submitLoading}
-      />
 
       {/* Create Membership Dialog */}
       <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="md" fullWidth>
@@ -576,11 +584,9 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
                 <Select
                   value={createFormData.membershipPlanId}
                   onChange={(e) => {
-                    const selectedPlan = membershipPlans.find(plan => plan.id === e.target.value);
                     setCreateFormData(prev => ({ 
                       ...prev, 
                       membershipPlanId: e.target.value,
-                      amount: selectedPlan?.price || 0
                     }));
                     setCreateFormErrors(prev => ({ ...prev, membershipPlanId: '' }));
                   }}
@@ -607,7 +613,7 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
               </FormControl>
             </Grid>
 
-            <Grid item xs={12} sm={6}>
+            <Grid item xs={12}>
               <TextField
                 fullWidth
                 type="date"
@@ -620,25 +626,6 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
                 InputLabelProps={{ shrink: true }}
                 error={!!createFormErrors.startDate}
                 helperText={createFormErrors.startDate}
-              />
-            </Grid>
-
-            <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Amount"
-                value={createFormData.amount}
-                onChange={(e) => {
-                  setCreateFormData(prev => ({ ...prev, amount: parseFloat(e.target.value) || 0 }));
-                  setCreateFormErrors(prev => ({ ...prev, amount: '' }));
-                }}
-                InputProps={{
-                  startAdornment: <InputAdornment position="start">$</InputAdornment>,
-                }}
-                inputProps={{ min: 0, step: 0.01 }}
-                error={!!createFormErrors.amount}
-                helperText={createFormErrors.amount || 'Amount will auto-fill based on selected plan'}
               />
             </Grid>
 

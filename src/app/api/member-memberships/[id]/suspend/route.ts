@@ -14,7 +14,8 @@ const suspendMembershipSchema = z.object({
 // POST /api/member-memberships/[id]/suspend - Suspend membership
 export const POST = requireAdmin(async (request: NextRequest, context: RequestContext) => {
   try {
-    const { params, session } = context;
+    const { params: asyncParams, session } = context;
+    const params = await asyncParams;
     
     if (!params?.id) {
       return badRequestResponse('Member membership ID is required');

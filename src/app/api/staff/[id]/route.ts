@@ -7,7 +7,8 @@ import { errorResponse, successResponse, notFoundResponse, badRequestResponse, f
 // GET /api/staff/[id] - Get specific staff member
 export const GET = requireStaffOrTrainer(async (request: NextRequest, context) => {
   try {
-    const { params, session } = context;
+    const { params: asyncParams, session } = context;
+    const params = await asyncParams;
 
     if (!params?.id) {
       return badRequestResponse('Staff ID is required');
@@ -50,7 +51,8 @@ export const GET = requireStaffOrTrainer(async (request: NextRequest, context) =
 // PUT /api/staff/[id] - Update staff member
 export const PUT = requireAdmin(async (request: NextRequest, context) => {
   try {
-    const { params, session } = context;
+    const { params: asyncParams, session } = context;
+    const params = await asyncParams;
 
     if (!params?.id) {
       return badRequestResponse('Staff ID is required');
@@ -106,7 +108,8 @@ export const PUT = requireAdmin(async (request: NextRequest, context) => {
 // DELETE /api/staff/[id] - Delete (deactivate) staff member
 export const DELETE = requireAdmin(async (request: NextRequest, context) => {
   try {
-    const { params, session } = context;
+    const { params: asyncParams, session } = context;
+    const params = await asyncParams;
 
     if (!params?.id) {
       return badRequestResponse('Staff ID is required');

@@ -14,7 +14,8 @@ const cancelMembershipSchema = z.object({
 // POST /api/member-memberships/[id]/cancel - Cancel membership
 export const POST = requireAdmin(async (request: NextRequest, context: RequestContext) => {
   try {
-    const { params, session } = context;
+    const { params: asyncParams, session } = context;
+    const params = await asyncParams;
     if (!params?.id) {
       return errorResponse('Member membership ID is required', 400);
     }

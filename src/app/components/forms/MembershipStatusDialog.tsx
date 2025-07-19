@@ -1,4 +1,4 @@
-// src/app/components/forms/MembershipStatusDialog.tsx - Membership status management dialog
+// src/app/components/forms/MembershipStatusDialog.tsx - Enhanced membership status management dialog
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -19,11 +19,11 @@ import {
   Alert,
   CircularProgress,
   Chip,
-  Divider,
   InputAdornment,
   FormControlLabel,
   RadioGroup,
   Radio,
+  Paper,
 } from '@mui/material';
 import {
   Pause as FreezeIcon,
@@ -32,6 +32,7 @@ import {
   RestartAlt as ReactivateIcon,
   Warning as WarningIcon,
   Info as InfoIcon,
+  Schedule as ScheduleIcon,
 } from '@mui/icons-material';
 import { MemberMembership, MembershipStatusAction, getMembershipStatusColor, getMembershipStatusText } from '@/app/types/membership';
 
@@ -100,6 +101,7 @@ export default function MembershipStatusDialog({
         ...DEFAULT_FORM_DATA,
         action: defaultAction,
         newEndDate: getDefaultNewEndDate(),
+        freezeEndDate: getDefaultFreezeEndDate(),
       });
       setErrors({});
     }
@@ -108,6 +110,12 @@ export default function MembershipStatusDialog({
   const getDefaultNewEndDate = (): string => {
     const date = new Date();
     date.setMonth(date.getMonth() + 1); // Default to 1 month from now
+    return date.toISOString().split('T')[0];
+  };
+
+  const getDefaultFreezeEndDate = (): string => {
+    const date = new Date();
+    date.setDate(date.getDate() + 30); // Default to 30 days from now
     return date.toISOString().split('T')[0];
   };
 
@@ -145,7 +153,9 @@ export default function MembershipStatusDialog({
           newErrors.freezeEndDate = 'Freeze end date is required';
         } else {
           const endDate = new Date(formData.freezeEndDate);
-          if (endDate <= new Date()) {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0); // Reset time for comparison
+          if (endDate <= today) {
             newErrors.freezeEndDate = 'Freeze end date must be in the future';
           }
         }
@@ -157,7 +167,9 @@ export default function MembershipStatusDialog({
         newErrors.newEndDate = 'New end date is required';
       } else {
         const endDate = new Date(formData.newEndDate);
-        if (endDate <= new Date()) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0); // Reset time for comparison
+        if (endDate <= today) {
           newErrors.newEndDate = 'New end date must be in the future';
         }
       }
@@ -189,7 +201,19 @@ export default function MembershipStatusDialog({
         }
       }
 
-      await onSubmit(membership.id, action);
+      // Handle reactivate action with additional data
+      let requestBody: any = action;
+      
+      if (formData.action === 'reactivate') {
+        requestBody = {
+          reason: formData.reason.trim(),
+          newEndDate: formData.newEndDate,
+          ...(formData.amount > 0 && { amount: formData.amount }),
+          ...(formData.paymentReference.trim() && { paymentReference: formData.paymentReference.trim() })
+        };
+      }
+
+      await onSubmit(membership.id, formData.action === 'reactivate' ? requestBody : action);
       onClose();
     } catch (error) {
       // Error handling is done in parent component
@@ -206,14 +230,14 @@ export default function MembershipStatusDialog({
 
   const getActionIcon = (action: FormData['action']) => {
     switch (action) {
-      case 'freeze': return <FreezeIcon />;
-      case 'unfreeze': return <UnfreezeIcon />;
-      case 'cancel': return <CancelIcon />;
-      case 'reactivate': return <ReactivateIcon />;
+      case 'freeze': return <FreezeIcon color="info" />;
+      case 'unfreeze': return <UnfreezeIcon color="success" />;
+      case 'cancel': return <CancelIcon color="error" />;
+      case 'reactivate': return <ReactivateIcon color="warning" />;
     }
   };
 
-  const getActionColor = (action: FormData['action']) => {
+  const getActionColor = (action: FormData['action']): 'info' | 'success' | 'error' | 'warning' => {
     switch (action) {
       case 'freeze': return 'info';
       case 'unfreeze': return 'success';
@@ -222,84 +246,75 @@ export default function MembershipStatusDialog({
     }
   };
 
+  const getActionTitle = (action: FormData['action']): string => {
+    switch (action) {
+      case 'freeze': return 'Freeze Membership';
+      case 'unfreeze': return 'Unfreeze Membership';
+      case 'cancel': return 'Cancel Membership';
+      case 'reactivate': return 'Reactivate Membership';
+    }
+  };
+
   const availableActions = getAvailableActions();
+
+  if (!membership) return null;
 
   return (
     <Dialog 
       open={open} 
       onClose={handleClose} 
-      maxWidth="md" 
+      maxWidth="sm" 
       fullWidth
-      PaperProps={{
-        sx: { minHeight: '60vh' }
-      }}
     >
       <DialogTitle>
         <Box display="flex" alignItems="center" gap={1}>
           {getActionIcon(formData.action)}
           <Typography variant="h6">
-            Manage Membership Status
+            {getActionTitle(formData.action)}
           </Typography>
         </Box>
       </DialogTitle>
 
-      <DialogContent>
-        {membership && (
-          <Box>
-            {/* Current Membership Info */}
-            <Alert severity="info" sx={{ mb: 3 }}>
-              <Typography variant="subtitle2" gutterBottom>
-                Current Membership Information
-              </Typography>
-              <Box display="flex" flexWrap="wrap" gap={1} mt={1}>
-                <Chip 
-                  label={`Status: ${getMembershipStatusText(membership.status)}`}
-                  color={getMembershipStatusColor(membership.status)}
-                  size="small"
-                />
-                <Chip 
-                  label={`Member: ${membership.memberName}`}
-                  variant="outlined"
-                  size="small"
-                />
-                <Chip 
-                  label={`Plan: ${membership.planName}`}
-                  variant="outlined"
-                  size="small"
-                />
-                <Chip 
-                  label={`Ends: ${new Date(membership.endDate).toLocaleDateString()}`}
-                  variant="outlined"
-                  size="small"
-                />
+      <DialogContent sx={{ pb: 1 }}>
+        <Box>
+          {/* Current Membership Info */}
+          <Paper variant="outlined" sx={{ p: 2, mb: 3, bgcolor: 'grey.50' }}>
+            <Typography variant="subtitle2" gutterBottom color="textSecondary">
+              Current Membership
+            </Typography>
+            <Box display="flex" flexWrap="wrap" gap={1}>
+              <Chip 
+                label={getMembershipStatusText(membership.status)}
+                color={getMembershipStatusColor(membership.status)}
+                size="small"
+              />
+              <Chip 
+                label={membership.planName || 'Plan Name'}
+                variant="outlined"
+                size="small"
+              />
+              <Chip 
+                icon={<ScheduleIcon />}
+                label={`Ends: ${new Date(membership.endDate).toLocaleDateString()}`}
+                variant="outlined"
+                size="small"
+              />
+            </Box>
+
+            {/* Show freeze information if currently frozen */}
+            {membership.status === 'frozen' && membership.freezeStartDate && membership.freezeEndDate && (
+              <Box mt={1}>
+                <Typography variant="body2" color="textSecondary">
+                  <InfoIcon fontSize="small" sx={{ mr: 0.5, verticalAlign: 'middle' }} />
+                  Frozen: {new Date(membership.freezeStartDate).toLocaleDateString()} - {new Date(membership.freezeEndDate).toLocaleDateString()}
+                </Typography>
               </Box>
+            )}
+          </Paper>
 
-              {/* Show freeze information if currently frozen */}
-              {membership.status === 'frozen' && membership.freezeStartDate && membership.freezeEndDate && (
-                <Box mt={2}>
-                  <Typography variant="body2" color="textSecondary">
-                    <strong>Frozen:</strong> {new Date(membership.freezeStartDate).toLocaleDateString()} - {new Date(membership.freezeEndDate).toLocaleDateString()}
-                  </Typography>
-                  {membership.freezeReason && (
-                    <Typography variant="body2" color="textSecondary">
-                      <strong>Reason:</strong> {membership.freezeReason}
-                    </Typography>
-                  )}
-                </Box>
-              )}
-
-              {/* Show cancellation information if cancelled */}
-              {membership.status === 'cancelled' && membership.cancellationReason && (
-                <Box mt={2}>
-                  <Typography variant="body2" color="textSecondary">
-                    <strong>Cancellation Reason:</strong> {membership.cancellationReason}
-                  </Typography>
-                </Box>
-              )}
-            </Alert>
-
-            <Grid container spacing={3}>
-              {/* Action Selection */}
+          <Grid container spacing={2}>
+            {/* Action Selection */}
+            {availableActions.length > 1 && (
               <Grid item xs={12}>
                 <FormControl fullWidth>
                   <InputLabel>Action</InputLabel>
@@ -314,7 +329,7 @@ export default function MembershipStatusDialog({
                         <Box display="flex" alignItems="center" gap={1}>
                           {getActionIcon(action)}
                           <Typography>
-                            {action.charAt(0).toUpperCase() + action.slice(1)} Membership
+                            {getActionTitle(action)}
                           </Typography>
                         </Box>
                       </MenuItem>
@@ -322,146 +337,153 @@ export default function MembershipStatusDialog({
                   </Select>
                 </FormControl>
               </Grid>
+            )}
 
-              {/* Reason */}
-              <Grid item xs={12}>
-                <TextField
-                  fullWidth
-                  multiline
-                  rows={3}
-                  label="Reason"
-                  value={formData.reason}
-                  onChange={(e) => setFormData(prev => ({ ...prev, reason: e.target.value }))}
-                  error={!!errors.reason}
-                  helperText={errors.reason}
-                  required
-                  disabled={submitLoading || loading}
-                  placeholder="Please provide a reason for this action..."
-                />
-              </Grid>
+            {/* Reason */}
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                multiline
+                rows={2}
+                label="Reason"
+                value={formData.reason}
+                onChange={(e) => setFormData(prev => ({ ...prev, reason: e.target.value }))}
+                error={!!errors.reason}
+                helperText={errors.reason}
+                required
+                disabled={submitLoading || loading}
+                placeholder={`Why are you ${formData.action}ing this membership?`}
+              />
+            </Grid>
 
-              {/* Freeze-specific fields */}
-              {formData.action === 'freeze' && (
-                <>
-                  <Grid item xs={12}>
-                    <FormControl component="fieldset">
-                      <Typography variant="subtitle2" gutterBottom>
-                        Freeze Duration
-                      </Typography>
-                      <RadioGroup
-                        value={formData.freezeDurationType}
-                        onChange={(e) => setFormData(prev => ({ ...prev, freezeDurationType: e.target.value as 'days' | 'specific' }))}
-                        row
-                      >
-                        <FormControlLabel value="days" control={<Radio />} label="Number of days" />
-                        <FormControlLabel value="specific" control={<Radio />} label="Specific end date" />
-                      </RadioGroup>
-                    </FormControl>
-                  </Grid>
-
-                  {formData.freezeDurationType === 'days' ? (
-                    <Grid item xs={12} sm={6}>
-                      <TextField
-                        fullWidth
-                        type="number"
-                        label="Freeze Duration"
-                        value={formData.freezeDuration}
-                        onChange={(e) => setFormData(prev => ({ ...prev, freezeDuration: parseInt(e.target.value) || 0 }))}
-                        error={!!errors.freezeDuration}
-                        helperText={errors.freezeDuration || 'Duration in days (1-365)'}
-                        InputProps={{
-                          endAdornment: <InputAdornment position="end">days</InputAdornment>,
-                        }}
-                        inputProps={{ min: 1, max: 365 }}
-                        disabled={submitLoading || loading}
-                      />
-                    </Grid>
-                  ) : (
-                    <Grid item xs={12} sm={6}>
-                      <TextField
-                        fullWidth
-                        type="date"
-                        label="Freeze End Date"
-                        value={formData.freezeEndDate}
-                        onChange={(e) => setFormData(prev => ({ ...prev, freezeEndDate: e.target.value }))}
-                        error={!!errors.freezeEndDate}
-                        helperText={errors.freezeEndDate}
-                        InputLabelProps={{ shrink: true }}
-                        disabled={submitLoading || loading}
-                      />
-                    </Grid>
-                  )}
-                </>
-              )}
-
-              {/* Reactivate-specific fields */}
-              {formData.action === 'reactivate' && (
-                <>
-                  <Grid item xs={12} sm={6}>
-                    <TextField
-                      fullWidth
-                      type="date"
-                      label="New End Date"
-                      value={formData.newEndDate}
-                      onChange={(e) => setFormData(prev => ({ ...prev, newEndDate: e.target.value }))}
-                      error={!!errors.newEndDate}
-                      helperText={errors.newEndDate || 'When should this membership expire?'}
-                      InputLabelProps={{ shrink: true }}
-                      required
-                      disabled={submitLoading || loading}
+            {/* Freeze-specific fields */}
+            {formData.action === 'freeze' && (
+              <>
+                <Grid item xs={12}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Freeze Duration
+                  </Typography>
+                  <RadioGroup
+                    value={formData.freezeDurationType}
+                    onChange={(e) => setFormData(prev => ({ ...prev, freezeDurationType: e.target.value as 'days' | 'specific' }))}
+                    row
+                  >
+                    <FormControlLabel 
+                      value="days" 
+                      control={<Radio size="small" />} 
+                      label="Number of days" 
                     />
-                  </Grid>
+                    <FormControlLabel 
+                      value="specific" 
+                      control={<Radio size="small" />} 
+                      label="Specific end date" 
+                    />
+                  </RadioGroup>
+                </Grid>
 
-                  <Grid item xs={12} sm={6}>
+                {formData.freezeDurationType === 'days' ? (
+                  <Grid item xs={12}>
                     <TextField
                       fullWidth
                       type="number"
-                      label="Payment Amount (Optional)"
-                      value={formData.amount}
-                      onChange={(e) => setFormData(prev => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))}
-                      error={!!errors.amount}
-                      helperText={errors.amount || 'Leave 0 if no additional payment'}
+                      label="Freeze Duration"
+                      value={formData.freezeDuration}
+                      onChange={(e) => setFormData(prev => ({ ...prev, freezeDuration: parseInt(e.target.value) || 0 }))}
+                      error={!!errors.freezeDuration}
+                      helperText={errors.freezeDuration || 'How many days to freeze (1-365)'}
                       InputProps={{
-                        startAdornment: <InputAdornment position="start">$</InputAdornment>,
+                        endAdornment: <InputAdornment position="end">days</InputAdornment>,
                       }}
-                      inputProps={{ min: 0, step: 0.01 }}
+                      inputProps={{ min: 1, max: 365 }}
                       disabled={submitLoading || loading}
                     />
                   </Grid>
-
+                ) : (
                   <Grid item xs={12}>
                     <TextField
                       fullWidth
-                      label="Payment Reference (Optional)"
-                      value={formData.paymentReference}
-                      onChange={(e) => setFormData(prev => ({ ...prev, paymentReference: e.target.value }))}
-                      helperText="Transaction ID, check number, etc."
+                      type="date"
+                      label="Freeze End Date"
+                      value={formData.freezeEndDate}
+                      onChange={(e) => setFormData(prev => ({ ...prev, freezeEndDate: e.target.value }))}
+                      error={!!errors.freezeEndDate}
+                      helperText={errors.freezeEndDate || 'When should the freeze end?'}
+                      InputLabelProps={{ shrink: true }}
                       disabled={submitLoading || loading}
                     />
                   </Grid>
-                </>
-              )}
+                )}
+              </>
+            )}
 
-              {/* Warning for destructive actions */}
-              {(formData.action === 'cancel') && (
+            {/* Reactivate-specific fields */}
+            {formData.action === 'reactivate' && (
+              <>
                 <Grid item xs={12}>
-                  <Alert severity="warning" icon={<WarningIcon />}>
-                    <Typography variant="body2">
-                      <strong>Warning:</strong> Cancelling a membership cannot be easily undone. 
-                      The member will lose access to classes and will need to purchase a new membership to continue.
-                    </Typography>
-                  </Alert>
+                  <TextField
+                    fullWidth
+                    type="date"
+                    label="New End Date"
+                    value={formData.newEndDate}
+                    onChange={(e) => setFormData(prev => ({ ...prev, newEndDate: e.target.value }))}
+                    error={!!errors.newEndDate}
+                    helperText={errors.newEndDate || 'When should this membership expire?'}
+                    InputLabelProps={{ shrink: true }}
+                    required
+                    disabled={submitLoading || loading}
+                  />
                 </Grid>
-              )}
-            </Grid>
-          </Box>
-        )}
+
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    type="number"
+                    label="Additional Payment (Optional)"
+                    value={formData.amount}
+                    onChange={(e) => setFormData(prev => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))}
+                    error={!!errors.amount}
+                    helperText={errors.amount || 'Leave 0 if no additional payment required'}
+                    InputProps={{
+                      startAdornment: <InputAdornment position="start">$</InputAdornment>,
+                    }}
+                    inputProps={{ min: 0, step: 0.01 }}
+                    disabled={submitLoading || loading}
+                  />
+                </Grid>
+
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Payment Reference (Optional)"
+                    value={formData.paymentReference}
+                    onChange={(e) => setFormData(prev => ({ ...prev, paymentReference: e.target.value }))}
+                    helperText="Transaction ID, check number, etc."
+                    disabled={submitLoading || loading}
+                  />
+                </Grid>
+              </>
+            )}
+
+            {/* Warning for destructive actions */}
+            {formData.action === 'cancel' && (
+              <Grid item xs={12}>
+                <Alert severity="warning" icon={<WarningIcon />}>
+                  <Typography variant="body2">
+                    <strong>Warning:</strong> Cancelling this membership will immediately revoke the member's access to classes. 
+                    This action can be reversed by reactivating the membership.
+                  </Typography>
+                </Alert>
+              </Grid>
+            )}
+          </Grid>
+        </Box>
       </DialogContent>
 
-      <DialogActions>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button 
           onClick={handleClose} 
           disabled={submitLoading || loading}
+          color="inherit"
         >
           Cancel
         </Button>
@@ -469,10 +491,10 @@ export default function MembershipStatusDialog({
           onClick={handleSubmit}
           variant="contained"
           color={getActionColor(formData.action)}
-          disabled={submitLoading || loading || !membership}
+          disabled={submitLoading || loading}
           startIcon={submitLoading ? <CircularProgress size={20} /> : getActionIcon(formData.action)}
         >
-          {submitLoading ? 'Processing...' : `${formData.action.charAt(0).toUpperCase() + formData.action.slice(1)} Membership`}
+          {submitLoading ? 'Processing...' : getActionTitle(formData.action)}
         </Button>
       </DialogActions>
     </Dialog>
