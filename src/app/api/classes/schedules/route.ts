@@ -1,4 +1,4 @@
-// src/app/api/classes/schedules/route.ts - COMPLETELY FIXED VERSION
+// src/app/api/classes/schedules/route.ts - COMPLETELY FIXED VERSION WITH CORRECT IMPORTS
 import { NextRequest } from 'next/server';
 import { adminDb } from '@/app/lib/firebase/admin';
 import { ClassSchedule, ClassScheduleWithoutIdAndTimestamps, RecurrencePattern } from '@/app/types/class';
@@ -6,8 +6,10 @@ import { z } from 'zod';
 import { requireAdmin, requireStaffOrTrainer, RequestContext } from '@/app/lib/api/middleware';
 import { createdResponse, successResponse, errorResponse, badRequestResponse } from '@/app/lib/api/response-utils';
 import { FieldValue } from 'firebase-admin/firestore';
+// 🚀 FIXED: Add missing imports
+import { addMinutes, format as formatFns } from 'date-fns';
 
-// FIXED: Enhanced validation schema with correct Zod syntax
+// 🚀 FIXED: Updated validation schema with 'description' field instead of 'notes'
 const classScheduleSchema = z.object({
   name: z.string()
     .min(3, 'Class name must be at least 3 characters')
@@ -38,7 +40,7 @@ const classScheduleSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format, use YYYY-MM-DD')
     .optional(),
   location: z.string().max(100, 'Location must be less than 100 characters').optional(),
-  notes: z.string().max(1000, 'Notes must be less than 1000 characters').optional(),
+  description: z.string().max(1000, 'Description must be less than 1000 characters').optional(), // 🚀 FIXED: Use 'description' instead of 'notes'
 }).refine((data) => {
   // Custom validation for recurring schedules
   if (data.scheduleType === 'recurring') {
@@ -118,6 +120,118 @@ export const GET = requireStaffOrTrainer(async (request: NextRequest, context: R
   }
 });
 
+// Helper function to generate class instances from a schedule
+async function generateInstancesFromSchedule(
+  scheduleId: string, 
+  scheduleData: any, 
+  session: any
+): Promise<void> {
+  const instances: any[] = [];
+
+  if (scheduleData.recurrence.scheduleType === 'single') {
+    // Single instance
+    const [hours, minutes] = scheduleData.startTime.split(':').map(Number);
+    const startDate = new Date();
+    startDate.setHours(hours, minutes, 0, 0);
+    const endDate = addMinutes(startDate, scheduleData.duration);
+    const endTime = formatFns(endDate, 'HH:mm');
+
+    // 🚀 FIXED: Create base instance data first, then add optional fields
+    const instanceData: any = {
+      scheduleId,
+      name: scheduleData.name,
+      classType: scheduleData.classType,
+      instructorId: scheduleData.instructorId,
+      instructorName: scheduleData.instructorName,
+      date: scheduleData.startDate,
+      startTime: scheduleData.startTime,
+      endTime,
+      maxParticipants: scheduleData.maxParticipants,
+      registeredParticipants: [],
+      waitlist: [],
+      status: 'scheduled',
+      duration: scheduleData.duration,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      createdBy: session.uid,
+    };
+
+    // Add optional fields only if they exist
+    if (scheduleData.location && scheduleData.location.trim() !== '') {
+      instanceData.location = scheduleData.location;
+    }
+    if (scheduleData.notes && scheduleData.notes.trim() !== '') {
+      instanceData.notes = scheduleData.notes;
+    }
+
+    instances.push(instanceData);
+  } else if (scheduleData.recurrence.scheduleType === 'recurring') {
+    // Generate recurring instances
+    const startDate = new Date(scheduleData.startDate);
+    const endDate = scheduleData.recurrence.endDate 
+      ? new Date(scheduleData.recurrence.endDate) 
+      : new Date(startDate.getTime() + (90 * 24 * 60 * 60 * 1000)); // Default to 3 months
+
+    const daysOfWeek = scheduleData.recurrence.daysOfWeek || [];
+    let currentDate = new Date(startDate);
+    let instanceCount = 0;
+    const maxInstances = 50; // Safety limit
+
+    // Calculate end time once
+    const [hours, minutes] = scheduleData.startTime.split(':').map(Number);
+    const timeStart = new Date();
+    timeStart.setHours(hours, minutes, 0, 0);
+    const timeEnd = addMinutes(timeStart, scheduleData.duration);
+    const endTime = formatFns(timeEnd, 'HH:mm');
+
+    while (currentDate <= endDate && instanceCount < maxInstances) {
+      if (daysOfWeek.includes(currentDate.getDay())) {
+        // 🚀 FIXED: Create base instance data first, then add optional fields
+        const instanceData: any = {
+          scheduleId,
+          name: scheduleData.name,
+          classType: scheduleData.classType,
+          instructorId: scheduleData.instructorId,
+          instructorName: scheduleData.instructorName,
+          date: currentDate.toISOString().split('T')[0],
+          startTime: scheduleData.startTime,
+          endTime,
+          maxParticipants: scheduleData.maxParticipants,
+          registeredParticipants: [],
+          waitlist: [],
+          status: 'scheduled',
+          duration: scheduleData.duration,
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+          createdBy: session.uid,
+        };
+
+        // Add optional fields only if they exist
+        if (scheduleData.location && scheduleData.location.trim() !== '') {
+          instanceData.location = scheduleData.location;
+        }
+        if (scheduleData.notes && scheduleData.notes.trim() !== '') {
+          instanceData.notes = scheduleData.notes;
+        }
+
+        instances.push(instanceData);
+        instanceCount++;
+      }
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+  }
+
+  // Batch create all instances
+  if (instances.length > 0) {
+    const batch = adminDb.batch();
+    instances.forEach(instanceData => {
+      const docRef = adminDb.collection('classInstances').doc();
+      batch.set(docRef, instanceData);
+    });
+    await batch.commit();
+  }
+}
+
 // POST /api/classes/schedules - Create new class schedule
 export const POST = requireAdmin(async (request: NextRequest, context: RequestContext) => {
   try {
@@ -171,8 +285,8 @@ export const POST = requireAdmin(async (request: NextRequest, context: RequestCo
       }
     }
 
-    // Create class schedule data
-    const scheduleData: ClassScheduleWithoutIdAndTimestamps = {
+    // Create class schedule data with proper undefined handling
+    const scheduleData: any = {
       name: formData.name,
       classType: formData.classType,
       instructorId: formData.instructorId,
@@ -182,11 +296,19 @@ export const POST = requireAdmin(async (request: NextRequest, context: RequestCo
       startDate: new Date(formData.startDate).toISOString().split('T')[0],
       startTime: formData.startTime,
       recurrence,
-      location: formData.location,
-      notes: formData.notes,
       isActive: true,
       createdBy: session.uid,
     };
+
+    // Only add optional fields if they have values (not undefined)
+    if (formData.location !== undefined && formData.location.trim() !== '') {
+      scheduleData.location = formData.location.trim();
+    }
+    
+    // 🚀 FIXED: Use 'description' from form and store as 'notes' in database
+    if (formData.description !== undefined && formData.description.trim() !== '') {
+      scheduleData.notes = formData.description.trim();
+    }
 
     // Add to Firestore with server timestamp
     const docRef = await adminDb.collection('classSchedules').add({
@@ -195,12 +317,33 @@ export const POST = requireAdmin(async (request: NextRequest, context: RequestCo
       updatedAt: FieldValue.serverTimestamp(),
     });
 
-    // Create the response object
+    // 🚀 AUTO-GENERATE CLASS INSTANCES FROM SCHEDULE
+    try {
+      await generateInstancesFromSchedule(docRef.id, scheduleData, session);
+    } catch (instanceError) {
+      console.error('Error generating instances:', instanceError);
+      // Don't fail the whole operation, just log the error
+    }
+
+    // Create the response object with proper optional field handling
     const newSchedule: ClassSchedule = {
       id: docRef.id,
-      ...scheduleData,
+      name: scheduleData.name,
+      classType: scheduleData.classType,
+      instructorId: scheduleData.instructorId,
+      instructorName: scheduleData.instructorName,
+      maxParticipants: scheduleData.maxParticipants,
+      duration: scheduleData.duration,
+      startDate: scheduleData.startDate,
+      startTime: scheduleData.startTime,
+      recurrence: scheduleData.recurrence,
+      location: scheduleData.location || '',
+      notes: scheduleData.notes || '',
+      isActive: scheduleData.isActive,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      createdBy: scheduleData.createdBy,
+      updatedBy: scheduleData.createdBy,
     };
 
     return createdResponse(newSchedule);

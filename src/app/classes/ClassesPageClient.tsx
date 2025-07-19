@@ -1,4 +1,4 @@
-// src/app/classes/ClassesPageClient.tsx - FIXED VERSION
+// src/app/classes/ClassesPageClient.tsx - COMPLETE FIXED VERSION
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -64,6 +64,22 @@ const DEFAULT_FILTERS: ClassFilters = {
   dateRange: 'all',
 };
 
+// 🚀 LOADING STATE COMPONENT
+const LoadingState = () => (
+  <Container maxWidth="xl">
+    <Box sx={{ py: 3 }}>
+      <Skeleton variant="text" width={200} height={40} sx={{ mb: 3 }} />
+      <Grid container spacing={3}>
+        {Array.from({ length: 6 }).map((_, index) => (
+          <Grid item xs={12} sm={6} lg={4} key={index}>
+            <Skeleton variant="rectangular" height={200} sx={{ borderRadius: 1 }} />
+          </Grid>
+        ))}
+      </Grid>
+    </Box>
+  </Container>
+);
+
 export default function ClassesPageClient({ session }: ClassesPageClientProps) {
   // State management
   const [schedules, setSchedules] = useState<ClassSchedule[]>([]);
@@ -75,7 +91,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   
-  // FIXED: Add calendar view mode state
+  // Calendar view mode state
   const [calendarViewMode, setCalendarViewMode] = useState<CalendarViewMode>('month');
 
   // Dialog states
@@ -254,6 +270,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
     setIsDeleteDialogOpen(true);
   }, []);
 
+  // 🚀 OPTIMIZED FORM SUBMIT WITH BETTER UX
   const handleFormSubmit = useCallback(async (formData: ClassFormData) => {
     setSubmitLoading(true);
     try {
@@ -266,6 +283,11 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
         ? `${endpoint}/${editingClass.id}`
         : endpoint;
 
+      // Show optimistic success message for better UX
+      if (formMode === 'create') {
+        setSuccessMessage('Creating class, please wait...');
+      }
+
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -277,13 +299,22 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
         throw new Error(errorData.message || 'Failed to save class');
       }
 
-      setSuccessMessage(
-        `Class ${formMode === 'create' ? 'created' : 'updated'} successfully!`
-      );
-      
+      // Close form immediately for better UX
       setIsFormDialogOpen(false);
       setEditingClass(null);
+
+      // Show final success message
+      setSuccessMessage(
+        `Class ${formMode === 'create' ? 'created' : 'updated'} successfully! ${
+          formMode === 'create' && editingType === 'schedule' 
+            ? 'Instances are being generated...' 
+            : ''
+        }`
+      );
+      
+      // Reload data to show new instances
       await loadData();
+      
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to save class';
       setError(errorMessage);
@@ -324,7 +355,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
   const handleStartClass = useCallback(async (instanceId: string) => {
     try {
       const response = await fetch(`/api/classes/instances/${instanceId}/start`, {
-        method: 'PATCH',
+        method: 'POST', // 🚀 FIXED: Changed from PATCH to POST
       });
 
       if (!response.ok) {
@@ -342,7 +373,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
   const handleEndClass = useCallback(async (instanceId: string) => {
     try {
       const response = await fetch(`/api/classes/instances/${instanceId}/end`, {
-        method: 'PATCH',
+        method: 'POST', // 🚀 FIXED: Changed from PATCH to POST
       });
 
       if (!response.ok) {
@@ -360,7 +391,7 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
   const handleCancelClass = useCallback(async (instanceId: string) => {
     try {
       const response = await fetch(`/api/classes/instances/${instanceId}/cancel`, {
-        method: 'PATCH',
+        method: 'POST', // 🚀 FIXED: Changed from PATCH to POST
       });
 
       if (!response.ok) {
@@ -375,26 +406,16 @@ export default function ClassesPageClient({ session }: ClassesPageClientProps) {
     }
   }, [loadData]);
 
-  // FIXED: Add calendar view mode change handler
+  // Calendar view mode change handler
   const handleCalendarViewModeChange = useCallback((mode: CalendarViewMode) => {
     setCalendarViewMode(mode);
   }, []);
 
+  // 🚀 USE LOADING STATE COMPONENT
   if (loading) {
     return (
       <Layout session={session}>
-        <Container maxWidth="xl">
-          <Box sx={{ py: 3 }}>
-            <Skeleton variant="text" width={200} height={40} sx={{ mb: 3 }} />
-            <Grid container spacing={3}>
-              {Array.from({ length: 6 }).map((_, index) => (
-                <Grid item xs={12} sm={6} lg={4} key={index}>
-                  <Skeleton variant="rectangular" height={200} sx={{ borderRadius: 1 }} />
-                </Grid>
-              ))}
-            </Grid>
-          </Box>
-        </Container>
+        <LoadingState />
       </Layout>
     );
   }

@@ -1,12 +1,13 @@
 // src/app/api/classes/instances/route.ts - COMPLETELY FIXED VERSION
 import { NextRequest } from 'next/server';
 import { adminDb } from '@/app/lib/firebase/admin';
-import { ClassInstance } from '@/app/types/class';
+import { ClassInstance, ClassSchedule, RecurrencePattern } from '@/app/types/class';
 import { z } from 'zod';
 import { requireAdmin, requireStaffOrTrainer, RequestContext } from '@/app/lib/api/middleware';
 import { successResponse, errorResponse, badRequestResponse, createdResponse } from '@/app/lib/api/response-utils';
 import { FieldValue } from 'firebase-admin/firestore';
 import { addMinutes, format as formatFns } from 'date-fns';
+import { classScheduleSchema } from '@/app/lib/validations/membership';
 
 // FIXED: Validation schema for creating class instances
 const createInstanceSchema = z.object({
@@ -160,13 +161,16 @@ export const GET = requireStaffOrTrainer(async (request: NextRequest, context: R
 });
 
 // POST /api/classes/instances - Create a new class instance
+// ONLY THE CHANGED PARTS OF src/app/api/classes/schedules/route.ts
+
+// POST /api/classes/schedules - Create new class schedule
 export const POST = requireAdmin(async (request: NextRequest, context: RequestContext) => {
   try {
     const { session } = context;
     const body = await request.json();
-    
+
     // Validate input
-    const validationResult = createInstanceSchema.safeParse(body);
+    const validationResult = classScheduleSchema.safeParse(body);
     if (!validationResult.success) {
       const firstError = validationResult.error.errors[0];
       return badRequestResponse(firstError?.message || 'Invalid input');
@@ -200,68 +204,78 @@ export const POST = requireAdmin(async (request: NextRequest, context: RequestCo
       return badRequestResponse('Selected class type not found or inactive');
     }
 
-    // Calculate end time
-    const [hours, minutes] = formData.startTime.split(':');
-    const startDate = new Date();
-    startDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
-    const endDate = addMinutes(startDate, formData.duration);
-    const endTime = formatFns(endDate, 'HH:mm');
+    // Build recurrence pattern
+    const recurrence: RecurrencePattern = {
+      scheduleType: formData.scheduleType,
+    };
 
-    // Create instance data
-    const instanceData = {
-      scheduleId: formData.scheduleId || null,
+    if (formData.scheduleType === 'recurring') {
+      recurrence.daysOfWeek = formData.daysOfWeek || [];
+      if (formData.recurrenceEndDate) {
+        recurrence.endDate = new Date(formData.recurrenceEndDate).toISOString();
+      }
+    }
+
+    // FIXED: Create class schedule data with proper undefined handling
+    const scheduleData: any = {
       name: formData.name,
       classType: formData.classType,
       instructorId: formData.instructorId,
       instructorName: instructorData.fullName || 'Unknown Instructor',
-      date: formData.date,
-      startTime: formData.startTime,
-      endTime,
       maxParticipants: formData.maxParticipants,
-      registeredParticipants: [],
-      waitlist: [],
-      status: 'scheduled',
-      location: formData.location || '',
-      notes: formData.notes || '',
       duration: formData.duration,
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
+      startDate: new Date(formData.startDate).toISOString().split('T')[0],
+      startTime: formData.startTime,
+      recurrence,
+      isActive: true,
       createdBy: session.uid,
     };
 
-    // Add to Firestore
-    const docRef = await adminDb.collection('classInstances').add(instanceData);
+    // FIXED: Only add optional fields if they have values (not undefined)
+    if (formData.location !== undefined && formData.location.trim() !== '') {
+      scheduleData.location = formData.location.trim();
+    }
+    
+    if (formData.description !== undefined && formData.description.trim() !== '') {
+      scheduleData.notes = formData.description.trim();
+    }
 
-    // Create response object
-    const newInstance: ClassInstance = {
+    // Add to Firestore with server timestamp
+    const docRef = await adminDb.collection('classSchedules').add({
+      ...scheduleData,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    // FIXED: Create the response object with proper optional field handling
+    const newSchedule: ClassSchedule = {
       id: docRef.id,
-      scheduleId: formData.scheduleId || '',
-      name: formData.name,
-      classType: formData.classType,
-      instructorId: formData.instructorId,
-      instructorName: instructorData.fullName || 'Unknown Instructor',
-      date: formData.date,
-      startTime: formData.startTime,
-      endTime,
-      maxParticipants: formData.maxParticipants,
-      registeredParticipants: [],
-      waitlist: [],
-      status: 'scheduled',
-      location: formData.location || '',
-      notes: formData.notes || '',
-      duration: formData.duration,
+      name: scheduleData.name,
+      classType: scheduleData.classType,
+      instructorId: scheduleData.instructorId,
+      instructorName: scheduleData.instructorName,
+      maxParticipants: scheduleData.maxParticipants,
+      duration: scheduleData.duration,
+      startDate: scheduleData.startDate,
+      startTime: scheduleData.startTime,
+      recurrence: scheduleData.recurrence,
+      location: scheduleData.location || '', // Provide default empty string for response
+      notes: scheduleData.notes || '', // Store as 'notes' in database but read from 'description' in form
+      isActive: scheduleData.isActive,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      createdBy: scheduleData.createdBy,
+      updatedBy: scheduleData.createdBy,
     };
 
-    return createdResponse(newInstance);
+    return createdResponse(newSchedule);
   } catch (error) {
-    console.error('Error creating class instance:', error);
+    console.error('Error creating class schedule:', error);
     
     if (error instanceof z.ZodError) {
       return badRequestResponse('Validation failed: ' + error.errors[0]?.message);
     }
     
-    return errorResponse('Failed to create class instance', 500);
+    return errorResponse('Failed to create class schedule', 500);
   }
 });

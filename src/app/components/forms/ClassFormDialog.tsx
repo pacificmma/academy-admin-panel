@@ -1,4 +1,4 @@
-// src/app/components/forms/ClassFormDialog.tsx - FIXED controlled/uncontrolled issues
+// src/app/components/forms/ClassFormDialog.tsx - COMPLETE VERSION
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -62,7 +62,7 @@ const DEFAULT_FORM_DATA: ClassFormData = {
   daysOfWeek: [],
   recurrenceEndDate: '',
   location: '',
-  notes: '',
+  notes: '', // Frontend field name
 };
 
 const DAYS_OF_WEEK = [
@@ -116,7 +116,7 @@ export default function ClassFormDialog({
               ? schedule.recurrence.endDate.split('T')[0] 
               : '',
             location: schedule.location || '',
-            notes: schedule.notes || '',
+            notes: schedule.notes || '', // Frontend field name
           });
         } else {
           const instance = classData as ClassInstance;
@@ -132,7 +132,7 @@ export default function ClassFormDialog({
             daysOfWeek: [],
             recurrenceEndDate: '',
             location: instance.location || '',
-            notes: instance.notes || '',
+            notes: instance.notes || '', // Frontend field name
           });
         }
       }
@@ -224,8 +224,8 @@ export default function ClassFormDialog({
 
     setLoading(true);
     try {
-      // Prepare submission data, excluding optional empty fields
-      const submitData: ClassFormData = {
+      // 🚀 FIXED: Map frontend field names to backend field names
+      const submitData: any = {
         name: formData.name.trim(),
         classType: formData.classType,
         instructorId: formData.instructorId,
@@ -234,13 +234,25 @@ export default function ClassFormDialog({
         startDate: formData.startDate,
         startTime: formData.startTime,
         scheduleType: formData.scheduleType,
-        daysOfWeek: formData.scheduleType === 'recurring' ? (formData.daysOfWeek || []) : undefined,
-        recurrenceEndDate: formData.scheduleType === 'recurring' && formData.recurrenceEndDate 
-          ? formData.recurrenceEndDate 
-          : undefined,
-        location: formData.location?.trim() || undefined,
-        notes: formData.notes?.trim() || undefined,
       };
+
+      // Only add fields that have values to prevent undefined errors
+      if (formData.scheduleType === 'recurring' && formData.daysOfWeek && formData.daysOfWeek.length > 0) {
+        submitData.daysOfWeek = formData.daysOfWeek;
+      }
+
+      if (formData.scheduleType === 'recurring' && formData.recurrenceEndDate && formData.recurrenceEndDate.trim() !== '') {
+        submitData.recurrenceEndDate = formData.recurrenceEndDate;
+      }
+
+      if (formData.location && formData.location.trim() !== '') {
+        submitData.location = formData.location.trim();
+      }
+
+      // 🚀 CRITICAL: Map frontend 'notes' to backend 'description'
+      if (formData.notes && formData.notes.trim() !== '') {
+        submitData.description = formData.notes.trim();
+      }
 
       // Pass the correct ID based on what we're editing
       const scheduleId = isEditingSchedule ? (classData as ClassSchedule).id : 
@@ -319,28 +331,15 @@ export default function ClassFormDialog({
                 <InputLabel>Instructor</InputLabel>
                 <Select
                   value={formData.instructorId}
-                  onChange={(e) => handleInputChange('instructorId', e.target.value)}
                   label="Instructor"
-                  disabled={loading || instructors.length === 0}
+                  onChange={(e) => handleInputChange('instructorId', e.target.value)}
+                  disabled={loading}
                 >
-                  {instructors.length === 0 ? (
-                    <MenuItem disabled>
-                      <Typography color="text.secondary">No instructors available</Typography>
+                  {instructors.map((instructor) => (
+                    <MenuItem key={instructor.id} value={instructor.id}>
+                      {instructor.name}
                     </MenuItem>
-                  ) : (
-                    instructors.map((instructor) => (
-                      <MenuItem key={instructor.id} value={instructor.id}>
-                        <Box>
-                          <Typography variant="body2">{instructor.name}</Typography>
-                          {instructor.specialties && instructor.specialties.length > 0 && (
-                            <Typography variant="caption" color="text.secondary">
-                              {instructor.specialties.join(', ')}
-                            </Typography>
-                          )}
-                        </Box>
-                      </MenuItem>
-                    ))
-                  )}
+                  ))}
                 </Select>
                 {errors.instructorId && (
                   <FormHelperText>{errors.instructorId}</FormHelperText>
@@ -358,10 +357,7 @@ export default function ClassFormDialog({
                 disabled={loading}
               />
             </Grid>
-          </Grid>
 
-          {/* Capacity and Duration */}
-          <Grid container spacing={2}>
             <Grid item xs={12} md={4}>
               <TextField
                 label="Max Participants"
@@ -387,7 +383,7 @@ export default function ClassFormDialog({
                 required
                 error={!!errors.duration}
                 helperText={errors.duration}
-                inputProps={{ min: 15, max: 240, step: 15 }}
+                inputProps={{ min: 15, max: 240 }}
                 disabled={loading}
               />
             </Grid>
@@ -408,14 +404,14 @@ export default function ClassFormDialog({
             </Grid>
           </Grid>
 
-          {/* Schedule Configuration - Only for schedules, not for single instances */}
+          {/* Schedule Type - Only for schedules, not instances */}
           {!isInstanceEdit && (
             <Box>
               <FormLabel component="legend">Schedule Type</FormLabel>
               <RadioGroup
+                row
                 value={formData.scheduleType}
                 onChange={(e) => handleInputChange('scheduleType', e.target.value as 'single' | 'recurring')}
-                row
               >
                 <FormControlLabel 
                   value="single" 
@@ -426,14 +422,14 @@ export default function ClassFormDialog({
                 <FormControlLabel 
                   value="recurring" 
                   control={<Radio />} 
-                  label="Recurring Schedule" 
+                  label="Recurring Classes" 
                   disabled={loading}
                 />
               </RadioGroup>
             </Box>
           )}
 
-          {/* Date Configuration */}
+          {/* Date Information */}
           <Grid container spacing={2}>
             <Grid item xs={12} md={formData.scheduleType === 'recurring' ? 6 : 12}>
               <TextField
