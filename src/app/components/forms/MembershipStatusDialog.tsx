@@ -41,6 +41,7 @@ interface MembershipStatusDialogProps {
   onClose: () => void;
   onSubmit: (membershipId: string, action: MembershipStatusAction) => Promise<void>;
   membership: MemberMembership | null;
+  selectedAction?: 'freeze' | 'unfreeze' | 'cancel' | 'reactivate' | null;
   loading?: boolean;
 }
 
@@ -71,6 +72,7 @@ export default function MembershipStatusDialog({
   onClose,
   onSubmit,
   membership,
+  selectedAction,
   loading = false,
 }: MembershipStatusDialogProps) {
   const [formData, setFormData] = useState<FormData>(DEFAULT_FORM_DATA);
@@ -80,21 +82,27 @@ export default function MembershipStatusDialog({
   // Reset form when dialog opens/closes or membership changes
   useEffect(() => {
     if (open && membership) {
-      // Determine available actions based on current status
+      // Use selectedAction if provided, otherwise determine from status
       let defaultAction: FormData['action'] = 'freeze';
       
-      switch (membership.status) {
-        case 'active':
-          defaultAction = 'freeze';
-          break;
-        case 'frozen':
-          defaultAction = 'unfreeze';
-          break;
-        case 'cancelled':
-        case 'expired':
-        case 'suspended':
-          defaultAction = 'reactivate';
-          break;
+      if (selectedAction) {
+        // Use the action that was specifically selected from the menu
+        defaultAction = selectedAction;
+      } else {
+        // Fallback to status-based logic (for backwards compatibility)
+        switch (membership.status) {
+          case 'active':
+            defaultAction = 'freeze';
+            break;
+          case 'frozen':
+            defaultAction = 'unfreeze';
+            break;
+          case 'cancelled':
+          case 'expired':
+          case 'suspended':
+            defaultAction = 'reactivate';
+            break;
+        }
       }
 
       setFormData({
@@ -105,7 +113,7 @@ export default function MembershipStatusDialog({
       });
       setErrors({});
     }
-  }, [open, membership]);
+  }, [open, membership, selectedAction]);
 
   const getDefaultNewEndDate = (): string => {
     const date = new Date();

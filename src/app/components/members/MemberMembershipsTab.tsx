@@ -85,6 +85,7 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
   // Menu and dialog states
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const [selectedMembership, setSelectedMembership] = useState<MemberMembership | null>(null);
+  const [selectedAction, setSelectedAction] = useState<'freeze' | 'unfreeze' | 'cancel' | 'reactivate' | null>(null);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
@@ -173,8 +174,8 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
     // Don't clear selectedMembership here - let dialog handle it
   };
 
-  const handleStatusAction = (): void => {
-    // selectedMembership is already set from handleMenuOpen
+  const handleStatusAction = (action: 'freeze' | 'unfreeze' | 'cancel' | 'reactivate'): void => {
+    setSelectedAction(action); // Store the selected action
     setMenuAnchor(null); // Close menu immediately
     setTimeout(() => {
       setStatusDialogOpen(true); // Open dialog after menu closes
@@ -322,11 +323,11 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
     switch (membership.status) {
       case 'active':
         actions.push(
-          <MenuItem key="freeze" onClick={handleStatusAction}>
+          <MenuItem key="freeze" onClick={() => handleStatusAction('freeze')}>
             <FreezeIcon sx={{ mr: 1 }} fontSize="small" />
             Freeze Membership
           </MenuItem>,
-          <MenuItem key="cancel" onClick={handleStatusAction}>
+          <MenuItem key="cancel" onClick={() => handleStatusAction('cancel')}>
             <CancelIcon sx={{ mr: 1 }} fontSize="small" color="error" />
             Cancel Membership
           </MenuItem>
@@ -334,11 +335,11 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
         break;
       case 'frozen':
         actions.push(
-          <MenuItem key="unfreeze" onClick={handleStatusAction}>
+          <MenuItem key="unfreeze" onClick={() => handleStatusAction('unfreeze')}>
             <UnfreezeIcon sx={{ mr: 1 }} fontSize="small" color="success" />
             Unfreeze Membership
           </MenuItem>,
-          <MenuItem key="cancel" onClick={handleStatusAction}>
+          <MenuItem key="cancel" onClick={() => handleStatusAction('cancel')}>
             <CancelIcon sx={{ mr: 1 }} fontSize="small" color="error" />
             Cancel Membership
           </MenuItem>
@@ -348,7 +349,7 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
       case 'expired':
       case 'suspended':
         actions.push(
-          <MenuItem key="reactivate" onClick={handleStatusAction}>
+          <MenuItem key="reactivate" onClick={() => handleStatusAction('reactivate')}>
             <ReactivateIcon sx={{ mr: 1 }} fontSize="small" color="warning" />
             Reactivate Membership
           </MenuItem>
@@ -556,11 +557,15 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
         open={statusDialogOpen}
         onClose={() => {
           setStatusDialogOpen(false);
-          // Clear selectedMembership after dialog animation completes
-          setTimeout(() => setSelectedMembership(null), 200);
+          // Clear selectedMembership and selectedAction after dialog animation completes
+          setTimeout(() => {
+            setSelectedMembership(null);
+            setSelectedAction(null);
+          }, 200);
         }}
         onSubmit={handleMembershipStatusChange}
         membership={selectedMembership}
+        selectedAction={selectedAction}
         loading={submitLoading}
       />
 
