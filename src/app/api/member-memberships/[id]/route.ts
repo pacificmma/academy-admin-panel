@@ -1,178 +1,166 @@
-//src/app/api/member-memberships/route.ts - FIXED VERSION
-// ============================================
-
+// src/app/api/member-memberships/[id]/route.ts - FIXED Individual member membership management
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { adminDb } from '@/app/lib/firebase/admin';
-import { createdResponse, successResponse, errorResponse, notFoundResponse } from '@/app/lib/api/response-utils';
-import { requireStaff } from '@/app/lib/api/middleware';
-import { MemberMembership, MemberMembershipFilters } from '@/app/types/membership';
+import { requireStaff, requireAdmin, RequestContext } from '@/app/lib/api/middleware';
+import { successResponse, errorResponse, notFoundResponse, badRequestResponse } from '@/app/lib/api/response-utils';
+import { FieldValue } from 'firebase-admin/firestore';
+import { MemberMembership } from '@/app/types/membership';
 
-// Validation schema for creating member memberships
-const createMemberMembershipSchema = z.object({
-  memberId: z.string().min(1),
-  membershipPlanId: z.string().min(1),
-  startDate: z.string(),
-  amount: z.number().min(0),
-  currency: z.string().length(3),
+// Validation schema for updating member memberships
+const updateMemberMembershipSchema = z.object({
+  startDate: z.string().optional(),
+  amount: z.number().min(0).optional(),
+  currency: z.literal('USD').optional(), // Only USD is allowed
   paymentReference: z.string().optional(),
+  status: z.enum(['active', 'cancelled', 'expired', 'frozen', 'suspended']).optional(),
+  paymentStatus: z.enum(['pending', 'paid', 'failed', 'refunded']).optional(),
+  notes: z.string().max(1000).optional(),
 });
 
-// GET /api/member-memberships - List member memberships with filtering
-export const GET = requireStaff(async (request: NextRequest, context) => {
+// GET /api/member-memberships/[id] - Get single member membership
+export const GET = requireStaff(async (request: NextRequest, context: RequestContext) => {
   try {
-    const url = new URL(request.url);
+    const { params } = context;
+    if (!params?.id) {
+      return notFoundResponse('Member membership');
+    }
+
+    const doc = await adminDb.collection('memberMemberships').doc(params.id).get();
     
-    const filters: MemberMembershipFilters = {
-      memberId: url.searchParams.get('memberId') || undefined,
-      membershipPlanId: url.searchParams.get('membershipPlanId') || undefined,
-      status: (url.searchParams.get('status') as MemberMembership['status']) || undefined,
-      paymentStatus: (url.searchParams.get('paymentStatus') as MemberMembership['paymentStatus']) || undefined,
-      startDateFrom: url.searchParams.get('startDateFrom') || undefined,
-      startDateTo: url.searchParams.get('startDateTo') || undefined,
-      endDateFrom: url.searchParams.get('endDateFrom') || undefined,
-      endDateTo: url.searchParams.get('endDateTo') || undefined,
-      searchTerm: url.searchParams.get('search') || undefined,
-    };
-
-    let query: any = adminDb.collection('memberMemberships').orderBy('createdAt', 'desc');
-
-    // Apply filters
-    if (filters.memberId) {
-      query = query.where('memberId', '==', filters.memberId);
-    }
-    if (filters.membershipPlanId) {
-      query = query.where('membershipPlanId', '==', filters.membershipPlanId);
-    }
-    if (filters.status) {
-      query = query.where('status', '==', filters.status);
-    }
-    if (filters.paymentStatus) {
-      query = query.where('paymentStatus', '==', filters.paymentStatus);
+    if (!doc.exists) {
+      return notFoundResponse('Member membership');
     }
 
-    const snapshot = await query.get();
-    let memberMemberships: MemberMembership[] = [];
+    const data = doc.data();
+    const memberMembership: MemberMembership = {
+      id: doc.id,
+      ...data,
+      startDate: data?.startDate || new Date().toISOString(),
+      endDate: data?.endDate || new Date().toISOString(),
+      createdAt: data?.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+      updatedAt: data?.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+    } as MemberMembership;
 
-    snapshot.forEach((doc: any) => {
-      const data = doc.data();
-      memberMemberships.push({
-        id: doc.id,
-        ...data,
-        startDate: data.startDate || new Date().toISOString(),
-        endDate: data.endDate || new Date().toISOString(),
-        createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-        updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-      } as MemberMembership);
-    });
-
-    // Apply client-side filters for date ranges
-    if (filters.startDateFrom) {
-      memberMemberships = memberMemberships.filter(membership => 
-        new Date(membership.startDate) >= new Date(filters.startDateFrom!)
-      );
-    }
-    if (filters.startDateTo) {
-      memberMemberships = memberMemberships.filter(membership => 
-        new Date(membership.startDate) <= new Date(filters.startDateTo!)
-      );
-    }
-    if (filters.endDateFrom) {
-      memberMemberships = memberMemberships.filter(membership => 
-        new Date(membership.endDate) >= new Date(filters.endDateFrom!)
-      );
-    }
-    if (filters.endDateTo) {
-      memberMemberships = memberMemberships.filter(membership => 
-        new Date(membership.endDate) <= new Date(filters.endDateTo!)
-      );
-    }
-
-    // Apply search filter
-    if (filters.searchTerm) {
-      const searchLower = filters.searchTerm.toLowerCase();
-      memberMemberships = memberMemberships.filter(membership => 
-        membership.memberId.toLowerCase().includes(searchLower) ||
-        membership.membershipPlanId.toLowerCase().includes(searchLower) ||
-        membership.paymentReference?.toLowerCase().includes(searchLower)
-      );
-    }
-
-    return successResponse({
-      data: memberMemberships,
-      total: memberMemberships.length
-    });
+    return successResponse(memberMembership);
 
   } catch (err) {
-    return errorResponse('Failed to fetch member memberships', 500);
+    console.error('Error in GET /api/member-memberships/[id]:', err);
+    return errorResponse('Failed to fetch member membership', 500);
   }
 });
 
-// POST /api/member-memberships - Create new member membership
-export const POST = requireStaff(async (request: NextRequest, context) => {
+// PUT /api/member-memberships/[id] - Update member membership
+export const PUT = requireStaff(async (request: NextRequest, context: RequestContext) => {
   try {
-    const { session } = context;
+    const { params, session } = context;
+    if (!params?.id) {
+      return notFoundResponse('Member membership');
+    }
+
     const body = await request.json();
-    const validation = createMemberMembershipSchema.safeParse(body);
+    const validation = updateMemberMembershipSchema.safeParse(body);
 
     if (!validation.success) {
-      return errorResponse('Validation failed', 400, { validationErrors: validation.error.issues });
+      return errorResponse('Validation failed', 400, { 
+        validationErrors: validation.error.issues 
+      });
     }
 
-    // Verify that the member exists
-    const memberDoc = await adminDb.collection('members').doc(validation.data.memberId).get();
-    if (!memberDoc.exists) {
-      return notFoundResponse('Member');
+    // Check if membership exists
+    const doc = await adminDb.collection('memberMemberships').doc(params.id).get();
+    if (!doc.exists) {
+      return notFoundResponse('Member membership');
     }
 
-    // Verify that the membership plan exists
-    const planDoc = await adminDb.collection('membershipPlans').doc(validation.data.membershipPlanId).get();
-    if (!planDoc.exists) {
-      return notFoundResponse('Membership plan');
-    }
+    const currentData = doc.data();
 
-    const planData = planDoc.data();
-    const startDate = new Date(validation.data.startDate);
-    const endDate = new Date(startDate);
-    
-    // Calculate end date based on plan duration
-    switch (planData?.durationType) {
-      case 'months':
-        endDate.setMonth(endDate.getMonth() + planData.duration);
-        break;
-      case 'days':
-        endDate.setDate(endDate.getDate() + planData.duration);
-        break;
-      case 'years':
-        endDate.setFullYear(endDate.getFullYear() + planData.duration);
-        break;
-    }
-
-    // Create the membership
-    const membershipData = {
+    // If updating startDate, recalculate endDate
+    let updateData: any = {
       ...validation.data,
-      endDate: endDate.toISOString(),
-      status: 'active' as const,
-      paymentStatus: 'pending' as const,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      createdBy: session.uid,
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: session.uid,
     };
 
-    const docRef = await adminDb.collection('memberMemberships').add(membershipData);
+    if (validation.data.startDate && currentData?.membershipPlanId) {
+      // Get the membership plan to recalculate end date
+      const planDoc = await adminDb.collection('membershipPlans').doc(currentData.membershipPlanId).get();
+      if (planDoc.exists) {
+        const planData = planDoc.data();
+        const startDate = new Date(validation.data.startDate);
+        const endDate = new Date(startDate);
+        
+        // Calculate end date based on plan duration
+        switch (planData?.durationType) {
+          case 'months':
+            endDate.setMonth(endDate.getMonth() + planData.duration);
+            break;
+          case 'days':
+            endDate.setDate(endDate.getDate() + planData.duration);
+            break;
+          case 'years':
+            endDate.setFullYear(endDate.getFullYear() + planData.duration);
+            break;
+        }
+        
+        updateData.endDate = endDate.toISOString();
+      }
+    }
 
-    // Get the created membership
-    const createdDoc = await docRef.get();
-    const createdMembership: MemberMembership = {
-      id: createdDoc.id,
-      ...createdDoc.data(),
-      createdAt: createdDoc.data()?.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-      updatedAt: createdDoc.data()?.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+    // Update the membership
+    await adminDb.collection('memberMemberships').doc(params.id).update(updateData);
+
+    // Get the updated membership
+    const updatedDoc = await adminDb.collection('memberMemberships').doc(params.id).get();
+    const updatedMembership: MemberMembership = {
+      id: updatedDoc.id,
+      ...updatedDoc.data(),
+      createdAt: updatedDoc.data()?.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     } as MemberMembership;
 
-    return createdResponse(createdMembership, 'Member membership created successfully');
-    
+    return successResponse(updatedMembership, 'Member membership updated successfully');
+
   } catch (err) {
-    return errorResponse('Failed to create member membership', 500);
+    console.error('Error in PUT /api/member-memberships/[id]:', err);
+    return errorResponse('Failed to update member membership', 500);
+  }
+});
+
+// DELETE /api/member-memberships/[id] - Cancel member membership (soft delete)
+export const DELETE = requireAdmin(async (request: NextRequest, context: RequestContext) => {
+  try {
+    const { params, session } = context;
+    if (!params?.id) {
+      return notFoundResponse('Member membership');
+    }
+
+    // Check if membership exists
+    const doc = await adminDb.collection('memberMemberships').doc(params.id).get();
+    if (!doc.exists) {
+      return notFoundResponse('Member membership');
+    }
+
+    const membershipData = doc.data();
+
+    // Only allow deletion of inactive memberships
+    if (membershipData?.status === 'active') {
+      return badRequestResponse('Cannot delete active membership. Please cancel it first.');
+    }
+
+    // Soft delete: mark as cancelled instead of actually deleting
+    await adminDb.collection('memberMemberships').doc(params.id).update({
+      status: 'cancelled',
+      cancellationReason: 'Deleted by admin',
+      cancelledBy: session.uid,
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: session.uid,
+    });
+
+    return successResponse(null, 'Member membership deleted successfully');
+
+  } catch (err) {
+    console.error('Error in DELETE /api/member-memberships/[id]:', err);
+    return errorResponse('Failed to delete member membership', 500);
   }
 });

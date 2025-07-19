@@ -1,9 +1,10 @@
-// src/app/api/member-memberships/[id]/reactivate/route.ts - Reactivate membership endpoint
+// src/app/api/member-memberships/[id]/reactivate/route.ts - FIXED Reactivate membership endpoint
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { adminDb } from '@/app/lib/firebase/admin';
 import { requireAdmin, RequestContext } from '@/app/lib/api/middleware';
 import { errorResponse, successResponse, notFoundResponse, badRequestResponse } from '@/app/lib/api/response-utils';
+import { FieldValue } from 'firebase-admin/firestore';
 
 const reactivateMembershipSchema = z.object({
   reason: z.string().min(1, 'Reactivation reason is required').max(500, 'Reason must be less than 500 characters'),
@@ -66,14 +67,14 @@ export const POST = requireAdmin(async (request: NextRequest, context: RequestCo
       status: 'active',
       endDate: endDate.toISOString(),
       paymentStatus: amount !== undefined ? 'paid' : membershipData.paymentStatus,
-      updatedAt: new Date().toISOString(),
+      reactivationReason: reason.trim(),
+      reactivatedBy: session.uid,
+      reactivationDate: new Date().toISOString(),
+      updatedAt: FieldValue.serverTimestamp(),
       updatedBy: session.uid,
-      notes: membershipData.notes ? 
-        `${membershipData.notes}\n\nReactivated on ${new Date().toISOString()}: ${reason.trim()}` : 
-        `Reactivated on ${new Date().toISOString()}: ${reason.trim()}`,
     };
 
-    // Add payment information if provided
+    // Add payment info if provided
     if (amount !== undefined) {
       updateData.amount = amount;
     }
@@ -81,22 +82,25 @@ export const POST = requireAdmin(async (request: NextRequest, context: RequestCo
       updateData.paymentReference = paymentReference.trim();
     }
 
-    // Clear cancellation/freeze information when reactivating
-    if (membershipData.status === 'cancelled') {
-      updateData.cancellationReason = null;
-      updateData.cancelledBy = null;
-    }
-    if (membershipData.freezeStartDate) {
-      updateData.freezeStartDate = null;
-      updateData.freezeEndDate = null;
-      updateData.freezeReason = null;
-    }
+    // Clear suspension/cancellation data
+    updateData.suspensionReason = null;
+    updateData.suspendedBy = null;
+    updateData.suspensionDate = null;
+    updateData.cancellationReason = null;
+    updateData.cancelledBy = null;
+
+    // Add note about reactivation
+    const reactivationNote = `Reactivated on ${new Date().toISOString()}: ${reason.trim()}`;
+    updateData.notes = membershipData.notes ? 
+      `${membershipData.notes}\n\n${reactivationNote}` : 
+      reactivationNote;
 
     await adminDb.collection('memberMemberships').doc(params.id).update(updateData);
 
     return successResponse(null, 'Membership reactivated successfully');
 
   } catch (error) {
-    return errorResponse('Failed to reactivate membership', 500, { details: error });
+    console.error('Error in POST /api/member-memberships/[id]/reactivate:', error);
+    return errorResponse('Failed to reactivate membership', 500);
   }
 });

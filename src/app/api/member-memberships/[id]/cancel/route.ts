@@ -1,9 +1,10 @@
-// src/app/api/member-memberships/[id]/cancel/route.ts - Cancel membership endpoint
+// src/app/api/member-memberships/[id]/cancel/route.ts - FIXED Cancel membership endpoint
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { adminDb } from '@/app/lib/firebase/admin';
 import { requireAdmin, RequestContext } from '@/app/lib/api/middleware';
 import { errorResponse, successResponse, notFoundResponse, badRequestResponse } from '@/app/lib/api/response-utils';
+import { FieldValue } from 'firebase-admin/firestore';
 
 // Validation schema for cancelling membership
 const cancelMembershipSchema = z.object({
@@ -48,7 +49,9 @@ export const POST = requireAdmin(async (request: NextRequest, context: RequestCo
       status: 'cancelled',
       cancellationReason: reason.trim(),
       cancelledBy: session.uid,
-      updatedAt: new Date().toISOString(),
+      cancellationDate: new Date().toISOString(),
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: session.uid,
     };
 
     // Clear freeze information if membership was frozen
@@ -69,6 +72,7 @@ export const POST = requireAdmin(async (request: NextRequest, context: RequestCo
     return successResponse(null, 'Membership cancelled successfully');
 
   } catch (error) {
-    return errorResponse('Failed to cancel membership', 500, { details: error });
+    console.error('Error in POST /api/member-memberships/[id]/cancel:', error);
+    return errorResponse('Failed to cancel membership', 500);
   }
 });
