@@ -429,11 +429,18 @@ export default function MembershipFormDialog({
               Included Class Types
             </Typography>
             <ClassTypeSelector
-              selectedClassTypes={formData.classTypes}
-              onChange={(classTypes) => handleInputChange('classTypes', classTypes)}
+              multiple={true}
+              selectedValues={formData.classTypes}
+              onMultipleChange={(selectedTypes) => handleInputChange('classTypes', selectedTypes)}
               error={errors.classTypes}
-              multiple
-              required
+              disabled={loading}
+              required={true}
+              allowCreate={true}
+              allowEdit={true}
+              allowDelete={true}
+              showUsageCount={true}
+              label="Program Types"
+              helperText="Select which class types this membership includes. You can also add, edit, or delete class types from here."
             />
           </Grid>
 

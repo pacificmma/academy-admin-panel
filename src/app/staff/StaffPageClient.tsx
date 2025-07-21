@@ -1,4 +1,4 @@
-// src/app/staff/StaffPageClient.tsx - Updated with correct imports
+// src/app/staff/StaffPageClient.tsx - Onay butonu metnini iletmek ve durumu değiştirmeyi işlemek için güncellendi
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -46,7 +46,7 @@ import {
 import Layout from '../components/layout/Layout';
 import { SessionData } from '../types';
 import { StaffRecord } from '../types/staff';
-import { UserRole } from '../types/auth'; // Import UserRole from auth types
+import { UserRole } from '../types/auth'; // UserRole'ü auth tiplerinden içe aktar
 import CreateStaffDialog from '../components/ui/CreateStaffDialog';
 import DeleteConfirmationDialog from '../components/ui/DeleteConfirmationDialog';
 
@@ -63,7 +63,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false); // Durum değiştirme onayı için kullanılır
 
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(0);
@@ -71,7 +71,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
   const [actionMenuAnchor, setActionMenuAnchor] = useState<null | HTMLElement>(null);
   const [selectedStaff, setSelectedStaff] = useState<StaffRecord | null>(null);
 
-  // Fetch staff members
+  // Personel üyelerini getir
   const fetchStaffMembers = async () => {
     try {
       setLoading(true);
@@ -101,14 +101,14 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
     fetchStaffMembers();
   }, []);
 
-  // Handle staff creation success
+  // Personel oluşturma başarısını işle
   const handleStaffCreated = (newStaff: StaffRecord) => {
     setStaffMembers(prev => [newStaff, ...prev]);
     setCreateDialogOpen(false);
     setSuccessMessage('Staff member created successfully!');
   };
 
-  // Handle staff update success
+  // Personel güncelleme başarısını işle
   const handleStaffUpdated = (updatedStaff: StaffRecord) => {
     setStaffMembers(prev => prev.map(staff => staff.uid === updatedStaff.uid ? updatedStaff : staff));
     setEditDialogOpen(false);
@@ -116,15 +116,15 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
     setSuccessMessage('Staff member updated successfully!');
   };
 
-  // Handle staff deactivation/deletion
-  const handleStaffDeleted = async () => {
+  // Personel durumu değiştirme (pasifleştir/aktif hale getir)
+  const handleStaffStatusToggle = async () => {
     if (!selectedStaff) return;
 
     try {
       setSubmitLoading(true);
       setError(null);
       const response = await fetch(`/api/staff/${selectedStaff.uid}`, {
-        method: 'DELETE',
+        method: 'DELETE', // DELETE metodu durumu değiştirmek için kullanılır
         credentials: 'include',
       });
 
@@ -133,43 +133,45 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
       if (response.ok && result.success) {
         setDeleteDialogOpen(false);
         setSelectedStaff(null);
-        setSuccessMessage('Staff member status updated successfully!');
-        fetchStaffMembers(); // Refresh full list to get updated 'isActive' status
+        // Yapılan işleme göre başarı mesajını güncelle
+        const actionMessage = selectedStaff.isActive ? 'deactivated' : 'activated';
+        setSuccessMessage(`Staff member ${actionMessage} successfully!`);
+        fetchStaffMembers(); // Güncel 'isActive' durumunu almak için tam listeyi yenile
       } else {
         throw new Error(result.error || `Failed to ${selectedStaff.isActive ? 'deactivate' : 'activate'} staff member`);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : `Failed to ${selectedStaff?.isActive ? 'deactivate' : 'activate'} staff member`);
+      setError(err instanceof Error ? err.message : `Failed to ${selectedStaff?.isActive ? 'deactivate' : 'activate'} member`);
     } finally {
       setSubmitLoading(false);
     }
   };
 
-  // Filter staff members based on search term
+  // Arama terimine göre personel üyelerini filtrele
   const filteredStaff = staffMembers.filter(staff =>
     staff.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
     staff.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
     staff.role.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Paginated staff members
+  // Sayfalanmış personel üyeleri
   const paginatedStaff = filteredStaff.slice(
     page * rowsPerPage,
     page * rowsPerPage + rowsPerPage
   );
 
-  // Handle page change
+  // Sayfa değişimini işle
   const handleChangePage = (event: unknown, newPage: number) => {
     setPage(newPage);
   };
 
-  // Handle rows per page change
+  // Sayfa başına satır değişimini işle
   const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
     setRowsPerPage(parseInt(event.target.value, 10));
     setPage(0);
   };
 
-  // Handle action menu
+  // Eylem menüsünü işle
   const handleActionMenuClick = (event: React.MouseEvent<HTMLElement>, staff: StaffRecord) => {
     setActionMenuAnchor(event.currentTarget);
     setSelectedStaff(staff);
@@ -184,12 +186,13 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
     handleActionMenuClose();
   };
 
-  const handleDeleteClick = () => {
+  // Bu artık durum değiştirme diyalogunu tetikleyecek
+  const handleStatusToggleClick = () => {
     setDeleteDialogOpen(true);
     handleActionMenuClose();
   };
 
-  // Get role icon
+  // Rol ikonunu al
   const getRoleIcon = (role: UserRole) => {
     switch (role) {
       case 'admin':
@@ -203,7 +206,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
     }
   };
 
-  // Get role color
+  // Rol rengini al
   const getRoleColor = (role: UserRole): 'error' | 'primary' | 'secondary' | 'default' => {
     switch (role) {
       case 'admin':
@@ -217,7 +220,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
     }
   };
 
-  // Stats cards data
+  // İstatistik kartları verileri
   const statsData = [
     {
       title: 'Total Staff',
@@ -252,7 +255,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
   return (
     <Layout session={session} title="Staff Management">
       <Container maxWidth="xl" sx={{ py: 4 }}>
-        {/* Header Section */}
+        {/* Başlık Bölümü */}
         <Box sx={{ mb: 4 }}>
           <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 700 }}>
             Staff Management
@@ -262,14 +265,14 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
           </Typography>
         </Box>
 
-        {/* Error Alert */}
+        {/* Hata Uyarısı */}
         {error && (
           <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
             {error}
           </Alert>
         )}
 
-        {/* Stats Cards */}
+        {/* İstatistik Kartları */}
         <Grid container spacing={3} sx={{ mb: 4 }}>
           {statsData.map((stat, index) => (
             <Grid item xs={12} sm={6} lg={3} key={index}>
@@ -303,7 +306,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
           ))}
         </Grid>
 
-        {/* Actions Bar */}
+        {/* Eylem Çubuğu */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <TextField
             placeholder="Search staff members..."
@@ -329,7 +332,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
           </Button>
         </Box>
 
-        {/* Staff Table */}
+        {/* Personel Tablosu */}
         <Paper sx={{ overflow: 'hidden' }}>
           <TableContainer>
             <Table>
@@ -441,7 +444,8 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
                           <IconButton
                             onClick={(e) => handleActionMenuClick(e, staff)}
                             size="small"
-                            disabled={session.uid === staff.uid && staff.role === 'admin'}
+                            // Yöneticiler kendi hesaplarını bu kullanıcı arayüzünden doğrudan pasifleştiremezler
+                            disabled={session.uid === staff.uid && staff.role === 'admin'} 
                           >
                             <MoreVertIcon />
                           </IconButton>
@@ -454,7 +458,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
             </Table>
           </TableContainer>
 
-          {/* Pagination */}
+          {/* Sayfalama */}
           {!loading && filteredStaff.length > 0 && (
             <TablePagination
               rowsPerPageOptions={[5, 10, 25, 50]}
@@ -468,7 +472,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
           )}
         </Paper>
 
-        {/* Action Menu */}
+        {/* Eylem Menüsü */}
         <Menu
           anchorEl={actionMenuAnchor}
           open={Boolean(actionMenuAnchor)}
@@ -477,26 +481,31 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
           anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
         >
           {selectedStaff && (
-            <>
-              <MenuItem onClick={handleEditClick} disabled={submitLoading}>
-                <EditIcon sx={{ mr: 1, fontSize: 20 }} />
-                Edit Staff
-              </MenuItem>
-              {session.uid !== selectedStaff.uid && (
-                <MenuItem
-                  onClick={handleDeleteClick}
-                  sx={{ color: 'error.main' }}
-                  disabled={submitLoading}
-                >
-                  <DeleteIcon sx={{ mr: 1, fontSize: 20 }} />
-                  {selectedStaff.isActive ? 'Deactivate' : 'Activate'}
-                </MenuItem>
+            <MenuItem onClick={handleEditClick} disabled={submitLoading}>
+              <EditIcon sx={{ mr: 1, fontSize: 20 }} />
+              Edit Staff
+            </MenuItem>
+          )}
+          {selectedStaff && session.uid !== selectedStaff.uid && (
+            <MenuItem
+              onClick={handleStatusToggleClick} // Durum değiştirme diyalogunu tetiklemek için değiştirildi
+              sx={{ color: selectedStaff.isActive ? 'error.main' : 'success.main' }}
+              disabled={submitLoading}
+            >
+              {selectedStaff.isActive ? (
+                <>
+                  <DeleteIcon sx={{ mr: 1, fontSize: 20 }} /> Deactivate
+                </>
+              ) : (
+                <>
+                  <AddIcon sx={{ mr: 1, fontSize: 20 }} /> Activate
+                </>
               )}
-            </>
+            </MenuItem>
           )}
         </Menu>
 
-        {/* Create Staff Dialog */}
+        {/* Personel Oluşturma Diyaloğu */}
         <CreateStaffDialog
           open={createDialogOpen}
           onClose={() => setCreateDialogOpen(false)}
@@ -504,7 +513,7 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
           mode="create"
         />
 
-        {/* Edit Staff Dialog */}
+        {/* Personel Düzenleme Diyaloğu */}
         <CreateStaffDialog
           open={editDialogOpen}
           onClose={() => {
@@ -516,26 +525,31 @@ export default function StaffPageClient({ session }: StaffPageClientProps) {
           mode="edit"
         />
 
-        {/* Delete Confirmation Dialog */}
+        {/* Durum Değiştirme Onayı Diyaloğu (DeleteConfirmationDialog kullanılarak) */}
         <DeleteConfirmationDialog
           open={deleteDialogOpen}
           onClose={() => {
             setDeleteDialogOpen(false);
             setSelectedStaff(null);
           }}
-          onConfirm={handleStaffDeleted}
+          onConfirm={handleStaffStatusToggle} // Yeni durum değiştirme işleyicisini çağır
           title={selectedStaff?.isActive ? "Confirm Deactivation" : "Confirm Activation"}
           itemName={selectedStaff?.fullName || ''}
           itemType="staff member"
           loading={submitLoading}
-          warningMessage={selectedStaff?.isActive ? "This action will deactivate the staff member. They will no longer be able to log in." : "This action will reactivate the staff member. They will be able to log in again."}
+          warningMessage={selectedStaff?.isActive ? 
+            "This action will deactivate the staff member. They will no longer be able to log in." : 
+            "This action will reactivate the staff member. They will be able to log in again."
+          }
+          // Mevcut duruma göre özelleştirilebilir buton metnini ilet
+          confirmButtonText={selectedStaff?.isActive ? "Deactivate" : "Activate"} 
           additionalInfo={selectedStaff ? [
             { label: 'Role', value: selectedStaff.role.charAt(0).toUpperCase() + selectedStaff.role.slice(1) },
             { label: 'Email', value: selectedStaff.email },
           ] : []}
         />
 
-        {/* Success Snackbar */}
+        {/* Başarı Snackbar'ı */}
         <Snackbar
           open={!!successMessage}
           autoHideDuration={6000}

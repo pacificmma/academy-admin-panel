@@ -1,10 +1,10 @@
-// src/app/api/staff/[id]/route.ts - FIXED VERSION WITH PROPER TYPES
+// src/app/api/staff/[id]/route.ts - isActive durumunu değiştirmek için güncellendi
 import { NextRequest } from 'next/server';
 import { adminDb } from '@/app/lib/firebase/admin';
 import { requireStaffOrTrainer, requireAdmin } from '@/app/lib/api/middleware';
 import { errorResponse, successResponse, notFoundResponse, badRequestResponse, forbiddenResponse, conflictResponse } from '@/app/lib/api/response-utils';
 
-// GET /api/staff/[id] - Get specific staff member
+// GET /api/staff/[id] - Belirli bir personel üyesini getir
 export const GET = requireStaffOrTrainer(async (request: NextRequest, context) => {
   try {
     const { params: asyncParams, session } = context;
@@ -16,24 +16,24 @@ export const GET = requireStaffOrTrainer(async (request: NextRequest, context) =
 
     const staffId = params.id as string;
 
-    // Get staff document
+    // Personel belgesini getir
     const staffDoc = await adminDb.collection('staff').doc(staffId).get();
 
     if (!staffDoc.exists) {
       return notFoundResponse('Staff member');
     }
 
-    // Type the staff data properly
+    // Personel verilerini düzgün bir şekilde tipize et
     const staffData: any = { id: staffDoc.id, ...staffDoc.data() };
 
-    // Non-admin users can only view their own profile
+    // Yönetici olmayan kullanıcılar sadece kendi profillerini görüntüleyebilir
     if (session.role !== 'admin' && session.uid !== staffId) {
       return forbiddenResponse('Access denied');
     }
 
-    // Remove sensitive data if not admin
+    // Yönetici değilse hassas verileri kaldır
     if (session.role !== 'admin') {
-      // Use optional deletion to avoid TypeScript errors
+      // TypeScript hatalarını önlemek için isteğe bağlı silme kullan
       if (staffData.lastLoginIP) delete staffData.lastLoginIP;
       if (staffData.failedLoginAttempts) delete staffData.failedLoginAttempts;
       if (staffData.accountLockoutUntil) delete staffData.accountLockoutUntil;
@@ -48,7 +48,7 @@ export const GET = requireStaffOrTrainer(async (request: NextRequest, context) =
   }
 });
 
-// PUT /api/staff/[id] - Update staff member
+// PUT /api/staff/[id] - Personel üyesini güncelle
 export const PUT = requireAdmin(async (request: NextRequest, context) => {
   try {
     const { params: asyncParams, session } = context;
@@ -61,7 +61,7 @@ export const PUT = requireAdmin(async (request: NextRequest, context) => {
     const staffId = params.id as string;
     const body = await request.json();
 
-    // Check if staff exists
+    // Personelin var olup olmadığını kontrol et
     const staffRef = adminDb.collection('staff').doc(staffId);
     const staffDoc = await staffRef.get();
 
@@ -69,7 +69,7 @@ export const PUT = requireAdmin(async (request: NextRequest, context) => {
       return notFoundResponse('Staff member');
     }
 
-    // Check if email is already used by another staff member
+    // E-postanın başka bir personel üyesi tarafından kullanılıp kullanılmadığını kontrol et
     if (body.email && body.email !== staffDoc.data()?.email) {
       const existingStaff = await adminDb.collection('staff')
         .where('email', '==', body.email)
@@ -80,21 +80,21 @@ export const PUT = requireAdmin(async (request: NextRequest, context) => {
       }
     }
 
-    // Update with audit fields
+    // Denetim alanlarıyla birlikte güncelle
     const updateData: any = {
       ...body,
       updatedBy: session.uid,
       updatedAt: new Date(),
     };
 
-    // Remove fields that shouldn't be updated
+    // Güncellenmemesi gereken alanları kaldır
     delete updateData.id;
     delete updateData.createdAt;
     delete updateData.createdBy;
 
     await staffRef.update(updateData);
 
-    // Get updated document
+    // Güncellenmiş belgeyi al
     const updatedDoc = await staffRef.get();
     const result: any = { id: updatedDoc.id, ...updatedDoc.data() };
 
@@ -105,19 +105,18 @@ export const PUT = requireAdmin(async (request: NextRequest, context) => {
   }
 });
 
-// DELETE /api/staff/[id] - Delete (deactivate) staff member
+// DELETE /api/staff/[id] - Personel üyesinin isActive durumunu değiştir (deactivate/activate)
 export const DELETE = requireAdmin(async (request: NextRequest, context) => {
+  const { params: asyncParams, session } = context;
+  const params = await asyncParams;
   try {
-    const { params: asyncParams, session } = context;
-    const params = await asyncParams;
-
     if (!params?.id) {
       return badRequestResponse('Staff ID is required');
     }
 
     const staffId = params.id as string;
 
-    // Check if staff exists
+    // Personelin var olup olmadığını kontrol et
     const staffRef = adminDb.collection('staff').doc(staffId);
     const staffDoc = await staffRef.get();
 
@@ -125,23 +124,31 @@ export const DELETE = requireAdmin(async (request: NextRequest, context) => {
       return notFoundResponse('Staff member');
     }
 
-    // Prevent admin from deleting themselves
-    if (staffId === session.uid) {
-      return badRequestResponse('Cannot delete your own account');
+    // Yöneticinin kendi hesabını pasifleştirmesini engelle
+    if (staffId === session.uid && staffDoc.data()?.role === 'admin') {
+      return badRequestResponse('Administrators cannot deactivate their own accounts directly.');
     }
 
-    // Soft delete (deactivate) instead of hard delete
+    // Mevcut isActive durumunu al ve tersine çevir
+    const currentIsActive = staffDoc.data()?.isActive ?? true; // Ayarlanmamışsa varsayılan olarak true
+    const newIsActive = !currentIsActive;
+
+    // isActive durumunu ve denetim alanlarını güncelle
     await staffRef.update({
-      isActive: false,
-      deactivatedBy: session.uid,
-      deactivatedAt: new Date(),
+      isActive: newIsActive,
       updatedBy: session.uid,
       updatedAt: new Date(),
+      // Pasifleştirme/aktifleştirme zaman damgalarını ayarla veya temizle
+      ...(newIsActive
+        ? { activatedBy: session.uid, activatedAt: new Date(), deactivatedBy: null, deactivatedAt: null }
+        : { deactivatedBy: session.uid, deactivatedAt: new Date(), activatedBy: null, activatedAt: null })
     });
 
-    return successResponse(null, 'Staff member deactivated successfully');
+    const actionMessage = newIsActive ? 'activated' : 'deactivated';
+    return successResponse(null, `Staff member ${actionMessage} successfully`);
 
   } catch (error: any) {
-    return errorResponse('Failed to deactivate staff member', 500);
+    console.error(`Error toggling staff status for ${params?.id}:`, error);
+    return errorResponse('Failed to update staff member status', 500);
   }
 });

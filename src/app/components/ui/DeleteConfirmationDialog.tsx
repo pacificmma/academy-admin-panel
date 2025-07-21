@@ -30,6 +30,8 @@ interface DeleteConfirmationDialogProps {
     label: string;
     value: string | number;
   }[];
+  // New prop for customizable confirm button text
+  confirmButtonText?: string; 
 }
 
 export default function DeleteConfirmationDialog({
@@ -42,6 +44,7 @@ export default function DeleteConfirmationDialog({
   loading = false,
   warningMessage,
   additionalInfo = [],
+  confirmButtonText = 'Delete', // Default to 'Delete' if not provided
 }: DeleteConfirmationDialogProps) {
   return (
     <Dialog 
@@ -75,7 +78,7 @@ export default function DeleteConfirmationDialog({
 
       <DialogContent>
         <Typography variant="body1" gutterBottom>
-          Are you sure you want to delete this {itemType}?
+          Are you sure you want to {confirmButtonText.toLowerCase()} this {itemType}?
         </Typography>
 
         <Box
@@ -89,7 +92,7 @@ export default function DeleteConfirmationDialog({
           }}
         >
           <Typography variant="subtitle2" gutterBottom>
-            {itemType.charAt(0).toUpperCase() + itemType.slice(1)} to delete:
+            {itemType.charAt(0).toUpperCase() + itemType.slice(1)} to {confirmButtonText.toLowerCase()}:
           </Typography>
           <Typography variant="body1" fontWeight="500">
             {itemName}
@@ -119,12 +122,6 @@ export default function DeleteConfirmationDialog({
             {warningMessage}
           </Alert>
         )}
-
-        <Alert severity="error" variant="outlined">
-          <Typography variant="body2">
-            <strong>This action cannot be undone.</strong> All data associated with this {itemType} will be permanently removed from the system.
-          </Typography>
-        </Alert>
       </DialogContent>
 
       <DialogActions sx={{ p: 3, gap: 1 }}>
@@ -140,10 +137,13 @@ export default function DeleteConfirmationDialog({
           disabled={loading}
           variant="contained"
           color="error"
-          startIcon={loading ? undefined : <DeleteIcon />}
+          // Show spinner if loading, otherwise show the appropriate icon or no icon.
+          // The icon will likely depend on the action (activate/deactivate), but
+          // given it's a "delete" dialog, the DeleteIcon is suitable as a fallback.
+          startIcon={loading ? undefined : <DeleteIcon />} 
           sx={{ minWidth: 120 }}
         >
-          {loading ? 'Deleting...' : 'Delete'}
+          {loading ? `${confirmButtonText}...` : confirmButtonText}
         </Button>
       </DialogActions>
     </Dialog>

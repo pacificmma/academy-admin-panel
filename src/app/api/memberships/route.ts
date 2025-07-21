@@ -38,7 +38,8 @@ export const GET = requireStaff(async (request: NextRequest, context: RequestCon
     const limit = parseInt(url.searchParams.get('limit') || '50');
     const offset = parseInt(url.searchParams.get('offset') || '0');
 
-    let query = adminDb.collection('membershipPlans');
+    // Fix: Explicitly type 'query' as 'any' to allow chaining of query methods
+    let query: any = adminDb.collection('membershipPlans');
 
     // Apply filters
     if (status && ['active', 'inactive', 'draft'].includes(status)) {
@@ -49,7 +50,7 @@ export const GET = requireStaff(async (request: NextRequest, context: RequestCon
     query = query.orderBy('createdAt', 'desc');
 
     const querySnapshot = await query.get();
-    const allPlans = querySnapshot.docs.map(doc => {
+    const allPlans = querySnapshot.docs.map((doc: any) => {
       const data = doc.data();
       return {
         id: doc.id,
@@ -74,10 +75,10 @@ export const GET = requireStaff(async (request: NextRequest, context: RequestCon
     let filteredPlans = allPlans;
     if (search && search.trim()) {
       const searchTerm = search.trim().toLowerCase();
-      filteredPlans = allPlans.filter(plan =>
+      filteredPlans = allPlans.filter((plan: any) =>
         plan.name.toLowerCase().includes(searchTerm) ||
         plan.description?.toLowerCase().includes(searchTerm) ||
-        plan.classTypes.some(type => type.toLowerCase().includes(searchTerm))
+        plan.classTypes.some((type: any) => type.toLowerCase().includes(searchTerm))
       );
     }
 
@@ -87,8 +88,8 @@ export const GET = requireStaff(async (request: NextRequest, context: RequestCon
     // Calculate stats
     const stats = {
       totalPlans: filteredPlans.length,
-      activePlans: filteredPlans.filter(p => p.status === 'active').length,
-      inactivePlans: filteredPlans.filter(p => p.status === 'inactive').length,
+      activePlans: filteredPlans.filter((p: any) => p.status === 'active').length,
+      inactivePlans: filteredPlans.filter((p: any) => p.status === 'inactive').length,
     };
 
     return successResponse({
