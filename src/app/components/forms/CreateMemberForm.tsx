@@ -36,11 +36,11 @@ interface CreateMemberFormProps {
   loading?: boolean;
 }
 
-export default function CreateMemberForm({ 
-  open, 
-  onClose, 
-  onSubmit, 
-  loading = false 
+export default function CreateMemberForm({
+  open,
+  onClose,
+  onSubmit,
+  loading = false
 }: CreateMemberFormProps) {
   const [formData, setFormData] = useState<MemberFormData>({
     email: '',
@@ -121,7 +121,7 @@ export default function CreateMemberForm({
       } else if (keys.length === 2) {
         const [parentKey, childKey] = keys;
         const currentParent = prev[parentKey as keyof MemberFormData];
-        
+
         // Ensure the parent object exists and is an object
         if (currentParent && typeof currentParent === 'object') {
           return {
@@ -151,7 +151,7 @@ export default function CreateMemberForm({
         [field]: value,
       },
     }));
-    
+
     if (errors[`address.${field}`]) {
       setErrors(prev => ({ ...prev, [`address.${field}`]: '' }));
     }
@@ -165,7 +165,7 @@ export default function CreateMemberForm({
         [field]: value,
       },
     }));
-    
+
     if (errors[`emergencyContact.${field}`]) {
       setErrors(prev => ({ ...prev, [`emergencyContact.${field}`]: '' }));
     }
@@ -222,7 +222,7 @@ export default function CreateMemberForm({
 
     try {
       const submitData = { ...formData };
-      
+
       // Transform address - remove empty fields
       if (submitData.address) {
         const cleanAddress: any = {};
@@ -231,7 +231,7 @@ export default function CreateMemberForm({
         if (submitData.address.state?.trim()) cleanAddress.state = submitData.address.state.trim();
         if (submitData.address.zipCode?.trim()) cleanAddress.zipCode = submitData.address.zipCode.trim();
         if (submitData.address.country?.trim()) cleanAddress.country = submitData.address.country.trim();
-        
+
         // Only include address if at least one field has value
         if (Object.keys(cleanAddress).length > 0) {
           submitData.address = cleanAddress;
@@ -239,12 +239,12 @@ export default function CreateMemberForm({
           delete (submitData as any).address;
         }
       }
-      
+
       // Remove empty phone number
       if (!submitData.phoneNumber?.trim()) {
         delete (submitData as any).phoneNumber;
       }
-      
+
       // Remove assignMembership if not selected
       if (!assignMembership) {
         delete (submitData as any).assignMembership;
@@ -299,7 +299,7 @@ export default function CreateMemberForm({
             <CircularProgress />
           </Box>
         )}
-        
+
         <Grid container spacing={3} sx={{ mt: 1 }}>
           {/* Basic Information */}
           <Grid item xs={12}>
@@ -307,7 +307,7 @@ export default function CreateMemberForm({
               Basic Information
             </Typography>
           </Grid>
-          
+
           <Grid item xs={12} sm={6}>
             <TextField
               fullWidth
@@ -319,7 +319,7 @@ export default function CreateMemberForm({
               required
             />
           </Grid>
-          
+
           <Grid item xs={12} sm={6}>
             <TextField
               fullWidth
@@ -332,7 +332,7 @@ export default function CreateMemberForm({
               required
             />
           </Grid>
-          
+
           <Grid item xs={12} sm={6}>
             <TextField
               fullWidth
@@ -345,7 +345,7 @@ export default function CreateMemberForm({
               required
             />
           </Grid>
-          
+
           <Grid item xs={12} sm={6}>
             <TextField
               fullWidth
@@ -358,7 +358,7 @@ export default function CreateMemberForm({
               required
             />
           </Grid>
-          
+
           <Grid item xs={12} sm={6}>
             <TextField
               fullWidth
@@ -448,7 +448,7 @@ export default function CreateMemberForm({
               Emergency Contact
             </Typography>
           </Grid>
-          
+
           <Grid item xs={12} sm={4}>
             <TextField
               fullWidth
@@ -460,7 +460,7 @@ export default function CreateMemberForm({
               required
             />
           </Grid>
-          
+
           <Grid item xs={12} sm={4}>
             <TextField
               fullWidth
@@ -472,7 +472,7 @@ export default function CreateMemberForm({
               required
             />
           </Grid>
-          
+
           <Grid item xs={12} sm={4}>
             <TextField
               fullWidth
@@ -490,7 +490,7 @@ export default function CreateMemberForm({
             <Typography variant="h6" gutterBottom>
               Awards & Achievements
             </Typography>
-            
+
             <AwardTypeSelector
               awards={formData.awards}
               onChange={handleAwardsChange}
@@ -529,7 +529,23 @@ export default function CreateMemberForm({
                   >
                     {membershipPlans.map((plan) => (
                       <MenuItem key={plan.id} value={plan.id}>
-                        {plan.name} - ${plan.price} ({plan.durationValue} {plan.durationType})
+                        <Box>
+                          <Typography variant="body2" fontWeight="medium">
+                            {plan.name} - ${plan.price.toFixed(2)}
+                          </Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            {plan.durationType === 'unlimited'
+                              ? 'Unlimited duration'
+                              : `${plan.durationValue} ${plan.durationType}`
+                            } • {plan.classTypes.join(', ')} • {
+                              plan.isUnlimited
+                                ? 'Unlimited/week'
+                                : plan.weeklyAttendanceLimit
+                                  ? `${plan.weeklyAttendanceLimit} days/week`
+                                  : 'No weekly limit'
+                            }
+                          </Typography>
+                        </Box>
                       </MenuItem>
                     ))}
                   </Select>
@@ -540,7 +556,7 @@ export default function CreateMemberForm({
                   )}
                 </FormControl>
               </Grid>
-              
+
               <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
@@ -560,14 +576,14 @@ export default function CreateMemberForm({
           )}
         </Grid>
       </DialogContent>
-      
+
       <DialogActions>
         <Button onClick={handleClose} disabled={loading}>
           Cancel
         </Button>
-        <Button 
-          onClick={handleSubmit} 
-          variant="contained" 
+        <Button
+          onClick={handleSubmit}
+          variant="contained"
           disabled={loading}
           startIcon={loading && <CircularProgress size={20} />}
         >

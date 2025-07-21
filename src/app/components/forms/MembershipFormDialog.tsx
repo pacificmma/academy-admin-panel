@@ -1,4 +1,4 @@
-// src/app/components/forms/MembershipFormDialog.tsx - Updated to use ClassTypeSelector
+// src/app/components/forms/MembershipFormDialog.tsx - Updated with weekly attendance limits
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -18,6 +18,9 @@ import {
   Grid,
   InputAdornment,
   CircularProgress,
+  FormControlLabel,
+  Switch,
+  Chip,
 } from '@mui/material';
 import {
   Save as SaveIcon,
@@ -45,12 +48,23 @@ const DURATION_TYPES: Array<{ value: DurationType; label: string }> = [
   { value: 'weeks', label: 'Weeks' },
   { value: 'months', label: 'Months' },
   { value: 'years', label: 'Years' },
+  { value: 'unlimited', label: 'Unlimited (Recurring)' },
 ];
 
 const MEMBERSHIP_STATUSES: Array<{ value: MembershipStatus; label: string; color: string }> = [
   { value: 'active', label: 'Active', color: '#4caf50' },
   { value: 'inactive', label: 'Inactive', color: '#9e9e9e' },
   { value: 'draft', label: 'Draft', color: '#ff9800' },
+];
+
+const WEEKLY_ATTENDANCE_OPTIONS = [
+  { value: 1, label: '1 day per week' },
+  { value: 2, label: '2 days per week' },
+  { value: 3, label: '3 days per week' },
+  { value: 4, label: '4 days per week' },
+  { value: 5, label: '5 days per week' },
+  { value: 6, label: '6 days per week' },
+  { value: 7, label: '7 days per week' },
 ];
 
 const DEFAULT_FORM_DATA: MembershipPlanFormData = {
@@ -62,6 +76,8 @@ const DEFAULT_FORM_DATA: MembershipPlanFormData = {
   currency: 'USD',
   classTypes: [],
   status: 'active',
+  weeklyAttendanceLimit: undefined,
+  isUnlimited: false,
 };
 
 // Utility function for currency formatting
@@ -77,10 +93,10 @@ export default function MembershipFormDialog({
   mode,
 }: MembershipFormDialogProps) {
   const [formData, setFormData] = useState<MembershipPlanFormData>(DEFAULT_FORM_DATA);
-  const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false);
 
-  // Initialize form data when dialog opens or membership data changes
+  // Initialize form data when dialog opens or membership changes
   useEffect(() => {
     if (open) {
       if (membership && mode === 'edit') {
@@ -91,8 +107,10 @@ export default function MembershipFormDialog({
           durationType: membership.durationType,
           price: membership.price,
           currency: membership.currency,
-          classTypes: membership.classTypes || [],
+          classTypes: membership.classTypes,
           status: membership.status,
+          weeklyAttendanceLimit: membership.weeklyAttendanceLimit,
+          isUnlimited: membership.isUnlimited || false,
         });
       } else {
         setFormData(DEFAULT_FORM_DATA);
@@ -107,31 +125,45 @@ export default function MembershipFormDialog({
       [field]: value,
     }));
     
-    // Clear error when user starts typing
+    // Clear error for this field
     if (errors[field]) {
-      setErrors(prev => ({
-        ...prev,
-        [field]: '',
-      }));
+      setErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
     }
+  };
+
+  const handleUnlimitedToggle = (isUnlimited: boolean) => {
+    setFormData(prev => ({
+      ...prev,
+      isUnlimited,
+      weeklyAttendanceLimit: isUnlimited ? undefined : prev.weeklyAttendanceLimit || 2,
+    }));
   };
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
+    // Required fields
     if (!formData.name.trim()) {
       newErrors.name = 'Membership name is required';
-    }
-
-    if (formData.durationValue < 1) {
-      newErrors.durationValue = 'Duration must be at least 1';
     }
 
     if (formData.price < 0) {
       newErrors.price = 'Price cannot be negative';
     }
 
-    if (!formData.classTypes || formData.classTypes.length === 0) {
+    if (formData.durationType !== 'unlimited' && formData.durationValue <= 0) {
+      newErrors.durationValue = 'Duration must be greater than 0';
+    }
+
+    if (!formData.isUnlimited && (!formData.weeklyAttendanceLimit || formData.weeklyAttendanceLimit <= 0)) {
+      newErrors.weeklyAttendanceLimit = 'Weekly attendance limit is required when not unlimited';
+    }
+
+    if (formData.classTypes.length === 0) {
       newErrors.classTypes = 'At least one class type must be selected';
     }
 
@@ -140,60 +172,76 @@ export default function MembershipFormDialog({
   };
 
   const handleSubmit = async () => {
-    if (!validateForm()) return;
+    if (!validateForm()) {
+      return;
+    }
 
-    setLoading(true);
     try {
+      setLoading(true);
+      
+      // Prepare form data for submission
       const submitData: MembershipPlanFormData = {
         ...formData,
         name: formData.name.trim(),
         description: formData.description.trim(),
+        weeklyAttendanceLimit: formData.isUnlimited ? undefined : formData.weeklyAttendanceLimit,
       };
 
       await onSubmit(submitData);
-      onClose();
+      handleClose();
     } catch (error) {
-      // Error handling will be managed by parent component
+      setErrors({ submit: 'Failed to save membership plan. Please try again.' });
     } finally {
       setLoading(false);
     }
   };
 
   const handleClose = () => {
-    if (!loading) {
-      onClose();
-    }
+    setFormData(DEFAULT_FORM_DATA);
+    setErrors({});
+    onClose();
   };
 
-  const formatDuration = (value: number, type: DurationType): string => {
-    const unit = type === 'days' ? 'day' : 
-                 type === 'weeks' ? 'week' : 
-                 type === 'months' ? 'month' : 'year';
-    
-    return `${value} ${unit}${value !== 1 ? 's' : ''}`;
+  const isFormValid = () => {
+    return formData.name.trim() && 
+           formData.price >= 0 && 
+           formData.classTypes.length > 0 &&
+           (formData.durationType === 'unlimited' || formData.durationValue > 0) &&
+           (formData.isUnlimited || (formData.weeklyAttendanceLimit && formData.weeklyAttendanceLimit > 0));
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
+    <Dialog 
+      open={open} 
+      onClose={handleClose} 
+      maxWidth="md" 
+      fullWidth
+      PaperProps={{
+        sx: { minHeight: '600px' }
+      }}
+    >
       <DialogTitle>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6">
-            {mode === 'create' ? 'Create New Membership Plan' : 'Edit Membership Plan'}
-          </Typography>
-          <Button
-            onClick={handleClose}
-            disabled={loading}
-            sx={{ minWidth: 'auto', p: 1 }}
-          >
-            <CloseIcon />
-          </Button>
-        </Box>
+        {mode === 'create' ? 'Create New Membership Plan' : 'Edit Membership Plan'}
       </DialogTitle>
-
+      
       <DialogContent>
+        {errors.submit && (
+          <Box mb={2}>
+            <Typography color="error" variant="body2">
+              {errors.submit}
+            </Typography>
+          </Box>
+        )}
+
         <Grid container spacing={3} sx={{ mt: 1 }}>
-          {/* Membership Name */}
+          {/* Basic Information */}
           <Grid item xs={12}>
+            <Typography variant="h6" color="primary" gutterBottom>
+              Basic Information
+            </Typography>
+          </Grid>
+
+          <Grid item xs={12} sm={6}>
             <TextField
               fullWidth
               label="Membership Name"
@@ -201,82 +249,20 @@ export default function MembershipFormDialog({
               onChange={(e) => handleInputChange('name', e.target.value)}
               error={!!errors.name}
               helperText={errors.name}
-              placeholder="e.g., 3-Month MMA Package"
-              disabled={loading}
               required
+              placeholder="e.g. 3-Month Full Access"
             />
           </Grid>
 
-          {/* Description */}
-          <Grid item xs={12}>
-            <TextField
-              fullWidth
-              label="Description"
-              value={formData.description}
-              onChange={(e) => handleInputChange('description', e.target.value)}
-              error={!!errors.description}
-              helperText={errors.description || 'Optional description for the membership plan'}
-              placeholder="Describe what this membership includes..."
-              multiline
-              rows={3}
-              disabled={loading}
-            />
-          </Grid>
-
-          {/* Duration Value */}
           <Grid item xs={12} sm={6}>
             <TextField
               fullWidth
-              type="number"
-              label="Duration"
-              value={formData.durationValue}
-              onChange={(e) => handleInputChange('durationValue', parseInt(e.target.value) || 1)}
-              error={!!errors.durationValue}
-              helperText={errors.durationValue}
-              disabled={loading}
-              required
-              inputProps={{ min: 1, max: 999 }}
-            />
-          </Grid>
-
-          {/* Duration Type */}
-          <Grid item xs={12} sm={6}>
-            <FormControl fullWidth disabled={loading}>
-              <InputLabel>Duration Type</InputLabel>
-              <Select
-                value={formData.durationType}
-                onChange={(e) => handleInputChange('durationType', e.target.value as DurationType)}
-                label="Duration Type"
-              >
-                {DURATION_TYPES.map((type) => (
-                  <MenuItem key={type.value} value={type.value}>
-                    {type.label}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Grid>
-
-          {/* Duration Preview */}
-          <Grid item xs={12} sm={6}>
-            <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                Duration: {formatDuration(formData.durationValue, formData.durationType)}
-              </Typography>
-            </Box>
-          </Grid>
-
-          {/* Price */}
-          <Grid item xs={12} sm={6}>
-            <TextField
-              fullWidth
-              type="number"
               label="Price"
+              type="number"
               value={formData.price}
               onChange={(e) => handleInputChange('price', parseFloat(e.target.value) || 0)}
               error={!!errors.price}
               helperText={errors.price}
-              disabled={loading}
               required
               InputProps={{
                 startAdornment: <InputAdornment position="start">$</InputAdornment>,
@@ -285,9 +271,175 @@ export default function MembershipFormDialog({
             />
           </Grid>
 
+          <Grid item xs={12}>
+            <TextField
+              fullWidth
+              label="Description"
+              multiline
+              rows={3}
+              value={formData.description}
+              onChange={(e) => handleInputChange('description', e.target.value)}
+              placeholder="Describe what this membership includes..."
+            />
+          </Grid>
+
+          {/* Duration Settings */}
+          <Grid item xs={12}>
+            <Typography variant="h6" color="primary" gutterBottom>
+              Duration Settings
+            </Typography>
+          </Grid>
+
+          <Grid item xs={12} sm={6}>
+            <FormControl fullWidth error={!!errors.durationType}>
+              <InputLabel>Duration Type</InputLabel>
+              <Select
+                value={formData.durationType}
+                onChange={(e) => {
+                  const newType = e.target.value as DurationType;
+                  handleInputChange('durationType', newType);
+                  if (newType === 'unlimited') {
+                    handleInputChange('durationValue', 1);
+                  }
+                }}
+                label="Duration Type"
+              >
+                {DURATION_TYPES.map((option) => (
+                  <MenuItem key={option.value} value={option.value}>
+                    {option.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+
+          {formData.durationType !== 'unlimited' && (
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Duration Value"
+                type="number"
+                value={formData.durationValue}
+                onChange={(e) => handleInputChange('durationValue', parseInt(e.target.value) || 1)}
+                error={!!errors.durationValue}
+                helperText={errors.durationValue}
+                required
+                InputProps={{
+                  inputProps: { min: 1 }
+                }}
+              />
+            </Grid>
+          )}
+
+          {/* Weekly Attendance Settings */}
+          <Grid item xs={12}>
+            <Typography variant="h6" color="primary" gutterBottom>
+              Weekly Attendance Settings
+            </Typography>
+          </Grid>
+
+          <Grid item xs={12}>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={formData.isUnlimited}
+                  onChange={(e) => handleUnlimitedToggle(e.target.checked)}
+                  color="primary"
+                />
+              }
+              label={
+                <Box>
+                  <Typography variant="body1">
+                    Unlimited weekly attendance
+                  </Typography>
+                  <Typography variant="caption" color="textSecondary">
+                    Members can attend classes as many times as they want per week
+                  </Typography>
+                </Box>
+              }
+            />
+          </Grid>
+
+          {!formData.isUnlimited && (
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth error={!!errors.weeklyAttendanceLimit}>
+                <InputLabel>Weekly Attendance Limit</InputLabel>
+                <Select
+                  value={formData.weeklyAttendanceLimit || ''}
+                  onChange={(e) => handleInputChange('weeklyAttendanceLimit', e.target.value as number)}
+                  label="Weekly Attendance Limit"
+                >
+                  {WEEKLY_ATTENDANCE_OPTIONS.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>
+                      {option.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+                {errors.weeklyAttendanceLimit && (
+                  <Typography variant="caption" color="error" sx={{ mt: 1 }}>
+                    {errors.weeklyAttendanceLimit}
+                  </Typography>
+                )}
+              </FormControl>
+            </Grid>
+          )}
+
+          {/* Preview Box */}
+          <Grid item xs={12}>
+            <Box 
+              sx={{ 
+                p: 2, 
+                backgroundColor: 'grey.50', 
+                borderRadius: 1,
+                border: '1px solid',
+                borderColor: 'grey.200'
+              }}
+            >
+              <Typography variant="subtitle2" color="primary" gutterBottom>
+                Membership Preview
+              </Typography>
+              <Typography variant="body2">
+                <strong>Name:</strong> {formData.name || 'Not specified'}
+              </Typography>
+              <Typography variant="body2">
+                <strong>Price:</strong> ${formData.price.toFixed(2)}
+              </Typography>
+              <Typography variant="body2">
+                <strong>Duration:</strong> {
+                  formData.durationType === 'unlimited' 
+                    ? 'Unlimited (Recurring)'
+                    : `${formData.durationValue} ${formData.durationType}`
+                }
+              </Typography>
+              <Typography variant="body2">
+                <strong>Weekly Attendance:</strong> {
+                  formData.isUnlimited 
+                    ? 'Unlimited per week'
+                    : formData.weeklyAttendanceLimit 
+                      ? `${formData.weeklyAttendanceLimit} ${formData.weeklyAttendanceLimit === 1 ? 'day' : 'days'} per week`
+                      : 'Not specified'
+                }
+              </Typography>
+            </Box>
+          </Grid>
+
+          {/* Class Types */}
+          <Grid item xs={12}>
+            <Typography variant="h6" color="primary" gutterBottom>
+              Included Class Types
+            </Typography>
+            <ClassTypeSelector
+              selectedClassTypes={formData.classTypes}
+              onChange={(classTypes) => handleInputChange('classTypes', classTypes)}
+              error={errors.classTypes}
+              multiple
+              required
+            />
+          </Grid>
+
           {/* Status */}
           <Grid item xs={12} sm={6}>
-            <FormControl fullWidth disabled={loading}>
+            <FormControl fullWidth>
               <InputLabel>Status</InputLabel>
               <Select
                 value={formData.status}
@@ -296,64 +448,38 @@ export default function MembershipFormDialog({
               >
                 {MEMBERSHIP_STATUSES.map((status) => (
                   <MenuItem key={status.value} value={status.value}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Box
+                    <Box display="flex" alignItems="center" gap={1}>
+                      <Chip
+                        size="small"
+                        label={status.label}
                         sx={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: '50%',
-                          bgcolor: status.color,
+                          backgroundColor: status.color,
+                          color: 'white',
+                          fontSize: '0.75rem',
                         }}
                       />
-                      {status.label}
                     </Box>
                   </MenuItem>
                 ))}
               </Select>
             </FormControl>
           </Grid>
-
-          {/* Class Types - Using ClassTypeSelector with Multiple Selection */}
-          <Grid item xs={12}>
-            <ClassTypeSelector
-              multiple={true}
-              selectedValues={formData.classTypes}
-              onMultipleChange={(selectedTypes) => handleInputChange('classTypes', selectedTypes)}
-              error={errors.classTypes}
-              disabled={loading}
-              required={true}
-              allowCreate={true}
-              allowEdit={true}
-              allowDelete={true}
-              showUsageCount={true}
-              label="Class Types"
-              helperText="Select which class types this membership includes. You can also add, edit, or delete class types from here."
-            />
-          </Grid>
-
-          {/* Price Preview */}
-          <Grid item xs={12}>
-            <Box sx={{ p: 2, bgcolor: '#e8f5e8', borderRadius: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                Total Price: ${formatCurrency(formData.price, formData.currency)}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                Price per {formData.durationType.slice(0, -1)}: ${formatCurrency(formData.price / formData.durationValue, formData.currency)}
-              </Typography>
-            </Box>
-          </Grid>
         </Grid>
       </DialogContent>
 
       <DialogActions>
-        <Button onClick={handleClose} disabled={loading}>
+        <Button 
+          onClick={handleClose} 
+          disabled={loading}
+          startIcon={<CloseIcon />}
+        >
           Cancel
         </Button>
         <Button
           onClick={handleSubmit}
           variant="contained"
-          startIcon={loading ? <CircularProgress size={20} /> : <SaveIcon />}
-          disabled={loading}
+          disabled={loading || !isFormValid()}
+          startIcon={loading ? <CircularProgress size={16} /> : <SaveIcon />}
         >
           {loading ? 'Saving...' : (mode === 'create' ? 'Create Membership' : 'Update Membership')}
         </Button>

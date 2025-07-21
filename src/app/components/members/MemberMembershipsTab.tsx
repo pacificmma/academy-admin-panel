@@ -209,7 +209,7 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
       } else if (action.action) {
         // New MembershipStatusAction format
         requestBody = { reason: action.reason };
-        
+
         switch (action.action) {
           case 'freeze':
             endpoint = `/api/member-memberships/${membershipId}/freeze`;
@@ -251,7 +251,7 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
 
       // Reload memberships to reflect changes
       await loadMemberships();
-      
+
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to update membership';
       setError(errorMessage);
@@ -266,11 +266,11 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
     try {
       // Validate form
       const errors: Record<string, string> = {};
-      
+
       if (!createFormData.membershipPlanId) {
         errors.membershipPlanId = 'Membership plan is required';
       }
-      
+
       if (!createFormData.startDate) {
         errors.startDate = 'Start date is required';
       }
@@ -319,7 +319,7 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
 
   const getStatusActions = (membership: MemberMembership): React.ReactNode[] => {
     const actions = [];
-    
+
     switch (membership.status) {
       case 'active':
         actions.push(
@@ -356,7 +356,7 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
         );
         break;
     }
-    
+
     return actions;
   };
 
@@ -523,8 +523,8 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
                       <TableCell>
                         <Chip
                           label={membership.paymentStatus}
-                          color={membership.paymentStatus === 'paid' ? 'success' : 
-                                 membership.paymentStatus === 'pending' ? 'warning' : 'error'}
+                          color={membership.paymentStatus === 'paid' ? 'success' :
+                            membership.paymentStatus === 'pending' ? 'warning' : 'error'}
                           size="small"
                           variant="outlined"
                         />
@@ -589,8 +589,8 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
                 <Select
                   value={createFormData.membershipPlanId}
                   onChange={(e) => {
-                    setCreateFormData(prev => ({ 
-                      ...prev, 
+                    setCreateFormData(prev => ({
+                      ...prev,
                       membershipPlanId: e.target.value,
                     }));
                     setCreateFormErrors(prev => ({ ...prev, membershipPlanId: '' }));
@@ -601,10 +601,19 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
                     <MenuItem key={plan.id} value={plan.id}>
                       <Box>
                         <Typography variant="body2" fontWeight="medium">
-                          {plan.name} - {formatCurrency(plan.price)}
+                          {plan.name} - ${plan.price.toFixed(2)}
                         </Typography>
                         <Typography variant="caption" color="textSecondary">
-                          {plan.durationValue} {plan.durationType} • {plan.classTypes.join(', ')}
+                          {plan.durationType === 'unlimited'
+                            ? 'Unlimited duration'
+                            : `${plan.durationValue} ${plan.durationType}`
+                          } • {plan.classTypes.join(', ')} • {
+                            plan.isUnlimited
+                              ? 'Unlimited/week'
+                              : plan.weeklyAttendanceLimit
+                                ? `${plan.weeklyAttendanceLimit} days/week`
+                                : 'No weekly limit'
+                          }
                         </Typography>
                       </Box>
                     </MenuItem>
@@ -662,9 +671,9 @@ export default function MemberMembershipsTab({ member, refreshTrigger }: MemberM
           <Button onClick={() => setCreateDialogOpen(false)} disabled={submitLoading}>
             Cancel
           </Button>
-          <Button 
-            onClick={handleCreateMembershipSubmit} 
-            variant="contained" 
+          <Button
+            onClick={handleCreateMembershipSubmit}
+            variant="contained"
             disabled={submitLoading}
             startIcon={submitLoading ? <CircularProgress size={20} /> : <AddIcon />}
           >

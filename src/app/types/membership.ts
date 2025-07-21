@@ -1,6 +1,6 @@
-// src/app/types/membership.ts - Updated to support freeze functionality
+// src/app/types/membership.ts - Updated to support weekly attendance limits
 
-export type DurationType = 'days' | 'weeks' | 'months' | 'years';
+export type DurationType = 'days' | 'weeks' | 'months' | 'years' | 'unlimited';
 export type MembershipStatus = 'active' | 'inactive' | 'draft';
 export type MemberMembershipStatus = 'active' | 'expired' | 'cancelled' | 'suspended' | 'frozen';
 
@@ -14,6 +14,11 @@ export interface MembershipPlan {
   currency: 'USD';
   classTypes: string[];
   status: MembershipStatus;
+  
+  // Weekly attendance limit fields
+  weeklyAttendanceLimit?: number; // null/undefined means unlimited
+  isUnlimited: boolean; // if true, no weekly limit applies
+  
   createdAt: string;
   updatedAt: string;
   createdBy: string;
@@ -29,6 +34,10 @@ export interface MembershipPlanFormData {
   currency: 'USD';
   classTypes: string[];
   status: MembershipStatus;
+  
+  // Weekly attendance limit fields
+  weeklyAttendanceLimit?: number;
+  isUnlimited: boolean;
 }
 
 export interface MemberMembership {
@@ -59,6 +68,8 @@ export interface MemberMembership {
   classesUsed?: number;
   maxClasses?: number;
   isUnlimited?: boolean;
+  weeklyAttendanceLimit?: number; // Weekly attendance limit from plan
+  currentWeekAttendance?: number; // Track current week usage
   
   createdAt: string;
   updatedAt: string;
@@ -106,6 +117,10 @@ export interface MembershipStats {
 
 // Helper function to format duration
 export function formatDuration(value: number, type: DurationType): string {
+  if (type === 'unlimited') {
+    return 'Unlimited';
+  }
+  
   if (value === 1) {
     switch (type) {
       case 'days': return '1 Day';
@@ -127,6 +142,13 @@ export function formatDuration(value: number, type: DurationType): string {
 
 // Helper function to calculate end date
 export function calculateEndDate(startDate: string, durationValue: number, durationType: DurationType): string {
+  if (durationType === 'unlimited') {
+    // Return a date far in the future for unlimited memberships
+    const farFuture = new Date(startDate);
+    farFuture.setFullYear(farFuture.getFullYear() + 100);
+    return farFuture.toISOString().split('T')[0];
+  }
+  
   const start = new Date(startDate);
   
   switch (durationType) {
@@ -185,4 +207,12 @@ export function calculateFreezeEndDate(startDate: string, durationDays: number):
   const start = new Date(startDate);
   start.setDate(start.getDate() + durationDays);
   return start.toISOString();
+}
+
+// Helper function to format weekly attendance limit
+export function formatWeeklyAttendanceLimit(weeklyLimit?: number, isUnlimited?: boolean): string {
+  if (isUnlimited || !weeklyLimit) {
+    return 'Unlimited per week';
+  }
+  return `${weeklyLimit} ${weeklyLimit === 1 ? 'day' : 'days'} per week`;
 }

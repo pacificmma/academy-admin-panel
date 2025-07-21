@@ -378,6 +378,7 @@ const loadMemberships = useCallback(async (): Promise<void> => {
                   <TableCell>Duration</TableCell>
                   <TableCell>Price</TableCell>
                   <TableCell>Class Types</TableCell>
+                  <TableCell>Weekly Attendance</TableCell>
                   <TableCell>Status</TableCell>
                   <TableCell align="right">Actions</TableCell>
                 </TableRow>
@@ -405,67 +406,84 @@ const loadMemberships = useCallback(async (): Promise<void> => {
                 ) : (
                   paginatedMemberships.map((membership) => (
                     <TableRow key={membership.id} hover>
-                      <TableCell>
-                        <Typography variant="subtitle2" fontWeight="medium">
+                    <TableCell>
+                      <Box>
+                        <Typography variant="body2" fontWeight="medium">
                           {membership.name}
                         </Typography>
                         {membership.description && (
-                          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                            {membership.description.length > 50
-                              ? `${membership.description.substring(0, 50)}...`
-                              : membership.description
-                            }
+                          <Typography variant="caption" color="textSecondary">
+                            {membership.description}
                           </Typography>
                         )}
-                      </TableCell>
-                      <TableCell>
-                        {formatDuration(membership.durationValue, membership.durationType)}
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2" fontWeight="medium">
-                          {formatCurrency(membership.price)}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                          {membership.classTypes.slice(0, 2).map((type) => (
-                            <Chip
-                              key={type}
-                              label={type}
-                              size="small"
-                              sx={{
-                                bgcolor: 'primary.main',
-                                color: 'white',
-                                fontSize: '0.75rem',
-                              }}
-                            />
-                          ))}
-                          {membership.classTypes.length > 2 && (
-                            <Chip
-                              label={`+${membership.classTypes.length - 2}`}
-                              size="small"
-                              variant="outlined"
-                            />
-                          )}
-                        </Box>
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          label={membership.status === 'active' ? 'Active' : membership.status === 'inactive' ? 'Inactive' : 'Draft'}
-                          size="small"
-                          color={membership.status === 'active' ? 'success' : membership.status === 'inactive' ? 'default' : 'warning'}
-                        />
-                      </TableCell>
-                      <TableCell align="right">
-                        <IconButton
-                          onClick={(e) => handleMenuOpen(e, membership)}
-                          size="small"
-                          disabled={loading}
-                        >
-                          <MoreVertIcon />
-                        </IconButton>
-                      </TableCell>
-                    </TableRow>
+                      </Box>
+                    </TableCell>
+                    
+                    <TableCell>
+                      <Typography variant="body2">
+                        {membership.durationType === 'unlimited' 
+                          ? 'Unlimited' 
+                          : formatDuration(membership.durationValue, membership.durationType)
+                        }
+                      </Typography>
+                    </TableCell>
+                    
+                    <TableCell>
+                      <Typography variant="body2">
+                        {formatCurrency(membership.price)}
+                      </Typography>
+                    </TableCell>
+                    
+                    <TableCell>
+                      <Box display="flex" flexWrap="wrap" gap={0.5}>
+                        {membership.classTypes.map((classType, index) => (
+                          <Chip
+                            key={index}
+                            label={classType}
+                            size="small"
+                            variant="outlined"
+                          />
+                        ))}
+                      </Box>
+                    </TableCell>
+                    
+                    {/* YENİ SÜTUN: Weekly Attendance */}
+                    <TableCell>
+                      <Typography variant="body2">
+                        {membership.isUnlimited 
+                          ? 'Unlimited/week'
+                          : membership.weeklyAttendanceLimit 
+                            ? `${membership.weeklyAttendanceLimit}/week`
+                            : 'No limit'
+                        }
+                      </Typography>
+                    </TableCell>
+                    
+                    <TableCell>
+                      <Chip
+                        label={membership.status.charAt(0).toUpperCase() + membership.status.slice(1)}
+                        size="small"
+                        color={
+                          membership.status === 'active' ? 'success' :
+                          membership.status === 'inactive' ? 'default' :
+                          'warning'
+                        }
+                      />
+                    </TableCell>
+                    
+                    <TableCell align="right">
+                      <IconButton
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedMembership(membership);
+                          setMenuAnchor(e.currentTarget);
+                        }}
+                        size="small"
+                      >
+                        <MoreVertIcon />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
                   ))
                 )}
               </TableBody>
