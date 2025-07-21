@@ -27,7 +27,7 @@ export interface MembershipPlan {
 
 export interface MembershipPlanFormData {
   name: string;
-  description: string;
+  description: string | undefined;
   durationValue: number;
   durationType: DurationType;
   price: number;

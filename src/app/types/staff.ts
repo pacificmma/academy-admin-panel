@@ -103,7 +103,7 @@ export interface StaffFormData {
   password: string;
   confirmPassword: string;
   role: UserRole; // Only 'admin' | 'trainer' | 'visiting_trainer'
-  specializations: string[];
+  specializations?: string[];
   emergencyContact: {
     name: string;
     phone: string;

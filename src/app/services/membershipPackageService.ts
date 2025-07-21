@@ -61,20 +61,21 @@ const SPORT_CATEGORIES_COLLECTION = 'sportCategories';
 const convertDocToMembershipPlan = (doc: any): MembershipPlan => {
   const data = doc.data();
   return {
-    id: doc.id,
-    name: data.name,
-    description: data.description || '',
-    durationValue: data.durationValue,
-    durationType: data.durationType || 'months', // Provide default
-    price: data.price,
-    currency: data.currency || 'USD', // Provide default
-    classTypes: data.classTypes || [],
-    status: data.status,
-    createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-    updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-    createdBy: data.createdBy || '',
-    updatedBy: data.updatedBy || '',
-  };
+  id: doc.id,
+  name: data.name,
+  description: data.description || '',
+  durationValue: data.durationValue,
+  durationType: data.durationType || 'months', // Provide default
+  price: data.price,
+  currency: data.currency || 'USD', // Provide default
+  classTypes: data.classTypes || [],
+  status: data.status,
+  createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+  updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+  createdBy: data.createdBy || '',
+  updatedBy: data.updatedBy || '',
+  isUnlimited: false,
+};
 };
 
 // Membership Package Service
@@ -227,6 +228,7 @@ export const membershipPackageService = {
         currency: originalPackage.currency,
         classTypes: [...originalPackage.classTypes], // Create a copy of the array
         status: 'draft' as MembershipStatus,
+        isUnlimited: false
       };
 
       return await membershipPackageService.createMembershipPackage(
