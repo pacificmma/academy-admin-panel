@@ -35,12 +35,12 @@ import { CreateStaffRequest, StaffRecord, UpdateStaffRequest, StaffFormData } fr
 const staffFormSchema = z.object({
   fullName: z.string().min(3, 'Full name is required').max(100, 'Full name is too long'),
   email: z.string().email('Invalid email address'),
-  role: z.enum(['admin', 'trainer', 'visiting_trainer'], { message: 'Please select a valid role' }), // Updated enum
+  role: z.enum(['admin', 'trainer', 'visiting_trainer', 'staff'], { message: 'Please select a valid role' }), // 'staff' role added here
   password: z.string().min(6, 'Password must be at least 6 characters').optional(),
-  phoneNumber: z.string().optional(),
+  phoneNumber: z.string().regex(/^[\+]?[0-9\s\-\(\)]{10,20}$/, 'Invalid phone number format').optional(),
   emergencyContact: z.object({
     name: z.string().min(2).max(100),
-    phone: z.string().regex(/^[\+]?[0-9\s\-\(\)]{10,20}$/, 'Invalid phone number format'),
+    phone: z.string().regex(/^[\+]?[0-9\s\-\(\)]{10,20}$/, 'Invalid emergency contact phone format'),
     relationship: z.string().min(2).max(50)
   }).optional(),
   address: z.object({
@@ -380,6 +380,7 @@ export default function CreateStaffDialog({
                 <MenuItem value="visiting_trainer">Visiting Trainer</MenuItem>
                 <MenuItem value="trainer">Trainer</MenuItem>
                 <MenuItem value="admin">Admin</MenuItem>
+                <MenuItem value="staff">Staff</MenuItem> {/* Added this line */}
               </Select>
               {errors.role && <Typography color="error" variant="caption">{errors.role}</Typography>}
             </FormControl>
