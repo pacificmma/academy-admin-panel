@@ -1,4 +1,4 @@
-// src/app/types/class.ts - COMPLETELY FIXED VERSION
+// src/app/types/class.ts - TAMAMEN DÜZELTİLMİŞ VERSİYON
 export interface ClassType {
   id: string;
   name: string;
@@ -12,6 +12,9 @@ export interface ClassType {
   usageCount?: number;
 }
 
+// ClassStatus tipini ekledik
+export type ClassStatus = 'scheduled' | 'ongoing' | 'completed' | 'cancelled';
+
 export interface ClassSchedule {
   id: string;
   name: string;
@@ -19,9 +22,9 @@ export interface ClassSchedule {
   instructorId: string;
   instructorName: string;
   maxParticipants: number;
-  duration: number; // in minutes
-  startDate: string; // ISO date string
-  startTime: string; // HH:MM format
+  duration: number; // dakika cinsinden
+  startDate: string; // ISO tarih dizisi
+  startTime: string; // HH:MM formatı
   recurrence: RecurrencePattern;
   location?: string;
   notes?: string;
@@ -39,17 +42,17 @@ export interface ClassInstance {
   classType: string;
   instructorId: string;
   instructorName: string;
-  date: string; // ISO date string
-  startTime: string; // HH:MM format
-  endTime: string; // HH:MM format
+  date: string; // ISO tarih dizisi
+  startTime: string; // HH:MM formatı
+  endTime: string; // HH:MM formatı
   maxParticipants: number;
-  registeredParticipants: string[]; // Array of member IDs
-  waitlist: string[]; // Array of member IDs
-  status: 'scheduled' | 'ongoing' | 'completed' | 'cancelled';
+  registeredParticipants: string[]; // Üye ID'lerinin dizisi
+  waitlist: string[]; // Üye ID'lerinin dizisi
+  status: ClassStatus; // Artık dışa aktarılan ClassStatus tipini kullanıyor
   location?: string;
   notes?: string;
-  duration: number; // in minutes
-  actualDuration?: number; // in minutes
+  duration: number; // dakika cinsinden
+  actualDuration?: number; // dakika cinsinden
   createdAt: string;
   updatedAt: string;
 }
@@ -59,12 +62,12 @@ export interface ClassFormData {
   classType: string;
   instructorId: string;
   maxParticipants: number;
-  duration: number; // in minutes
-  startDate: string; // YYYY-MM-DD format
-  startTime: string; // HH:MM format
+  duration: number; // dakika cinsinden
+  startDate: string; // YYYY-AA-GG formatı
+  startTime: string; // HH:MM formatı
   scheduleType: 'single' | 'recurring';
-  daysOfWeek?: number[]; // 0-6 (Sunday-Saturday)
-  recurrenceEndDate?: string; // YYYY-MM-DD format
+  daysOfWeek?: number[]; // 0-6 (Pazar-Cumartesi)
+  recurrenceEndDate?: string; // YYYY-AA-GG formatı
   location?: string;
   notes?: string;
 }
@@ -80,9 +83,9 @@ export interface ClassFilters {
 
 export interface RecurrencePattern {
   scheduleType: 'single' | 'recurring';
-  daysOfWeek?: number[]; // 0-6 (Sunday-Saturday) - OPTIONAL
-  endDate?: string; // ISO date string - OPTIONAL
-  maxOccurrences?: number; // OPTIONAL
+  daysOfWeek?: number[]; // 0-6 (Pazar-Cumartesi) - İSTEĞE BAĞLI
+  endDate?: string; // ISO tarih dizisi - İSTEĞE BAĞLI
+  maxOccurrences?: number; // İSTEĞE BAĞLI
 }
 
 export interface ClassScheduleWithoutIdAndTimestamps {
@@ -95,8 +98,8 @@ export interface ClassScheduleWithoutIdAndTimestamps {
   startDate: string;
   startTime: string;
   recurrence: RecurrencePattern;
-  location?: string; // OPTIONAL
-  notes?: string; // OPTIONAL
+  location?: string; // İSTEĞE BAĞLI
+  notes?: string; // İSTEĞE BAĞLI
   isActive: boolean;
   createdBy: string;
   updatedBy?: string;
@@ -114,7 +117,7 @@ export interface ClassStats {
   instructorDistribution: Record<string, number>;
 }
 
-// Helper function to generate recurring class dates
+// Tekrarlayan sınıf tarihlerini oluşturmak için yardımcı fonksiyon
 export function generateRecurringClassDates(
   startDate: string,
   startTime: string,
@@ -124,7 +127,7 @@ export function generateRecurringClassDates(
 ): Array<{ date: string; time: string }> {
   const occurrences: Array<{ date: string; time: string }> = [];
   const start = new Date(startDate);
-  const end = endDate ? new Date(endDate) : new Date(start.getTime() + (365 * 24 * 60 * 60 * 1000)); // Default to 1 year
+  const end = endDate ? new Date(endDate) : new Date(start.getTime() + (365 * 24 * 60 * 60 * 1000)); // Varsayılan olarak 1 yıl
   
   let currentDate = new Date(start);
   let count = 0;
@@ -143,7 +146,7 @@ export function generateRecurringClassDates(
   return occurrences;
 }
 
-// Helper function to get class type color
+// Sınıf tipi rengini almak için yardımcı fonksiyon
 export function getClassTypeColor(classType: string): string {
   const colors: Record<string, string> = {
     'MMA': '#e53e3e',

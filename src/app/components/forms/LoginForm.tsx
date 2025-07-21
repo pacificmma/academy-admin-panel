@@ -21,7 +21,7 @@ import {
 // import CryptoJS from 'crypto-js'; // KALDIRILDI: Artık kullanılmıyor
 import Alert from '@/app/components/ui/Alert';
 import { useAuth } from '@/app/contexts/AuthContext';
-import { LoginCredentials } from '@/app/types';
+import { LoginCredentials } from '@/app/types'; // LoginCredentials artık '@/app/types'dan içe aktarılıyor
 
 export default function SecureLoginForm() {
   const router = useRouter();

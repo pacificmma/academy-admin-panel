@@ -1,8 +1,6 @@
 // src/lib/firebase/config.ts - Client-side Firebase configuration
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
-import { getStorage } from 'firebase/storage';
 
 // Firebase configuration
 const firebaseConfig = {
