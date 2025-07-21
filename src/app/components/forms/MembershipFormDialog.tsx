@@ -183,7 +183,7 @@ export default function MembershipFormDialog({
       const submitData: MembershipPlanFormData = {
         ...formData,
         name: formData.name.trim(),
-        description: formData.description.trim(),
+        description: formData.description?.trim() || '', // Burayı düzelttik
         weeklyAttendanceLimit: formData.isUnlimited ? undefined : formData.weeklyAttendanceLimit,
       };
 
