@@ -1,256 +1,228 @@
-// src/app/hooks/useMemberships.ts - Streamlined Membership Management Hook
-import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '@/app/contexts/AuthContext';
-import {
-  MembershipPlan,
-  MembershipPlanFormData,
-  MembershipPlanFilters,
-  MembershipStats
-} from '@/app/types/membership';
+// src/app/types/membership.ts - Updated to support weekly attendance limits
 
-interface UseMembershipsReturn {
-  memberships: MembershipPlan[];
-  loading: boolean;
-  error: string | null;
-  stats: MembershipStats | null;
-  createMembership: (data: MembershipPlanFormData) => Promise<{ success: boolean; error?: string; data?: MembershipPlan }>;
-  updateMembership: (id: string, data: MembershipPlanFormData) => Promise<{ success: boolean; error?: string; data?: MembershipPlan }>;
-  deleteMembership: (id: string) => Promise<{ success: boolean; error?: string }>;
-  loadMemberships: (filters?: MembershipPlanFilters) => Promise<void>;
-  loadStats: () => Promise<void>;
-  refreshData: () => Promise<void>;
-  clearError: () => void;
+export type DurationType = 'days' | 'weeks' | 'months' | 'years' | 'unlimited';
+export type MembershipStatus = 'active' | 'inactive' | 'draft';
+export type MemberMembershipStatus = 'active' | 'expired' | 'cancelled' | 'suspended' | 'frozen';
+
+export interface MembershipPlan {
+  id: string;
+  name: string;
+  description?: string;
+  durationValue: number;
+  durationType: DurationType;
+  price: number;
+  currency: 'USD';
+  classTypes: string[];
+  status: MembershipStatus;
+  
+  // Weekly attendance limit fields
+  weeklyAttendanceLimit?: number; // null/undefined means unlimited
+  isUnlimited: boolean; // if true, no weekly limit applies
+  
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  updatedBy?: string;
 }
 
-export const useMemberships = (autoLoad: boolean = true): UseMembershipsReturn => {
-  const { sessionData } = useAuth();
-  const [memberships, setMemberships] = useState<MembershipPlan[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [stats, setStats] = useState<MembershipStats | null>(null);
+export interface MembershipPlanFormData {
+  name: string;
+  description: string | undefined;
+  durationValue: number;
+  durationType: DurationType;
+  price: number;
+  currency: 'USD';
+  classTypes: string[];
+  status: MembershipStatus;
+  
+  // Weekly attendance limit fields
+  weeklyAttendanceLimit?: number;
+  isUnlimited: boolean;
+}
 
-  const handleApiError = useCallback((error: any, defaultMessage: string) => {
-    if (error instanceof Error) {
-      return error.message;
+export interface MemberMembership {
+  id: string;
+  memberId: string;
+  membershipPlanId: string;
+  startDate: string;
+  endDate: string;
+  status: MemberMembershipStatus;
+  paymentStatus: 'pending' | 'paid' | 'failed' | 'refunded';
+  amount: number;
+  currency: 'USD';
+  paymentMethod?: string;
+  paymentReference?: string;
+  notes?: string;
+  
+  // Freeze-related fields
+  freezeStartDate?: string;
+  freezeEndDate?: string;
+  freezeReason?: string;
+  originalEndDate?: string; // Store original end date before freeze
+  
+  // Cancellation fields
+  cancellationReason?: string;
+  cancelledBy?: string;
+  
+  // Classes tracking
+  classesUsed?: number;
+  maxClasses?: number;
+  isUnlimited?: boolean;
+  weeklyAttendanceLimit?: number; // Weekly attendance limit from plan
+  currentWeekAttendance?: number; // Track current week usage
+  
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  updatedBy?: string;
+  
+  // Virtual fields populated from joins
+  memberName?: string;
+  memberEmail?: string;
+  planName?: string;
+  planClassTypes?: string[];
+}
+
+export interface MemberMembershipFilters {
+  memberId?: string;
+  membershipPlanId?: string;
+  status?: MemberMembershipStatus;
+  paymentStatus?: MemberMembership['paymentStatus'];
+  startDateFrom?: string;
+  startDateTo?: string;
+  endDateFrom?: string;
+  endDateTo?: string;
+  searchTerm?: string;
+}
+
+// EKLENDİ: MembershipPlanFilters arayüzü
+export interface MembershipPlanFilters {
+  type?: string;
+  isActive?: boolean; // 'status' parametresine karşılık geliyor, 'isActive' olarak kullandık.
+  minPrice?: number;
+  maxPrice?: number;
+  duration?: number;
+  searchTerm?: string;
+}
+
+export interface MembershipStatusAction {
+  action: 'freeze' | 'unfreeze' | 'cancel' | 'reactivate';
+  reason: string;
+  freezeDuration?: number; // in days
+  freezeEndDate?: string; // specific end date for freeze
+}
+
+export interface MembershipStats {
+  totalPlans: number;
+  activePlans: number;
+  inactivePlans: number;
+  totalRevenue?: number;
+  monthlyRevenue?: number;
+  popularClassTypes?: Array<{
+    type: string;
+    count: number;
+    color?: string;
+  }>;
+}
+
+// Helper function to format duration
+export function formatDuration(value: number, type: DurationType): string {
+  if (type === 'unlimited') {
+    return 'Unlimited';
+  }
+  
+  if (value === 1) {
+    switch (type) {
+      case 'days': return '1 Day';
+      case 'weeks': return '1 Week';
+      case 'months': return '1 Month';
+      case 'years': return '1 Year';
+      default: return `1 ${type}`;
     }
-    return defaultMessage;
-  }, []);
-
-  const loadMemberships = useCallback(async (filters?: MembershipPlanFilters) => {
-    if (!sessionData) return;
-
-    try {
-      setLoading(true);
-      setError(null);
-
-      // Build query parameters
-      const params = new URLSearchParams();
-      if (filters?.type) params.append('type', filters.type);
-      if (filters?.isActive !== undefined) params.append('status', filters.isActive ? 'active' : 'inactive');
-      if (filters?.minPrice !== undefined) params.append('minPrice', filters.minPrice.toString());
-      if (filters?.maxPrice !== undefined) params.append('maxPrice', filters.maxPrice.toString());
-      if (filters?.duration) params.append('duration', filters.duration.toString());
-      if (filters?.searchTerm) params.append('search', filters.searchTerm);
-
-      const url = `/api/memberships${params.toString() ? `?${params.toString()}` : ''}`;
-
-      // Rely on session cookie for authentication
-      const response = await fetch(url, { credentials: 'include' });
-      const result = await response.json();
-
-      if (response.ok && result.success) {
-        setMemberships(result.data || []);
-      } else {
-        throw new Error(result.error || 'Failed to load memberships');
-      }
-    } catch (err) {
-      setError(handleApiError(err, 'Failed to load memberships'));
-    } finally {
-      setLoading(false);
+  } else {
+    switch (type) {
+      case 'days': return `${value} Days`;
+      case 'weeks': return `${value} Weeks`;
+      case 'months': return `${value} Months`;
+      case 'years': return `${value} Years`;
+      default: return `${value} ${type}`;
     }
-  }, [sessionData, handleApiError]);
+  }
+}
 
-  const loadStats = useCallback(async () => {
-    if (!sessionData) return;
+// Helper function to calculate end date
+export function calculateEndDate(startDate: string, durationValue: number, durationType: DurationType): string {
+  if (durationType === 'unlimited') {
+    // Return a date far in the future for unlimited memberships
+    const farFuture = new Date(startDate);
+    farFuture.setFullYear(farFuture.getFullYear() + 100);
+    return farFuture.toISOString().split('T')[0];
+  }
+  
+  const start = new Date(startDate);
+  
+  switch (durationType) {
+    case 'days':
+      start.setDate(start.getDate() + durationValue);
+      break;
+    case 'weeks':
+      start.setDate(start.getDate() + (durationValue * 7));
+      break;
+    case 'months':
+      start.setMonth(start.getMonth() + durationValue);
+      break;
+    case 'years':
+      start.setFullYear(start.getFullYear() + durationValue);
+      break;
+  }
+  
+  return start.toISOString().split('T')[0];
+}
 
-    try {
-      const response = await fetch('/api/memberships/stats', { credentials: 'include' });
-      const result = await response.json();
+// Helper function to check if membership is expiring soon
+export function isExpiringSoon(endDate: string, daysThreshold: number = 7): boolean {
+  const end = new Date(endDate);
+  const threshold = new Date();
+  threshold.setDate(threshold.getDate() + daysThreshold);
+  
+  return end <= threshold && end >= new Date();
+}
 
-      if (response.ok && result.success) {
-        setStats(result.data);
-      } else {
-        // Stats are optional, don't throw error
-        setStats(null);
-      }
-    } catch (err) {
-      // Stats are optional, don't throw error
-      setStats(null);
-    }
-  }, [sessionData]);
+// Helper function to get membership status color
+export function getMembershipStatusColor(status: MemberMembershipStatus): 'success' | 'warning' | 'error' | 'default' | 'info' {
+  switch (status) {
+    case 'active': return 'success';
+    case 'frozen': return 'info';
+    case 'suspended': return 'warning';
+    case 'cancelled': return 'error';
+    case 'expired': return 'default';
+    default: return 'default';
+  }
+}
 
-  const createMembership = useCallback(async (data: MembershipPlanFormData) => {
-    if (!sessionData) {
-      return { success: false, error: 'Not authenticated' };
-    }
+// Helper function to get membership status display text
+export function getMembershipStatusText(status: MemberMembershipStatus): string {
+  switch (status) {
+    case 'active': return 'Active';
+    case 'frozen': return 'Frozen';
+    case 'suspended': return 'Suspended';
+    case 'cancelled': return 'Cancelled';
+    case 'expired': return 'Expired';
+    default: return status;
+  }
+}
 
-    try {
-      const response = await fetch('/api/memberships', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-        credentials: 'include',
-      });
+// Helper function to calculate freeze duration
+export function calculateFreezeEndDate(startDate: string, durationDays: number): string {
+  const start = new Date(startDate);
+  start.setDate(start.getDate() + durationDays);
+  return start.toISOString();
+}
 
-      const result = await response.json();
-
-      if (response.ok && result.success) {
-        // Add to local state
-        setMemberships(prev => [result.data, ...prev]);
-        return { success: true, data: result.data };
-      } else {
-        return { success: false, error: result.error || 'Failed to create membership plan' };
-      }
-    } catch (err) {
-      return {
-        success: false,
-        error: handleApiError(err, 'Failed to create membership plan')
-      };
-    }
-  }, [sessionData, handleApiError]);
-
-  const updateMembership = useCallback(async (id: string, data: MembershipPlanFormData) => {
-    if (!sessionData) {
-      return { success: false, error: 'Not authenticated' };
-    }
-
-    try {
-      const response = await fetch(`/api/memberships/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-        credentials: 'include',
-      });
-
-      const result = await response.json();
-
-      if (response.ok && result.success) {
-        // Update local state
-        setMemberships(prev => prev.map(membership =>
-          membership.id === id ? result.data : membership
-        ));
-        return { success: true, data: result.data };
-      } else {
-        return { success: false, error: result.error || 'Failed to update membership plan' };
-      }
-    } catch (err) {
-      return {
-        success: false,
-        error: handleApiError(err, 'Failed to update membership plan')
-      };
-    }
-  }, [sessionData, handleApiError]);
-
-  const deleteMembership = useCallback(async (id: string) => {
-    if (!sessionData) {
-      return { success: false, error: 'Not authenticated' };
-    }
-
-    try {
-      const response = await fetch(`/api/memberships/${id}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
-
-      const result = await response.json();
-
-      if (response.ok && result.success) {
-        // Remove from local state
-        setMemberships(prev => prev.filter(membership => membership.id !== id));
-        return { success: true };
-      } else {
-        return { success: false, error: result.error || 'Failed to delete membership plan' };
-      }
-    } catch (err) {
-      return {
-        success: false,
-        error: handleApiError(err, 'Failed to delete membership plan')
-      };
-    }
-  }, [sessionData, handleApiError]);
-
-  const refreshData = useCallback(async () => {
-    await Promise.all([
-      loadMemberships(),
-      loadStats(),
-    ]);
-  }, [loadMemberships, loadStats]);
-
-  const clearError = useCallback(() => {
-    setError(null);
-  }, []);
-
-  // Auto-load on mount if user is authenticated and is admin
-  useEffect(() => {
-    if (autoLoad && sessionData?.role === 'admin') {
-      refreshData();
-    }
-  }, [autoLoad, sessionData?.role, refreshData]);
-
-  return {
-    memberships,
-    loading,
-    error,
-    stats,
-    createMembership,
-    updateMembership,
-    deleteMembership,
-    loadMemberships,
-    loadStats,
-    refreshData,
-    clearError,
-  };
-};
-
-// Additional hook for membership statistics
-export const useMembershipStats = () => {
-  const { sessionData } = useAuth();
-  const [stats, setStats] = useState<MembershipStats | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadStats = useCallback(async () => {
-    if (!sessionData) return;
-
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await fetch('/api/memberships/stats', { credentials: 'include' });
-      const result = await response.json();
-
-      if (response.ok && result.success) {
-        setStats(result.data);
-      } else {
-        throw new Error(result.error || 'Failed to load stats');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load stats');
-    } finally {
-      setLoading(false);
-    }
-  }, [sessionData]);
-
-  useEffect(() => {
-    if (sessionData) {
-      loadStats();
-    }
-  }, [sessionData, loadStats]);
-
-  return {
-    stats,
-    loading,
-    error,
-    reload: loadStats,
-  };
-};
+// Helper function to format weekly attendance limit
+export function formatWeeklyAttendanceLimit(weeklyLimit?: number, isUnlimited?: boolean): string {
+  if (isUnlimited || !weeklyLimit) {
+    return 'Unlimited per week';
+  }
+  return `${weeklyLimit} ${weeklyLimit === 1 ? 'day' : 'days'} per week`;
+}

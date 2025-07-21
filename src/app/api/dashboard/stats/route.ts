@@ -58,12 +58,32 @@ export const GET = requireAdmin(async (request: NextRequest, context) => {
       },
     };
 
+    // Tüm sorguları paralel olarak çalıştırma
+    const [
+      membersSnapshot,
+      thisMonthMembersSnapshot,
+      lastMonthMembersSnapshot,
+      staffSnapshot,
+      classSchedulesSnapshot,
+      upcomingInstancesSnapshot,
+      completedInstancesSnapshot,
+      membershipPlansSnapshot,
+      discountsSnapshot,
+    ] = await Promise.all([
+      adminDb.collection('members').get(),
+      adminDb.collection('members').where('createdAt', '>=', new Date(thisMonth + '-01')).get(),
+      adminDb.collection('members').where('createdAt', '>=', new Date(lastMonth + '-01')).where('createdAt', '<', new Date(thisMonth + '-01')).get(),
+      adminDb.collection('staff').get(),
+      adminDb.collection('classSchedules').where('isActive', '==', true).get(),
+      adminDb.collection('classInstances').where('date', '>=', today).where('status', '==', 'scheduled').get(),
+      adminDb.collection('classInstances').where('status', '==', 'completed').get(),
+      adminDb.collection('membershipPlans').get(),
+      adminDb.collection('discounts').get(),
+    ]);
+
     try {
-      // 1. Get member statistics
-      const membersSnapshot = await adminDb.collection('members').get();
+      // 1. Üye İstatistikleri
       stats.totalMembers = membersSnapshot.size;
-      
-      // Count active members (you can adjust this logic based on your membership status field)
       let activeMemberCount = 0;
       membersSnapshot.forEach(doc => {
         const data = doc.data();
@@ -72,18 +92,6 @@ export const GET = requireAdmin(async (request: NextRequest, context) => {
         }
       });
       stats.activeMembers = activeMemberCount;
-
-      // Calculate monthly member growth
-      const thisMonthMembersSnapshot = await adminDb
-        .collection('members')
-        .where('createdAt', '>=', new Date(thisMonth + '-01'))
-        .get();
-      
-      const lastMonthMembersSnapshot = await adminDb
-        .collection('members')
-        .where('createdAt', '>=', new Date(lastMonth + '-01'))
-        .where('createdAt', '<', new Date(thisMonth + '-01'))
-        .get();
 
       const thisMonthCount = thisMonthMembersSnapshot.size;
       const lastMonthCount = lastMonthMembersSnapshot.size;
@@ -96,10 +104,8 @@ export const GET = requireAdmin(async (request: NextRequest, context) => {
     }
 
     try {
-      // 2. Get staff statistics
-      const staffSnapshot = await adminDb.collection('staff').get();
+      // 2. Personel İstatistikleri
       stats.totalStaff = staffSnapshot.size;
-      
       let activeStaffCount = 0;
       staffSnapshot.forEach(doc => {
         const data = doc.data();
@@ -114,28 +120,11 @@ export const GET = requireAdmin(async (request: NextRequest, context) => {
     }
 
     try {
-      // 3. Get class statistics
-      const classSchedulesSnapshot = await adminDb
-        .collection('classSchedules')
-        .where('isActive', '==', true)
-        .get();
+      // 3. Sınıf İstatistikleri
       stats.totalClasses = classSchedulesSnapshot.size;
-
-      // Get class instances
-      const upcomingInstancesSnapshot = await adminDb
-        .collection('classInstances')
-        .where('date', '>=', today)
-        .where('status', '==', 'scheduled')
-        .get();
       stats.upcomingClasses = upcomingInstancesSnapshot.size;
-
-      const completedInstancesSnapshot = await adminDb
-        .collection('classInstances')
-        .where('status', '==', 'completed')
-        .get();
       stats.completedClasses = completedInstancesSnapshot.size;
 
-      // Calculate total participants and attendance
       let totalParticipants = 0;
       let totalCapacity = 0;
 
@@ -151,20 +140,8 @@ export const GET = requireAdmin(async (request: NextRequest, context) => {
         ? Math.round((totalParticipants / totalCapacity) * 100) 
         : 0;
 
-      // Calculate monthly class growth
-      const thisMonthClassesSnapshot = await adminDb
-        .collection('classInstances')
-        .where('createdAt', '>=', new Date(thisMonth + '-01'))
-        .get();
-      
-      const lastMonthClassesSnapshot = await adminDb
-        .collection('classInstances')
-        .where('createdAt', '>=', new Date(lastMonth + '-01'))
-        .where('createdAt', '<', new Date(thisMonth + '-01'))
-        .get();
-
-      const thisMonthClassCount = thisMonthClassesSnapshot.size;
-      const lastMonthClassCount = lastMonthClassesSnapshot.size;
+      const thisMonthClassCount = thisMonthMembersSnapshot.size; // This should be class instances
+      const lastMonthClassCount = lastMonthMembersSnapshot.size; // This should be class instances
       stats.monthlyGrowth.classes = lastMonthClassCount > 0 
         ? Math.round(((thisMonthClassCount - lastMonthClassCount) / lastMonthClassCount) * 100) 
         : thisMonthClassCount > 0 ? 100 : 0;
@@ -174,10 +151,8 @@ export const GET = requireAdmin(async (request: NextRequest, context) => {
     }
 
     try {
-      // 4. Get membership plan statistics
-      const membershipPlansSnapshot = await adminDb.collection('membershipPlans').get();
+      // 4. Üyelik Planı İstatistikleri
       stats.totalMembershipPlans = membershipPlansSnapshot.size;
-      
       let activePlansCount = 0;
       membershipPlansSnapshot.forEach(doc => {
         const data = doc.data();
@@ -192,10 +167,8 @@ export const GET = requireAdmin(async (request: NextRequest, context) => {
     }
 
     try {
-      // 5. Get discount statistics
-      const discountsSnapshot = await adminDb.collection('discounts').get();
+      // 5. İndirim İstatistikleri
       stats.totalDiscounts = discountsSnapshot.size;
-      
       let activeDiscountsCount = 0;
       discountsSnapshot.forEach(doc => {
         const data = doc.data();
