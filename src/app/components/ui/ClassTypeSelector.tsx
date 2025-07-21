@@ -1,4 +1,4 @@
-// src/app/components/ui/ClassTypeSelector.tsx - Updated with Multiple Selection Support
+// src/app/components/ui/ClassTypeSelector.tsx - Updated with Conditional Usage Count Fetch
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -38,12 +38,12 @@ interface ClassTypeSelectorProps {
   // Single selection props
   value?: string;
   onChange?: (value: string) => void;
-  
+
   // Multiple selection props
   selectedValues?: string[];
   onMultipleChange?: (values: string[]) => void;
   multiple?: boolean;
-  
+
   // Common props
   error?: string;
   required?: boolean;
@@ -57,7 +57,7 @@ interface ClassTypeSelectorProps {
 }
 
 const DEFAULT_COLORS = [
-  '#e53e3e', '#805ad5', '#d69e2e', '#38a169', '#3182ce', 
+  '#e53e3e', '#805ad5', '#d69e2e', '#38a169', '#3182ce',
   '#ed8936', '#4299e1', '#48bb78', '#ed64a6', '#718096'
 ];
 
@@ -65,12 +65,12 @@ export default function ClassTypeSelector({
   // Single selection
   value = '',
   onChange,
-  
+
   // Multiple selection
   selectedValues = [],
   onMultipleChange,
   multiple = false,
-  
+
   // Common props
   error,
   required = false,
@@ -86,20 +86,20 @@ export default function ClassTypeSelector({
   const [classTypes, setClassTypes] = useState<ClassType[]>([]);
   const [loading, setLoading] = useState(true);
   const [internalError, setInternalError] = useState<string | null>(null);
-  
+
   // Dialog states
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingType, setEditingType] = useState<ClassType | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   // Form states
   const [newTypeName, setNewTypeName] = useState('');
   const [newTypeColor, setNewTypeColor] = useState(DEFAULT_COLORS[0]);
   const [newTypeDescription, setNewTypeDescription] = useState('');
 
   // Memoized active class types to prevent unnecessary re-renders
-  const activeClassTypes = useMemo(() => 
-    classTypes.filter(ct => ct.isActive).sort((a, b) => a.name.localeCompare(b.name)), 
+  const activeClassTypes = useMemo(() =>
+    classTypes.filter(ct => ct.isActive).sort((a, b) => a.name.localeCompare(b.name)),
     [classTypes]
   );
 
@@ -111,7 +111,7 @@ export default function ClassTypeSelector({
 
       // Build URL with includeUsage parameter when showUsageCount is true
       const url = new URL('/api/class-types', window.location.origin);
-      if (showUsageCount) {
+      if (showUsageCount) { // Only request usage count if showUsageCount is true
         url.searchParams.set('includeUsage', 'true');
       }
 
@@ -136,7 +136,7 @@ export default function ClassTypeSelector({
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
       setInternalError(errorMessage);
-      
+
       // Set fallback class types if API fails
       setClassTypes([
         { id: '1', name: 'MMA', color: '#e53e3e', description: 'Mixed Martial Arts', isActive: true, createdAt: '', updatedAt: '', createdBy: '' },
@@ -147,7 +147,7 @@ export default function ClassTypeSelector({
     } finally {
       setLoading(false);
     }
-  }, [showUsageCount]);
+  }, [showUsageCount]); // Dependency on showUsageCount
 
   // Load class types on component mount
   useEffect(() => {
@@ -157,7 +157,7 @@ export default function ClassTypeSelector({
   // Handle selection change (both single and multiple)
   const handleSelectionChange = (event: SelectChangeEvent<string | string[]>) => {
     const eventValue = event.target.value;
-    
+
     if (multiple && onMultipleChange) {
       const newSelection = typeof eventValue === 'string' ? eventValue.split(',') : eventValue;
       onMultipleChange(newSelection);
@@ -228,7 +228,7 @@ export default function ClassTypeSelector({
       } else if (!multiple && onChange) {
         onChange(newClassType.name);
       }
-      
+
       // Refresh the list
       await loadClassTypes();
       cancelEditing();
@@ -272,7 +272,7 @@ export default function ClassTypeSelector({
       const updatedClassType = result.data;
       if (editingType.name !== updatedClassType.name) {
         if (multiple && onMultipleChange) {
-          const updatedSelection = selectedValues.map(name => 
+          const updatedSelection = selectedValues.map(name =>
             name === editingType.name ? updatedClassType.name : name
           );
           onMultipleChange(updatedSelection);
@@ -280,7 +280,7 @@ export default function ClassTypeSelector({
           onChange(updatedClassType.name);
         }
       }
-      
+
       // Refresh the list
       await loadClassTypes();
       cancelEditing();
@@ -325,7 +325,7 @@ export default function ClassTypeSelector({
       } else if (!multiple && onChange && value === classType.name) {
         onChange('');
       }
-      
+
       // Refresh the list
       await loadClassTypes();
     } catch (err) {
@@ -344,7 +344,7 @@ export default function ClassTypeSelector({
     if (!multiple) {
       return selected as string;
     }
-    
+
     const selectedArray = Array.isArray(selected) ? selected : [selected];
     return (
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
@@ -429,9 +429,9 @@ export default function ClassTypeSelector({
                   <Typography>{classType.name}</Typography>
                   {/* Show usage count only if it's greater than 0 and showUsageCount is true */}
                   {showUsageCount && classType.usageCount !== undefined && classType.usageCount > 0 && (
-                    <Chip 
-                      label={classType.usageCount} 
-                      size="small" 
+                    <Chip
+                      label={classType.usageCount}
+                      size="small"
                       variant="outlined"
                       sx={{ ml: 1, fontSize: '0.7rem', height: 20 }}
                     />
@@ -441,10 +441,10 @@ export default function ClassTypeSelector({
                 {/* Edit/Delete buttons */}
                 {(allowEdit || allowDelete) && (
                   <Box display="flex" gap={0.5}>
-                    
+
                     {allowDelete && (
                       <Tooltip title={
-                        classType.usageCount !== undefined && classType.usageCount > 0 
+                        classType.usageCount !== undefined && classType.usageCount > 0
                           ? `Cannot delete - used in ${classType.usageCount} classes`
                           : 'Delete class type'
                       }>
@@ -457,8 +457,8 @@ export default function ClassTypeSelector({
                               handleDeleteClassType(classType);
                             }}
                             sx={{
-                              color: classType.usageCount !== undefined && classType.usageCount > 0 
-                                ? 'text.disabled' 
+                              color: classType.usageCount !== undefined && classType.usageCount > 0
+                                ? 'text.disabled'
                                 : 'error.main'
                             }}
                           >
@@ -480,7 +480,7 @@ export default function ClassTypeSelector({
             </MenuItem>
           )}
         </Select>
-        
+
         {/* Helper text */}
         {error && <FormHelperText>{error}</FormHelperText>}
         {!error && helperText && <FormHelperText>{helperText}</FormHelperText>}

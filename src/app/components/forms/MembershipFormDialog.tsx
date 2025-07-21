@@ -425,24 +425,24 @@ export default function MembershipFormDialog({
 
           {/* Class Types */}
           <Grid item xs={12}>
-            <Typography variant="h6" color="primary" gutterBottom>
-              Included Class Types
-            </Typography>
-            <ClassTypeSelector
-              multiple={true}
-              selectedValues={formData.classTypes}
-              onMultipleChange={(selectedTypes) => handleInputChange('classTypes', selectedTypes)}
-              error={errors.classTypes}
-              disabled={loading}
-              required={true}
-              allowCreate={true}
-              allowEdit={true}
-              allowDelete={true}
-              showUsageCount={true}
-              label="Program Types"
-              helperText="Select which class types this membership includes. You can also add, edit, or delete class types from here."
-            />
-          </Grid>
+          <Typography variant="h6" color="primary" gutterBottom>
+            Included Class Types
+          </Typography>
+          <ClassTypeSelector
+            multiple={true} // <-- If you want it to close after one selection, change this to false
+            selectedValues={formData.classTypes}
+            onMultipleChange={(selectedTypes) => handleInputChange('classTypes', selectedTypes)}
+            error={errors.classTypes}
+            disabled={loading}
+            required={true}
+            allowCreate={true}
+            allowEdit={true}
+            allowDelete={true}
+            showUsageCount={true}
+            label="Program Types"
+            helperText="Select which class types this membership includes. You can also add, edit, or delete class types from here."
+          />
+        </Grid>
 
           {/* Status */}
           <Grid item xs={12} sm={6}>
