@@ -544,7 +544,7 @@ export default function MembersPageClient({ session }: MembersPageClientProps): 
                         </Typography>
                       )}
                       <Typography variant="body2" color="text.secondary">
-                        Emergency: {member.emergencyContact.name}
+                        Emergency: {member.emergencyContact?.name}
                       </Typography>
                     </Box>
                   </TableCell>
